@@ -115,6 +115,33 @@ struct ContactPreviewData: Equatable {
     var existingContactId: UUID?
 }
 
+// 批量人脉预览：单个联系人项（带状态）
+struct ContactItemPreview: Identifiable, Equatable {
+    let id = UUID()
+    var contactData: ContactPreviewData  // 复用现有数据结构
+    var isSelected: Bool = true  // 是否选中
+    var isExpanded: Bool = false  // 是否展开详情
+    var groupIndex: Int  // 所属分组（第几个10人组）
+}
+
+// 批量人脉预览数据
+struct BatchContactPreviewData: Equatable {
+    var contacts: [ContactItemPreview]  // 所有联系人
+    var totalImages: Int  // 总图片数
+    var successCount: Int  // 成功识别数量
+    var failedCount: Int  // 失败数量
+    
+    // 计算属性：新增联系人数量
+    var newContactsCount: Int {
+        contacts.filter { !$0.contactData.isEditMode }.count
+    }
+    
+    // 计算属性：更新联系人数量
+    var updateContactsCount: Int {
+        contacts.filter { $0.contactData.isEditMode }.count
+    }
+}
+
 // 报销预览数据
 struct ExpensePreviewData: Equatable {
     var amount: Double
@@ -143,6 +170,7 @@ struct ChatMessage: Identifiable, Equatable {
     var showActionButtons: Bool = false
     var todoPreview: TodoPreviewData? = nil
     var contactPreview: ContactPreviewData? = nil
+    var batchContactPreview: BatchContactPreviewData? = nil  // 批量人脉预览
     var expensePreview: ExpensePreviewData? = nil
     var notes: String? = nil  // 临时存储数据（如待处理的报销信息）
     var showIntentSelection: Bool = false  // 是否显示意图选择器
@@ -197,6 +225,7 @@ struct ChatMessage: Identifiable, Equatable {
         lhs.showActionButtons == rhs.showActionButtons &&
         lhs.todoPreview == rhs.todoPreview &&
         lhs.contactPreview == rhs.contactPreview &&
+        lhs.batchContactPreview == rhs.batchContactPreview &&
         lhs.expensePreview == rhs.expensePreview &&
         lhs.showIntentSelection == rhs.showIntentSelection &&
         lhs.isWrongClassification == rhs.isWrongClassification &&

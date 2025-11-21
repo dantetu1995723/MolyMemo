@@ -1450,6 +1450,29 @@ struct ChatBubbleView: View {
                                 originalImages: message.images
                             )
                         }
+                    } else if let batchContactPreview = message.batchContactPreview {
+                        // 显示批量人脉预览气泡
+                        VStack(alignment: .leading, spacing: 8) {
+                            // 如果有文字内容，先显示文字
+                            if !message.displayedContent.trimmingCharacters(in: .whitespaces).isEmpty {
+                                Text(message.displayedContent)
+                                    .font(.system(size: 16, weight: .regular))
+                                    .foregroundColor(Color.black.opacity(0.85))
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 10)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 18)
+                                            .fill(Color.white)
+                                            .shadow(color: Color.black.opacity(0.06), radius: 3, x: 0, y: 1)
+                                    )
+                            }
+
+                            // 批量人脉预览气泡
+                            BatchContactPreviewBubble(
+                                messageId: message.id,
+                                batchPreview: batchContactPreview
+                            )
+                        }
                     } else if let expensePreview = message.expensePreview {
                         // 显示报销预览气泡
                         VStack(alignment: .leading, spacing: 8) {
@@ -1965,6 +1988,18 @@ struct ChatRoomInputBar: View {
                     handleWrongClassification(for: messageId, images: images)
                 }
             }
+            
+            // 监听批量联系人扫描通知
+            NotificationCenter.default.addObserver(
+                forName: NSNotification.Name("BatchContactScan"),
+                object: nil,
+                queue: .main
+            ) { notification in
+                if let images = notification.object as? [UIImage] {
+                    print("📸 收到批量扫描请求: \(images.count) 张截图")
+                    handleBatchContactScan(images: images)
+                }
+            }
         }
         .onDisappear {
             // 移除通知监听
@@ -1981,6 +2016,11 @@ struct ChatRoomInputBar: View {
             NotificationCenter.default.removeObserver(
                 self,
                 name: NSNotification.Name("HandleWrongClassification"),
+                object: nil
+            )
+            NotificationCenter.default.removeObserver(
+                self,
+                name: NSNotification.Name("BatchContactScan"),
                 object: nil
             )
         }
@@ -2519,6 +2559,158 @@ struct ChatRoomInputBar: View {
         appState.saveMessageToStorage(reclassifyMessage, modelContext: modelContext)
         
         print("✅ 已显示重新分类气泡")
+    }
+    
+    // 处理批量联系人扫描
+    private func handleBatchContactScan(images: [UIImage]) {
+        print("🔍 开始处理批量联系人扫描: \(images.count) 张截图")
+        
+        guard !images.isEmpty else { return }
+        
+        // 添加用户消息（批量截图）
+        let userMessage = ChatMessage(
+            role: .user,
+            images: images,
+            content: "批量扫描了 \(images.count) 位联系人"
+        )
+        appState.chatMessages.append(userMessage)
+        appState.saveMessageToStorage(userMessage, modelContext: modelContext)
+        
+        // 添加AI处理消息
+        let agentMessage = ChatMessage(
+            role: .agent,
+            content: "正在识别 \(images.count) 位联系人..."
+        )
+        appState.chatMessages.append(agentMessage)
+        let messageId = agentMessage.id
+        
+        // 后台批量识别
+        Task {
+            await processBatchContactScan(images: images, agentMessageId: messageId)
+        }
+    }
+    
+    // 批量识别联系人
+    private func processBatchContactScan(images: [UIImage], agentMessageId: UUID) async {
+        print("🔍 开始批量识别 \(images.count) 张联系人截图")
+        
+        var allContacts: [ContactItemPreview] = []
+        var successCount = 0
+        var failedCount = 0
+        
+        // 分组识别（10张一组，提升体验）
+        let groups = stride(from: 0, to: images.count, by: 10).map { startIndex in
+            let endIndex = min(startIndex + 10, images.count)
+            return Array(images[startIndex..<endIndex])
+        }
+        
+        for (groupIndex, group) in groups.enumerated() {
+            print("📊 识别第 \(groupIndex + 1) 组，共 \(group.count) 张")
+            
+            // 更新进度
+            let currentProgress = groupIndex * 10
+            await MainActor.run {
+                if let index = appState.chatMessages.firstIndex(where: { $0.id == agentMessageId }) {
+                    appState.chatMessages[index].content = "正在识别第 \(currentProgress + 1)-\(min(currentProgress + group.count, images.count)) 位联系人..."
+                }
+            }
+            
+            // 并发识别同一组内的图片
+            await withTaskGroup(of: (ContactParseResult?, Int).self) { taskGroup in
+                for (localIndex, image) in group.enumerated() {
+                    let globalGroupIndex = groupIndex
+                    taskGroup.addTask {
+                        let result = try? await QwenOmniService.parseImageForContact(image: image)
+                        return (result, globalGroupIndex)
+                    }
+                }
+                
+                for await (result, globalGroupIndex) in taskGroup {
+                    if let result = result {
+                        // 检查是否已存在
+                        let existing = await checkExistingContact(name: result.name)
+                        
+                        let item = ContactItemPreview(
+                            contactData: ContactPreviewData(
+                                name: result.name,
+                                phoneNumber: result.phoneNumber,
+                                company: result.company,
+                                identity: result.identity,
+                                hobbies: result.hobbies,
+                                relationship: result.relationship,
+                                avatarData: result.avatarData,
+                                imageData: result.imageData,
+                                isEditMode: existing != nil,
+                                existingContactId: existing?.id
+                            ),
+                            isSelected: true,  // 默认选中（包括已存在的）
+                            isExpanded: false,
+                            groupIndex: globalGroupIndex
+                        )
+                        
+                        allContacts.append(item)
+                        successCount += 1
+                    } else {
+                        failedCount += 1
+                    }
+                }
+            }
+        }
+        
+        // 回到主线程，生成批量预览消息
+        await MainActor.run {
+            print("✅ 批量识别完成: 成功 \(successCount), 失败 \(failedCount)")
+            
+            // 移除加载消息
+            if let index = appState.chatMessages.firstIndex(where: { $0.id == agentMessageId }) {
+                appState.chatMessages.remove(at: index)
+            }
+            
+            // 生成批量预览消息
+            if !allContacts.isEmpty {
+                let batchPreview = BatchContactPreviewData(
+                    contacts: allContacts,
+                    totalImages: images.count,
+                    successCount: successCount,
+                    failedCount: failedCount
+                )
+                
+                var message = ChatMessage(
+                    role: .agent,
+                    content: "已识别 \(successCount) 位联系人，请确认后批量添加"
+                )
+                message.batchContactPreview = batchPreview
+                appState.chatMessages.append(message)
+                appState.saveMessageToStorage(message, modelContext: modelContext)
+                
+                HapticFeedback.success()
+            } else {
+                // 全部失败
+                let errorMessage = ChatMessage(
+                    role: .agent,
+                    content: "抱歉，无法识别这些截图中的联系人信息，请确保截图清晰且包含联系人信息"
+                )
+                appState.chatMessages.append(errorMessage)
+                appState.saveMessageToStorage(errorMessage, modelContext: modelContext)
+            }
+        }
+    }
+    
+    // 检查是否已存在联系人
+    private func checkExistingContact(name: String) async -> Contact? {
+        return await MainActor.run {
+            do {
+                let nameToMatch = name
+                return try modelContext.fetch(
+                    FetchDescriptor<Contact>(
+                        predicate: #Predicate { $0.name == nameToMatch }
+                    )
+                ).first
+            } catch {
+                print("❌ 查询联系人失败: \(error)")
+                return nil
+            }
+        }
     }
     
     // 处理重新分类确认
