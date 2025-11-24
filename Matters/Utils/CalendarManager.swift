@@ -142,6 +142,7 @@ class CalendarManager {
     }
     
     /// 删除日历事件
+    @discardableResult
     func deleteCalendarEvent(eventIdentifier: String) async -> Bool {
         guard let event = eventStore.event(withIdentifier: eventIdentifier) else {
             print("找不到日历事件")
@@ -161,6 +162,7 @@ class CalendarManager {
     // MARK: - 本地通知管理
     
     /// 创建本地通知
+    @discardableResult
     func scheduleNotification(
         id: String,
         title: String,
@@ -211,6 +213,7 @@ class CalendarManager {
     }
     
     /// 更新本地通知
+    @discardableResult
     func updateNotification(
         id: String,
         title: String,

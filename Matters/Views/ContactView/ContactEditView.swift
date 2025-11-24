@@ -206,7 +206,7 @@ struct ContactEditView: View {
                                                 text: textAttachments[index],
                                                 onDelete: {
                                                     withAnimation {
-                                                        textAttachments.remove(at: index)
+                                                        _ = textAttachments.remove(at: index)
                                                     }
                                                     HapticFeedback.light()
                                                 }

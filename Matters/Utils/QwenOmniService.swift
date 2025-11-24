@@ -1303,8 +1303,8 @@ class QwenOmniService {
             ]
         ]
 
-        // 添加所有图片
-        for (index, image) in images.enumerated() {
+        // 添加所有图片（索引只在 AI 返回的 imageIndices 中使用，这里无需本地使用 index）
+        for image in images {
             let resizedImage = resizeImage(image, maxSize: 2048)
             guard let imageData = resizedImage.jpegData(compressionQuality: 1.0) else {
                 continue

@@ -3,10 +3,13 @@ import AVFoundation
 import SwiftData
 
 struct RecordingRecoveryManager {
-    static func recoverOrphanedRecordings(modelContext: ModelContext) {
+    static func recoverOrphanedRecordings(modelContext: ModelContext) async {
         let descriptor = FetchDescriptor<Meeting>()
         let existingMeetings = (try? modelContext.fetch(descriptor)) ?? []
         let existingPaths = Set(existingMeetings.compactMap { $0.audioFilePath })
+        
+        // 获取最近一次会议的创建时间，避免立即恢复刚保存的录音
+        let recentMeetingThreshold = Date().addingTimeInterval(-5) // 5秒内创建的不恢复
         
         var didInsert = false
         for folder in candidateFolders() {
@@ -20,7 +23,20 @@ struct RecordingRecoveryManager {
                 guard !existingPaths.contains(fileURL.path) else { continue }
                 
                 let creationDate = (try? fileURL.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? Date()
-                let duration = audioDuration(for: fileURL)
+                
+                // 跳过刚创建的文件（可能是正在保存的）
+                if creationDate > recentMeetingThreshold {
+                    print("⏭️ 跳过最近创建的文件: \(fileURL.lastPathComponent)")
+                    continue
+                }
+                
+                let duration = await audioDuration(for: fileURL)
+                
+                // 跳过时长为0的文件（可能是损坏的）
+                if duration <= 0 {
+                    print("⚠️ 跳过无效录音文件（时长为0）: \(fileURL.lastPathComponent)")
+                    continue
+                }
                 
                 let meeting = Meeting(
                     title: defaultTitle(for: creationDate),
@@ -32,7 +48,7 @@ struct RecordingRecoveryManager {
                 
                 modelContext.insert(meeting)
                 didInsert = true
-                print("🛠️ 已恢复孤立录音: \(fileURL.lastPathComponent)")
+                print("🛠️ 已恢复孤立录音: \(fileURL.lastPathComponent) (时长: \(Int(duration))秒)")
             }
         }
         
@@ -43,12 +59,19 @@ struct RecordingRecoveryManager {
             } catch {
                 print("❌ 保存恢复录音失败: \(error)")
             }
+        } else {
+            print("   没有需要恢复的孤立录音")
         }
     }
     
-    private static func audioDuration(for url: URL) -> TimeInterval {
+    private static func audioDuration(for url: URL) async -> TimeInterval {
         let asset = AVURLAsset(url: url)
-        let seconds = CMTimeGetSeconds(asset.duration)
+        guard let durationTime = try? await asset.load(.duration) else {
+            print("⚠️ 获取录音时长失败，返回0秒")
+            return 0
+        }
+
+        let seconds = CMTimeGetSeconds(durationTime)
         if seconds.isNaN || seconds.isInfinite {
             return 0
         }

@@ -659,16 +659,13 @@ struct TodoEditView: View {
                     let voiceTextLower = recognizedVoiceText.lowercased()
                     
                     // 应用解析结果
-                    var finalTitle = title
                     var titleUpdated = false
                     if let newTitle = parseResult.title {
-                        finalTitle = newTitle
                         title = newTitle
                         titleUpdated = true
                         print("📝 更新title: \(newTitle)")
                     }
                     
-                    var finalDescription = taskDescription
                     if let newDescription = parseResult.taskDescription {
                         // 判断是替换还是追加
                         // 明确说要修改/改成/改为/替换/设置备注 -> 完全替换
@@ -681,20 +678,16 @@ struct TodoEditView: View {
                         
                         if shouldReplace {
                             // 替换模式：完全替换备注
-                            finalDescription = newDescription
                             taskDescription = newDescription
                         } else if shouldAppend {
                             // 追加模式：追加到现有备注
                             if taskDescription.isEmpty {
-                                finalDescription = newDescription
                                 taskDescription = newDescription
                             } else {
-                                finalDescription = taskDescription + "\n" + newDescription
-                                taskDescription = finalDescription
+                                taskDescription = taskDescription + "\n" + newDescription
                             }
                         } else {
                             // 默认模式：如果备注为空则设置，否则替换（避免累积错误信息）
-                            finalDescription = newDescription
                             taskDescription = newDescription
                         }
                         print("📝 更新备注: \(newDescription)")
@@ -703,7 +696,6 @@ struct TodoEditView: View {
                         // 说明新的语音输入没有包含备注信息，应该清空旧备注
                         print("🔄 title已更新但AI未返回备注，清空旧备注避免不一致")
                         taskDescription = ""
-                        finalDescription = ""
                     }
                     
                     // 应用解析结果 - 优先计算并设置提醒时间，避免被 startTime 的 onChange 覆盖

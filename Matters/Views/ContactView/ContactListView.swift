@@ -15,7 +15,6 @@ struct ContactListView: View {
     @State private var showAddButton = false
     @State private var scrollProxy: ScrollViewProxy?
     @State private var showImportSheet = false
-    @State private var showBatchScanView = false
     @State private var isLoading = true
     
     // 分组的联系人
@@ -103,32 +102,6 @@ struct ContactListView: View {
                         }
                         
                         Spacer()
-                        
-                        // 批量扫描按钮
-                        Button(action: {
-                            HapticFeedback.light()
-                            showBatchScanView = true
-                        }) {
-                            Image(systemName: "photo.stack")
-                                .font(.system(size: 18, weight: .semibold))
-                                .foregroundColor(Color.white)
-                                .frame(width: 36, height: 36)
-                                .background(
-                                    Circle()
-                                        .fill(
-                                            LinearGradient(
-                                                colors: [
-                                                    Color.blue.opacity(0.8),
-                                                    Color.blue.opacity(0.6)
-                                                ],
-                                                startPoint: .topLeading,
-                                                endPoint: .bottomTrailing
-                                            )
-                                        )
-                                        .shadow(color: Color.blue.opacity(0.3), radius: 8, x: 0, y: 2)
-                                )
-                        }
-                        .buttonStyle(ScaleButtonStyle())
                         
                         // 从通讯录导入按钮
                         Button(action: {
@@ -262,9 +235,6 @@ struct ContactListView: View {
         }
         .sheet(item: $selectedContact) { contact in
             ContactDetailView(contact: contact)
-        }
-        .sheet(isPresented: $showBatchScanView) {
-            ContactBatchScanView()
         }
         .sheet(isPresented: $showImportSheet) {
             ContactImportView()

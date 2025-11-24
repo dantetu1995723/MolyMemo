@@ -4,6 +4,7 @@ import WebKit
 
 // AI智能表单填写服务
 // 结合传统规则 + AI视觉理解，适配各种开票平台
+@MainActor
 class AIFormFillerService {
     
     // 智能填写表单（两阶段策略）

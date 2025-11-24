@@ -588,14 +588,14 @@ struct TodoCardView: View {
         // 如果有日历事件，先删除日历事件
         if let eventId = todo.calendarEventId {
             Task {
-                await CalendarManager.shared.deleteCalendarEvent(eventIdentifier: eventId)
+                _ = await CalendarManager.shared.deleteCalendarEvent(eventIdentifier: eventId)
             }
         }
-
+        
         // 如果有通知，删除通知
         if let notificationId = todo.notificationId {
             Task {
-                await CalendarManager.shared.cancelNotification(id: notificationId)
+                CalendarManager.shared.cancelNotification(id: notificationId)
             }
         }
 

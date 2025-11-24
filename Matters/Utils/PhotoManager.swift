@@ -37,9 +37,20 @@ class PhotoManager {
     
     /// 提示用户选择更多照片（在有限访问模式下）
     func presentLimitedLibraryPicker() {
-        if #available(iOS 14, *) {
-            PHPhotoLibrary.shared().presentLimitedLibraryPicker(from: UIApplication.shared.windows.first?.rootViewController ?? UIViewController())
+        guard #available(iOS 14, *) else { return }
+        
+        // iOS 15+ 不再推荐直接访问 UIApplication.shared.windows，
+        // 这里通过当前激活的 UIWindowScene 获取 keyWindow。
+        guard let scene = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene })
+            .first(where: { $0.activationState == .foregroundActive }),
+              let window = scene.windows.first(where: { $0.isKeyWindow }),
+              let rootViewController = window.rootViewController else {
+            print("⚠️ 无法找到有效的根视图控制器，无法打开相册选择器")
+            return
         }
+        
+        PHPhotoLibrary.shared().presentLimitedLibraryPicker(from: rootViewController)
     }
     
     /// 获取相册最近的一张照片

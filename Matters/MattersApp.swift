@@ -58,6 +58,10 @@ struct MattersApp: App {
                 .onAppear {
                     print("🚀 ContentView onAppear - App 启动")
                     // 不再在启动时加载聊天记录，改为在进入聊天室时懒加载
+                    
+                    // 立即初始化 LiveRecordingManager（会自动清理残留的Live Activity）
+                    _ = LiveRecordingManager.shared
+                    print("✅ LiveRecordingManager 已初始化，残留Activity已清理")
 
                     // 请求通知权限
                     Task {
@@ -152,15 +156,6 @@ struct MattersApp: App {
                         }
                         LiveRecordingManager.shared.stopRecording(modelContext: modelContainer.mainContext)
                         print("✅ 录音已停止并保存")
-                    }
-                }
-                .onReceive(NotificationCenter.default.publisher(for: UIApplication.willTerminateNotification)) { _ in
-                    print("🚨 App即将完全退出")
-                    // 确保LiveRecordingManager已经处理了录音保存
-                    // 如果还在录音，强制停止并保存
-                    if LiveRecordingManager.shared.isRecording {
-                        print("⚠️ 检测到录音未停止，执行紧急保存")
-                        LiveRecordingManager.shared.stopRecording(modelContext: modelContainer.mainContext)
                     }
                 }
                 .task {

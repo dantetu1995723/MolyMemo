@@ -2,6 +2,16 @@ import Foundation
 import Speech
 import AVFoundation
 
+// 为 AVAssetExportSession 提供一个简单的包装类型，标记为 @unchecked Sendable，
+// 避免直接为系统类型扩展 Sendable 带来的警告。
+private final class ExportSessionBox: @unchecked Sendable {
+    let exporter: AVAssetExportSession
+    
+    init(_ exporter: AVAssetExportSession) {
+        self.exporter = exporter
+    }
+}
+
 class SpeechRecognizer: ObservableObject {
     @Published var isRecording = false
     @Published var recognizedText = ""
@@ -212,14 +222,23 @@ class SpeechRecognizer: ObservableObject {
         segmentDuration: TimeInterval = 5 * 60
     ) async throws -> String {
         let asset = AVURLAsset(url: audioURL)
-        let totalSeconds = CMTimeGetSeconds(asset.duration)
+        
+        // 使用新的异步属性加载 duration，兼容旧系统
+        let durationTime: CMTime
+        if #available(iOS 16.0, *) {
+            durationTime = try await asset.load(.duration)
+        } else {
+            durationTime = asset.duration
+        }
+        
+        let totalSeconds = CMTimeGetSeconds(durationTime)
         
         // 如果总时长本身不长，就按整段识别即可
         if totalSeconds.isNaN || totalSeconds <= segmentDuration {
             return try await transcribeAudioFile(audioURL: audioURL)
         }
         
-        let timescale = asset.duration.timescale == 0 ? CMTimeScale(NSEC_PER_SEC) : asset.duration.timescale
+        let timescale = durationTime.timescale == 0 ? CMTimeScale(NSEC_PER_SEC) : durationTime.timescale
         let segmentCount = Int(ceil(totalSeconds / segmentDuration))
         var allText: [String] = []
         let tempDir = FileManager.default.temporaryDirectory
@@ -236,30 +255,39 @@ class SpeechRecognizer: ObservableObject {
             let durationTime = CMTime(seconds: currentDuration, preferredTimescale: timescale)
             let timeRange = CMTimeRange(start: startTime, duration: durationTime)
             
-            guard let exporter = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetAppleM4A) else {
-                continue
-            }
-            
             let outputURL = tempDir.appendingPathComponent("\(baseName)_part_\(index).m4a")
             // 清理旧文件
             try? FileManager.default.removeItem(at: outputURL)
             
-            exporter.outputURL = outputURL
-            exporter.outputFileType = .m4a
+            guard let exporter = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetAppleM4A) else {
+                continue
+            }
+            
             exporter.timeRange = timeRange
             
-            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-                exporter.exportAsynchronously {
-                    switch exporter.status {
-                    case .completed:
-                        continuation.resume()
-                    case .failed, .cancelled:
-                        let error = exporter.error ?? NSError(domain: "SpeechRecognizer", code: -3, userInfo: [NSLocalizedDescriptionKey: "音频分段导出失败"])
-                        continuation.resume(throwing: error)
-                    default:
-                        // 其他状态理论上不会在回调里出现，这里兜底
-                        let error = NSError(domain: "SpeechRecognizer", code: -4, userInfo: [NSLocalizedDescriptionKey: "未知导出状态"])
-                        continuation.resume(throwing: error)
+            if #available(iOS 18.0, *) {
+                // iOS 18 及以上使用新的异步导出 API，避免废弃警告
+                try await exporter.export(to: outputURL, as: .m4a)
+            } else {
+                exporter.outputURL = outputURL
+                exporter.outputFileType = .m4a
+                
+                let exporterBox = ExportSessionBox(exporter)
+                
+                try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                    exporterBox.exporter.exportAsynchronously {
+                        let exporter = exporterBox.exporter
+                        switch exporter.status {
+                        case .completed:
+                            continuation.resume()
+                        case .failed, .cancelled:
+                            let error = exporter.error ?? NSError(domain: "SpeechRecognizer", code: -3, userInfo: [NSLocalizedDescriptionKey: "音频分段导出失败"])
+                            continuation.resume(throwing: error)
+                        default:
+                            // 其他状态理论上不会在回调里出现，这里兜底
+                            let error = NSError(domain: "SpeechRecognizer", code: -4, userInfo: [NSLocalizedDescriptionKey: "未知导出状态"])
+                            continuation.resume(throwing: error)
+                        }
                     }
                 }
             }

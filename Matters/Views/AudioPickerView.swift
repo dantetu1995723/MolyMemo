@@ -22,29 +22,40 @@ struct AudioPickerView: View {
                 print("选择数量: \(urls.count)")
                 
                 if let url = urls.first {
-                    // 获取音频文件信息
+                    // 获取音频文件信息（使用异步 API 获取时长）
                     let fileName = url.lastPathComponent
-                    let duration = getAudioDuration(url: url)
                     
-                    print("文件名: \(fileName)")
-                    print("时长: \(String(format: "%.1f", duration))秒")
-                    
-                    onAudioSelected(url, fileName, duration)
+                    Task {
+                        let duration = await getAudioDuration(url: url)
+                        
+                        print("文件名: \(fileName)")
+                        print("时长: \(String(format: "%.1f", duration))秒")
+                        
+                        await MainActor.run {
+                            onAudioSelected(url, fileName, duration)
+                            dismiss()
+                        }
+                        
+                        print("======================================\n")
+                    }
                 } else {
                     print("用户取消选择")
+                    dismiss()
+                    print("======================================\n")
                 }
-                
-                dismiss()
-                print("======================================\n")
             }
         )
     }
     
     // 获取音频时长
-    private func getAudioDuration(url: URL) -> TimeInterval {
+    private func getAudioDuration(url: URL) async -> TimeInterval {
         let audioAsset = AVURLAsset(url: url)
-        let duration = audioAsset.duration
-        let seconds = CMTimeGetSeconds(duration)
+        guard let durationTime = try? await audioAsset.load(.duration) else {
+            print("⚠️ 异步获取音频时长失败，返回0秒")
+            return 0
+        }
+
+        let seconds = CMTimeGetSeconds(durationTime)
         
         // 如果duration无效，返回0
         if seconds.isNaN || seconds.isInfinite {

@@ -33,6 +33,8 @@ class LiveRecordingManager: ObservableObject {
     private init() {
         // 监听app状态变化，确保后台录音正常
         setupBackgroundHandling()
+        // 启动时清理所有残留的Live Activity
+        cleanupStaleActivities()
     }
     
     // 开始录音
@@ -51,13 +53,25 @@ class LiveRecordingManager: ObservableObject {
     }
     
     private func requestPermissions(completion: @escaping (Bool) -> Void) {
-        // 请求麦克风权限
-        AVAudioSession.sharedInstance().requestRecordPermission { micGranted in
+        // 请求麦克风权限（iOS 17 及以上使用 AVAudioApplication）
+        let requestMicPermission: (@escaping (Bool) -> Void) -> Void = { handler in
+            if #available(iOS 17.0, *) {
+                AVAudioApplication.requestRecordPermission { granted in
+                    handler(granted)
+                }
+            } else {
+                AVAudioSession.sharedInstance().requestRecordPermission { granted in
+                    handler(granted)
+                }
+            }
+        }
+
+        requestMicPermission { micGranted in
             guard micGranted else {
                 completion(false)
                 return
             }
-            
+
             // 请求语音识别权限
             SFSpeechRecognizer.requestAuthorization { authStatus in
                 DispatchQueue.main.async {
@@ -71,7 +85,12 @@ class LiveRecordingManager: ObservableObject {
         // 配置音频会话 - 支持后台录音
         let audioSession = AVAudioSession.sharedInstance()
         do {
-            try audioSession.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth, .mixWithOthers])
+            let options: AVAudioSession.CategoryOptions = [
+                .defaultToSpeaker,
+                .allowBluetoothA2DP,
+                .mixWithOthers
+            ]
+            try audioSession.setCategory(.playAndRecord, mode: .default, options: options)
             try audioSession.setActive(true)
         } catch {
             print("❌ 音频会话配置失败: \(error)")
@@ -275,6 +294,55 @@ class LiveRecordingManager: ObservableObject {
             return
         }
         
+        let audioPath = audioURL.path  // 先保存为局部变量，供Predicate使用
+        
+        // 第一层：严格按文件路径去重（同一文件只保存一次）
+        let pathDescriptor = FetchDescriptor<Meeting>(
+            predicate: #Predicate<Meeting> { meeting in
+                meeting.audioFilePath == audioPath
+            }
+        )
+        
+        do {
+            let existingMeetings = try modelContext.fetch(pathDescriptor)
+            if !existingMeetings.isEmpty {
+                print("⚠️ 该录音已存在（按路径去重），跳过保存：\(audioURL.lastPathComponent)")
+                return
+            }
+        } catch {
+            print("⚠️ 检查重复录音失败，继续保存: \(error)")
+        }
+        
+        // 第二层：兜底去重（防止极端情况下生成两个不同路径但实质相同的录音）
+        // 规则：在最近1分钟内、时长相差不超过1秒的记录，视为同一段录音
+        let now = Date()
+        let recentDescriptor = FetchDescriptor<Meeting>(
+            sortBy: [SortDescriptor(\Meeting.createdAt, order: .reverse)]
+        )
+        
+        if let recentMeetings = try? modelContext.fetch(recentDescriptor) {
+            if let duplicate = recentMeetings.prefix(20).first(where: { meeting in
+                let timeDiff = abs(meeting.createdAt.timeIntervalSince(now))
+                let durationDiff = abs(meeting.duration - recordingDuration)
+                return timeDiff <= 60 && durationDiff <= 1
+            }) {
+                print("⚠️ 检测到可能重复录音，复用已有记录: \(duplicate.title)")
+                
+                // 如果旧记录没有路径，则补全路径
+                if duplicate.audioFilePath == nil {
+                    duplicate.audioFilePath = audioPath
+                    do {
+                        try modelContext.save()
+                        print("✅ 已为旧记录补全音频路径")
+                    } catch {
+                        print("❌ 补全旧记录路径失败: \(error)")
+                    }
+                }
+                
+                return
+            }
+        }
+        
         let meeting = Meeting(
             title: "会议录音 - \(formatDate(Date()))",
             content: recognizedText,
@@ -360,11 +428,91 @@ class LiveRecordingManager: ObservableObject {
         )
         
         Task {
-            await activity.end(using: finalState, dismissalPolicy: .after(.now + 3))
+            if #available(iOS 16.2, *) {
+                // 新API：使用 ActivityContent 结束 Activity，避免使用已废弃的 using: 版本
+                let content = ActivityContent(
+                    state: finalState,
+                    staleDate: nil,
+                    relevanceScore: 100.0
+                )
+                await activity.end(content, dismissalPolicy: .after(.now + 3))
+            } else {
+                // 旧系统上使用无状态的结束方式
+                await activity.end(dismissalPolicy: .after(.now + 3))
+            }
             print("✅ Live Activity 已结束")
         }
         
         self.activity = nil
+    }
+    
+    // 立即强制结束Live Activity（用于App终止时）
+    private func endLiveActivityImmediately() {
+        guard let activity = activity else { 
+            // 没有activity实例，尝试清理所有活动的Activity
+            cleanupStaleActivities()
+            return
+        }
+        
+        let finalState = MeetingRecordingAttributes.ContentState(
+            transcribedText: recognizedText,
+            duration: recordingDuration,
+            isRecording: false,
+            isPaused: false
+        )
+        
+        let semaphore = DispatchSemaphore(value: 0)
+        Task {
+            if #available(iOS 16.2, *) {
+                let content = ActivityContent(
+                    state: finalState,
+                    staleDate: nil,
+                    relevanceScore: 100.0
+                )
+                await activity.end(content, dismissalPolicy: .immediate)
+            } else {
+                await activity.end(dismissalPolicy: .immediate)
+            }
+            semaphore.signal()
+        }
+        _ = semaphore.wait(timeout: .now() + 0.5)
+        self.activity = nil
+        print("✅ Live Activity 已立即结束")
+    }
+    
+    // 清理所有残留的Live Activity
+    private func cleanupStaleActivities() {
+        print("🧹 检查并清理残留的Live Activity...")
+        
+        Task { @MainActor in
+            let activities = Activity<MeetingRecordingAttributes>.activities
+            guard !activities.isEmpty else {
+                print("   没有残留的Activity")
+                return
+            }
+            
+            print("   发现 \(activities.count) 个残留的Activity，开始清理...")
+            for activity in activities {
+                let finalState = MeetingRecordingAttributes.ContentState(
+                    transcribedText: "",
+                    duration: 0,
+                    isRecording: false,
+                    isPaused: false
+                )
+                if #available(iOS 16.2, *) {
+                    let content = ActivityContent(
+                        state: finalState,
+                        staleDate: nil,
+                        relevanceScore: 100.0
+                    )
+                    await activity.end(content, dismissalPolicy: .immediate)
+                } else {
+                    await activity.end(dismissalPolicy: .immediate)
+                }
+                print("   ✅ 已清理一个残留Activity")
+            }
+            print("✅ 所有残留Activity已清理完成")
+        }
     }
     
     // MARK: - 后台处理
@@ -458,7 +606,7 @@ class LiveRecordingManager: ObservableObject {
             // 保存到数据库
             saveToMeeting(modelContext: context)
             
-            // 结束 Live Activity
+            // 同步结束 Live Activity（使用信号量等待完成）
             if let activity = activity {
                 let finalState = MeetingRecordingAttributes.ContentState(
                     transcribedText: recognizedText,
@@ -467,12 +615,21 @@ class LiveRecordingManager: ObservableObject {
                     isPaused: false
                 )
                 
+                let semaphore = DispatchSemaphore(value: 0)
                 Task {
                     await activity.end(using: finalState, dismissalPolicy: .immediate)
+                    semaphore.signal()
                 }
+                // 最多等待0.5秒
+                _ = semaphore.wait(timeout: .now() + 0.5)
+                self.activity = nil
+                print("✅ Live Activity 已强制结束")
             }
             
             print("✅ 录音已自动保存（App终止）")
+        } else {
+            // 即使没在录音，也要清理可能残留的Activity
+            endLiveActivityImmediately()
         }
     }
     

@@ -115,33 +115,6 @@ struct ContactPreviewData: Equatable {
     var existingContactId: UUID?
 }
 
-// 批量人脉预览：单个联系人项（带状态）
-struct ContactItemPreview: Identifiable, Equatable {
-    let id = UUID()
-    var contactData: ContactPreviewData  // 复用现有数据结构
-    var isSelected: Bool = true  // 是否选中
-    var isExpanded: Bool = false  // 是否展开详情
-    var groupIndex: Int  // 所属分组（第几个10人组）
-}
-
-// 批量人脉预览数据
-struct BatchContactPreviewData: Equatable {
-    var contacts: [ContactItemPreview]  // 所有联系人
-    var totalImages: Int  // 总图片数
-    var successCount: Int  // 成功识别数量
-    var failedCount: Int  // 失败数量
-    
-    // 计算属性：新增联系人数量
-    var newContactsCount: Int {
-        contacts.filter { !$0.contactData.isEditMode }.count
-    }
-    
-    // 计算属性：更新联系人数量
-    var updateContactsCount: Int {
-        contacts.filter { $0.contactData.isEditMode }.count
-    }
-}
-
 // 报销预览数据
 struct ExpensePreviewData: Equatable {
     var amount: Double
@@ -170,7 +143,6 @@ struct ChatMessage: Identifiable, Equatable {
     var showActionButtons: Bool = false
     var todoPreview: TodoPreviewData? = nil
     var contactPreview: ContactPreviewData? = nil
-    var batchContactPreview: BatchContactPreviewData? = nil  // 批量人脉预览
     var expensePreview: ExpensePreviewData? = nil
     var notes: String? = nil  // 临时存储数据（如待处理的报销信息）
     var showIntentSelection: Bool = false  // 是否显示意图选择器
@@ -225,7 +197,6 @@ struct ChatMessage: Identifiable, Equatable {
         lhs.showActionButtons == rhs.showActionButtons &&
         lhs.todoPreview == rhs.todoPreview &&
         lhs.contactPreview == rhs.contactPreview &&
-        lhs.batchContactPreview == rhs.batchContactPreview &&
         lhs.expensePreview == rhs.expensePreview &&
         lhs.showIntentSelection == rhs.showIntentSelection &&
         lhs.isWrongClassification == rhs.isWrongClassification &&
@@ -287,6 +258,7 @@ struct StreamingMessageManager {
 // MARK: - 应用状态管理
 
 // 应用状态管理 - 管理主页和聊天室状态
+@MainActor
 class AppState: ObservableObject {
     // 界面状态
     @Published var isMenuExpanded: Bool = false
@@ -443,30 +415,25 @@ class AppState: ObservableObject {
         var accumulatedText = ""
         var charCount = 0
 
-        // 逐字符显示，每次更新都刷新
+        // 逐字符显示，每次更新都刷新（整个方法在 MainActor 上执行）
         for char in content {
             accumulatedText.append(char)
             charCount += 1
 
-            // 直接使用缓存的索引更新，避免重复查找
-            await MainActor.run {
-                // 确保索引仍然有效（简单边界检查）
-                guard messageIndex < chatMessages.count else {
-                    print("⚠️ 播放中消息索引失效")
-                    return
-                }
-                
-                // 直接更新消息内容，使用缓存的索引
-                var updatedMessage = chatMessages[messageIndex]
-                updatedMessage.content = accumulatedText
-                chatMessages[messageIndex] = updatedMessage
+            // 确保索引仍然有效（简单边界检查）
+            guard messageIndex < chatMessages.count else {
+                print("⚠️ 播放中消息索引失效")
+                break
             }
+            
+            // 直接更新消息内容，使用缓存的索引
+            var updatedMessage = chatMessages[messageIndex]
+            updatedMessage.content = accumulatedText
+            chatMessages[messageIndex] = updatedMessage
             
             // 每2个字符触发一次轻微震动
             if charCount % 2 == 0 {
-                await MainActor.run {
-                    HapticFeedback.soft()
-                }
+                HapticFeedback.soft()
             }
             
             // 字符间隔延迟
@@ -474,21 +441,19 @@ class AppState: ObservableObject {
         }
 
         // 最终更新：确保显示完整内容
-        await MainActor.run {
-            guard messageIndex < chatMessages.count else {
-                print("⚠️ 最终更新时消息索引失效")
-                return
-            }
-            
-            var updatedMessage = chatMessages[messageIndex]
-            updatedMessage.content = content
-            updatedMessage.streamingState = .completed
-            chatMessages[messageIndex] = updatedMessage
-            print("✅ 消息状态已更新为completed")
-            
-            // 播放完成时触发一次成功反馈
-            HapticFeedback.success()
+        guard messageIndex < chatMessages.count else {
+            print("⚠️ 最终更新时消息索引失效")
+            return
         }
+        
+        var updatedMessage = chatMessages[messageIndex]
+        updatedMessage.content = content
+        updatedMessage.streamingState = .completed
+        chatMessages[messageIndex] = updatedMessage
+        print("✅ 消息状态已更新为completed")
+        
+        // 播放完成时触发一次成功反馈
+        HapticFeedback.success()
     }
 
     /// 处理流式错误
@@ -577,35 +542,23 @@ class AppState: ObservableObject {
         }
     }
 
-    /// 异步加载最近的 N 条消息（懒加载）
-    func loadRecentMessages(modelContext: ModelContext, limit: Int = 50) async {
-        print("🚀 开始异步加载最近 \(limit) 条消息...")
+    /// 加载最近的 N 条消息（懒加载，保持实现简单，避免跨 actor 捕获 ModelContext）
+    func loadRecentMessages(modelContext: ModelContext, limit: Int = 50) {
+        print("🚀 开始加载最近 \(limit) 条消息...")
 
-        // 在后台线程执行数据库查询
-        let result = await Task.detached {
-            var descriptor = FetchDescriptor<PersistentChatMessage>(
-                sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
-            )
-            descriptor.fetchLimit = limit
+        var descriptor = FetchDescriptor<PersistentChatMessage>(
+            sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
+        )
+        descriptor.fetchLimit = limit
 
-            do {
-                let persistentMessages = try modelContext.fetch(descriptor)
-                // 反转顺序，使最早的消息在前面
-                let loadedMessages = persistentMessages.reversed().map { $0.toChatMessage() }
-                return (loadedMessages, nil as Error?)
-            } catch {
-                return ([ChatMessage](), error)
-            }
-        }.value
-
-        // 在主线程更新 UI
-        await MainActor.run {
-            if let error = result.1 {
-                print("⚠️ 加载最近消息失败: \(error)")
-            } else {
-                self.chatMessages = result.0
-                print("✅ 异步加载了 \(result.0.count) 条最近的消息")
-            }
+        do {
+            let persistentMessages = try modelContext.fetch(descriptor)
+            // 反转顺序，使最早的消息在前面
+            let loadedMessages = persistentMessages.reversed().map { $0.toChatMessage() }
+            self.chatMessages = loadedMessages
+            print("✅ 加载了 \(loadedMessages.count) 条最近的消息")
+        } catch {
+            print("⚠️ 加载最近消息失败: \(error)")
         }
     }
 

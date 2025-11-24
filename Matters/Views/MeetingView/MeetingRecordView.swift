@@ -182,6 +182,12 @@ struct MeetingRecordView: View {
             set: { if !$0 { renamingRecordingId = nil } }
         )) {
             TextField("输入新标题", text: $newTitle)
+                .onChange(of: newTitle) { oldValue, newValue in
+                    // 限制最多50个字符
+                    if newValue.count > 50 {
+                        newTitle = String(newValue.prefix(50))
+                    }
+                }
             Button("取消", role: .cancel) {
                 renamingRecordingId = nil
             }
@@ -192,7 +198,7 @@ struct MeetingRecordView: View {
                 }
             }
         } message: {
-            Text("为这个会议录音设置一个新标题")
+            Text("为这个会议录音设置一个新标题（最多50字）")
         }
         .onAppear {
             setupAudio()
@@ -202,18 +208,24 @@ struct MeetingRecordView: View {
                 return modelContext
             }
             
-            // 先尝试恢复孤立录音，再加载列表
-            RecordingRecoveryManager.recoverOrphanedRecordings(modelContext: modelContext)
-            
-            // 加载已有的录音
+            // 先加载已有的录音
             loadRecordingsFromMeetings()
+            
+            // 延迟恢复孤立录音（避免和App终止时的保存操作冲突）
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                Task {
+                    await RecordingRecoveryManager.recoverOrphanedRecordings(modelContext: modelContext)
+                    // 恢复后再次加载
+                    loadRecordingsFromMeetings()
+                }
+            }
             
             // 如果LiveRecordingManager正在录音，确保状态同步
             if recordingManager.isRecording {
                 print("✅ 检测到录音正在进行中，状态已同步")
             }
             
-            withAnimation(.spring(response: 0.5, dampingFraction: 0.75)) {
+        withAnimation(.spring(response: 0.5, dampingFraction: 0.75)) {
                 showHeader = true
             }
             
@@ -258,20 +270,36 @@ struct MeetingRecordView: View {
         do {
             let meetings = try modelContext.fetch(descriptor)
             
-            recordingItems = meetings.compactMap { meeting in
-            guard let audioPath = meeting.audioFilePath,
-                  FileManager.default.fileExists(atPath: audioPath) else {
-                return nil
-            }
-            
-            return RecordingItem(
-                id: meeting.id,
-                audioURL: URL(fileURLWithPath: audioPath),
-                createdAt: meeting.createdAt,
-                duration: meeting.duration,
-                meetingSummary: meeting.content,
-                title: meeting.title
-            )
+            // 根据「时间+时长」兜底去重，同一段录音只展示一次
+            // 即使底层因为异常生成了两条记录，这里也只会看到一条
+            var seenKeys = Set<String>()
+            recordingItems = meetings.compactMap { (meeting: Meeting) -> RecordingItem? in
+                guard let audioPath = meeting.audioFilePath,
+                      FileManager.default.fileExists(atPath: audioPath) else {
+                    return nil
+                }
+                
+                // 以分钟级时间戳 + 四舍五入后的时长作为“同一段录音”的标识
+                let minuteStamp = Int(meeting.createdAt.timeIntervalSince1970 / 60)
+                let roundedDuration = Int(meeting.duration.rounded())
+                let key = "\(minuteStamp)|\(roundedDuration)"
+                
+                guard !seenKeys.contains(key) else {
+                    let fileName = URL(fileURLWithPath: audioPath).lastPathComponent
+                    print("⚠️ 检测到重复会议记录（同时间同时长），已在列表中隐藏: \(fileName)")
+                    return nil
+                }
+                
+                seenKeys.insert(key)
+                
+                return RecordingItem(
+                    id: meeting.id,
+                    audioURL: URL(fileURLWithPath: audioPath),
+                    createdAt: meeting.createdAt,
+                    duration: meeting.duration,
+                    meetingSummary: meeting.content,
+                    title: meeting.title
+                )
             }
         } catch {
             print("❌ 读取录音失败: \(error)")
@@ -511,16 +539,20 @@ struct MeetingRecordView: View {
             return
         }
         
+        // 限制字数（最多50个字符）
+        let trimmedTitle = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        let finalTitle = trimmedTitle.count > 50 ? String(trimmedTitle.prefix(50)) : trimmedTitle
+        
         // 更新数据库
         if let meeting = allMeetings.first(where: { $0.id == item.id }) {
-            meeting.title = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+            meeting.title = finalTitle
             do {
                 try modelContext.save()
                 print("✅ 标题已更新: \(newTitle)")
                 
                 // 更新本地列表
                 if let index = recordingItems.firstIndex(where: { $0.id == item.id }) {
-                    recordingItems[index].title = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+                    recordingItems[index].title = finalTitle
                 }
                 
                 HapticFeedback.success()
@@ -687,7 +719,7 @@ struct CapsuleRecordingButton: View {
             }
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isRecording)
-        .onChange(of: isRecording) { newValue in
+        .onChange(of: isRecording, initial: false) { _, newValue in
             if newValue && !isPaused {
                 withAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true)) {
                     pulseScale = 1.3
@@ -732,6 +764,24 @@ struct RecordingItemCard: View {
         isDragging || abs(offset) > 5
     }
     
+    // 根据标题长度计算字体大小（自适应）
+    private func calculateTitleFontSize(_ title: String) -> CGFloat {
+        let titleLength = title.isEmpty ? 4 : title.count
+        // 根据长度动态调整：短标题18，长标题逐渐减小，最小14
+        // 使用更平滑的递减曲线
+        if titleLength <= 8 {
+            return 18
+        } else if titleLength <= 15 {
+            return 17.5
+        } else if titleLength <= 25 {
+            return 16.5
+        } else if titleLength <= 35 {
+            return 15.5
+        } else {
+            return 14.5
+        }
+    }
+    
     var body: some View {
         ZStack(alignment: .trailing) {
             // 删除背景层
@@ -758,141 +808,186 @@ struct RecordingItemCard: View {
             // 前景卡片内容
         VStack(spacing: 0) {
             // 主卡片内容
-            VStack(spacing: 14) {
-                // 第一行：播放按钮 + 标题信息 + 主要操作按钮
-                HStack(alignment: .center, spacing: 14) {
-                // 左侧播放按钮
-                Button(action: {
-                    if isPlaying {
-                        onStop()
-                    } else {
-                        onPlay()
-                    }
-                }) {
-                    ZStack {
-                        Circle()
-                            .fill(Color(red: 0.65, green: 0.85, blue: 0.15).opacity(isPlaying ? 0.25 : 0.15))
-                        
-                        Image(systemName: isPlaying ? "stop.fill" : "play.fill")
-                                .font(.system(size: 16, weight: .bold))
-                            .foregroundColor(Color(red: 0.55, green: 0.75, blue: 0.05))
-                    }
-                        .frame(width: 50, height: 50)
-                }
-                .buttonStyle(PlainButtonStyle())
-                .disabled(isButtonDisabled)
-                
-                    // 中间信息区域
-                    VStack(alignment: .leading, spacing: 6) {
-                        // 标题 + 编辑
-                        HStack(spacing: 6) {
-                            Text(item.title.isEmpty ? "会议录音" : item.title)
-                                .font(.system(size: 16, weight: .bold, design: .rounded))
-                        .foregroundColor(Color.black.opacity(0.85))
-                                .lineLimit(1)
-                            
-                            Button(action: onRename) {
-                                Image(systemName: "pencil.circle.fill")
-                                    .font(.system(size: 16, weight: .medium))
-                                    .foregroundColor(Color.black.opacity(0.3))
-                            }
-                            .buttonStyle(PlainButtonStyle())
-                            .disabled(isButtonDisabled)
+            VStack(spacing: 16) {
+                // 标题和操作行
+                HStack(alignment: .top, spacing: 12) {
+                    // 播放按钮（放在标题前面）
+                    Button(action: {
+                        if isPlaying {
+                            onStop()
+                        } else {
+                            onPlay()
                         }
-                        
-                        // 时间和时长
-                    HStack(spacing: 6) {
-                            Text(item.formattedDate)
-                                .font(.system(size: 12, weight: .medium, design: .rounded))
-                            .foregroundColor(Color.black.opacity(0.5))
-                            
-                            Text("·")
-                                .font(.system(size: 12))
-                                .foregroundColor(Color.black.opacity(0.3))
-                            
-                        Text(item.formattedDuration)
-                            .font(.system(size: 12, weight: .medium, design: .rounded))
-                            .foregroundColor(Color.black.opacity(0.5))
-                    }
-                }
-                
-                    Spacer(minLength: 8)
-                
-                    // 右侧操作按钮组
-                    HStack(spacing: 10) {
-                        // 分享按钮（仅在有会议纪要时显示）
-                        if item.hasTranscription {
-                            Button(action: onCopyAndShare) {
-                                Image(systemName: "square.and.arrow.up")
-                                    .font(.system(size: 16, weight: .medium))
-                                    .foregroundColor(Color(red: 0.55, green: 0.75, blue: 0.05))
-                                    .frame(width: 42, height: 42)
+                    }) {
+                        Image(systemName: isPlaying ? "stop.fill" : "play.fill")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(width: 40, height: 40)
                             .background(
                                 Circle()
-                                            .fill(Color(red: 0.65, green: 0.85, blue: 0.15).opacity(0.15))
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [
+                                                Color(red: 0.65, green: 0.85, blue: 0.15),
+                                                Color(red: 0.58, green: 0.78, blue: 0.1)
+                                            ],
+                                            startPoint: .leading,
+                                            endPoint: .trailing
+                                        )
+                                    )
                             )
                     }
                     .buttonStyle(ScaleButtonStyle())
                     .disabled(isButtonDisabled)
-                        }
                     
-                    // 转换/折叠按钮
-                    if isTranscribing {
-                        ProgressView()
-                            .tint(Color(red: 0.65, green: 0.85, blue: 0.15))
-                                .frame(width: 42, height: 42)
-                    } else if item.hasTranscription {
-                        // 已转换，显示折叠按钮
-                        Button(action: onToggle) {
-                            Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                                    .font(.system(size: 16, weight: .semibold))
-                                .foregroundColor(.white)
-                                    .frame(width: 42, height: 42)
+                    // 标题区域 - 确保可以换行
+                    Text(item.title.isEmpty ? "会议录音" : item.title)
+                        .font(.system(size: calculateTitleFontSize(item.title), weight: .bold, design: .rounded))
+                        .foregroundColor(Color.black.opacity(0.9))
+                        .lineLimit(2)
+                        .truncationMode(.tail)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .layoutPriority(1)
+                    
+                    // 操作按钮组
+                    HStack(spacing: 10) {
+                        // 编辑按钮
+                        Button(action: onRename) {
+                            Image(systemName: "square.and.pencil")
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundColor(Color.black.opacity(0.4))
+                                .frame(width: 40, height: 40)
                                 .background(
-                                        Circle()
-                                        .fill(
-                                            LinearGradient(
-                                                colors: [
-                                                    Color(red: 0.65, green: 0.85, blue: 0.15),
-                                                    Color(red: 0.58, green: 0.78, blue: 0.1)
-                                                ],
-                                                startPoint: .leading,
-                                                endPoint: .trailing
-                                            )
-                                        )
+                                    Circle()
+                                        .fill(Color.black.opacity(0.05))
                                 )
                         }
                         .buttonStyle(ScaleButtonStyle())
                         .disabled(isButtonDisabled)
-                    } else {
+                        
+                        // 分享按钮（仅在有会议纪要时显示）
+                        if item.hasTranscription {
+                            Button(action: onCopyAndShare) {
+                                Image(systemName: "square.and.arrow.up")
+                                    .font(.system(size: 15, weight: .medium))
+                                    .foregroundColor(Color(red: 0.55, green: 0.75, blue: 0.05))
+                                    .frame(width: 40, height: 40)
+                                    .background(
+                                        Circle()
+                                            .fill(Color(red: 0.65, green: 0.85, blue: 0.15).opacity(0.15))
+                                    )
+                            }
+                            .buttonStyle(ScaleButtonStyle())
+                            .disabled(isButtonDisabled)
+                        }
+                        
+                        // 转换/折叠按钮
+                        if isTranscribing {
+                            ProgressView()
+                                .tint(Color(red: 0.65, green: 0.85, blue: 0.15))
+                                .frame(width: 40, height: 40)
+                        } else if item.hasTranscription {
+                            // 已转换，显示折叠按钮
+                            Button(action: onToggle) {
+                                Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundColor(.white)
+                                    .frame(width: 40, height: 40)
+                                    .background(
+                                        Circle()
+                                            .fill(
+                                                LinearGradient(
+                                                    colors: [
+                                                        Color(red: 0.65, green: 0.85, blue: 0.15),
+                                                        Color(red: 0.58, green: 0.78, blue: 0.1)
+                                                    ],
+                                                    startPoint: .leading,
+                                                    endPoint: .trailing
+                                                )
+                                            )
+                                    )
+                            }
+                            .buttonStyle(ScaleButtonStyle())
+                            .disabled(isButtonDisabled)
+                        } else {
                             // 未转换，显示转换图标按钮
-                        Button(action: onTranscribe) {
+                            Button(action: onTranscribe) {
                                 Image(systemName: "doc.text.fill")
-                                    .font(.system(size: 16, weight: .semibold))
-                                .foregroundColor(.white)
-                                    .frame(width: 42, height: 42)
-                                .background(
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundColor(.white)
+                                    .frame(width: 40, height: 40)
+                                    .background(
                                         Circle()
-                                        .fill(
-                                            LinearGradient(
-                                                colors: [
-                                                    Color(red: 0.65, green: 0.85, blue: 0.15),
-                                                    Color(red: 0.58, green: 0.78, blue: 0.1)
-                                                ],
-                                                startPoint: .leading,
-                                                endPoint: .trailing
+                                            .fill(
+                                                LinearGradient(
+                                                    colors: [
+                                                        Color(red: 0.65, green: 0.85, blue: 0.15),
+                                                        Color(red: 0.58, green: 0.78, blue: 0.1)
+                                                    ],
+                                                    startPoint: .leading,
+                                                    endPoint: .trailing
+                                                )
                                             )
-                                        )
-                                )
+                                    )
+                            }
+                            .buttonStyle(ScaleButtonStyle())
+                            .disabled(isButtonDisabled)
                         }
-                        .buttonStyle(ScaleButtonStyle())
-                        .disabled(isButtonDisabled)
                     }
                 }
-            }
+                
+                // 下半部分：日期和时长（底部信息栏）
+                HStack {
+                    HStack(spacing: 4) {
+                        Image(systemName: "calendar")
+                            .font(.system(size: 12))
+                        Text(item.formattedDate)
+                    }
+                    
+                    Spacer()
+                    
+                    HStack(spacing: 4) {
+                        Image(systemName: "clock")
+                            .font(.system(size: 12))
+                        Text(item.formattedDuration)
+                    }
+                }
+                .font(.system(size: 13, weight: .medium, design: .rounded))
+                .foregroundColor(Color.black.opacity(0.4))
+                .padding(.horizontal, 4)
             }
             .padding(.horizontal, 18)
             .padding(.vertical, 16)
+            
+            // 转文字进度显示（转文字过程中显示）
+            if isTranscribing {
+                VStack(spacing: 0) {
+                    Divider()
+                        .padding(.horizontal, 18)
+                    
+                    HStack(spacing: 12) {
+                        // 进度指示器
+                        ProgressView()
+                            .tint(Color(red: 0.65, green: 0.85, blue: 0.15))
+                            .scaleEffect(0.9)
+                        
+                        // 进度文本
+                        Text(transcriptionProgress.isEmpty ? "正在处理..." : transcriptionProgress)
+                            .font(.system(size: 14, weight: .medium, design: .rounded))
+                            .foregroundColor(Color.black.opacity(0.6))
+                        
+                        Spacer()
+                    }
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 12)
+                }
+                .background(
+                    Color(red: 0.65, green: 0.85, blue: 0.15).opacity(0.05)
+                )
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
             
             // 会议纪要/原始文本（展开时显示）
             if isExpanded, let summary = item.meetingSummary, !summary.isEmpty {
