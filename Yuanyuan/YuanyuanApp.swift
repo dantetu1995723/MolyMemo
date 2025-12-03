@@ -5,6 +5,7 @@ import UIKit
 @main
 struct YuanyuanApp: App {
     @StateObject private var appState = AppState()
+    @Environment(\.scenePhase) private var scenePhase
     
     // SwiftData 容器配置
     let modelContainer: ModelContainer
@@ -54,7 +55,6 @@ struct YuanyuanApp: App {
             ContentView()
                 .environmentObject(appState)
                 .modelContainer(modelContainer)
-                .environment(\.modelContext, modelContainer.mainContext)
                 .onAppear {
                     print("🚀 ContentView onAppear - App 启动")
                     // 不再在启动时加载聊天记录，改为在进入聊天室时懒加载
@@ -67,6 +67,10 @@ struct YuanyuanApp: App {
                     Task {
                         _ = await CalendarManager.shared.requestNotificationPermission()
                     }
+                    
+                    // App首次启动时，开始新session并生成基于历史的打招呼
+                    appState.startNewSession()
+                    appState.generateSessionGreeting(modelContext: modelContainer.mainContext)
                 }
                 .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("TriggerScreenshotAnalysis"))) { notification in
                     print("🎯 收到截图分析触发通知")
@@ -163,6 +167,43 @@ struct YuanyuanApp: App {
                     // 如果检测到录音Intent被触发，直接启动Live Activity
                     print("📱 App启动，检查是否有待处理的Intent")
                 }
+                .onChange(of: scenePhase) { oldPhase, newPhase in
+                    handleScenePhaseChange(from: oldPhase, to: newPhase)
+                }
+        }
+    }
+    
+    // MARK: - App生命周期处理
+    
+    /// 处理场景阶段变化
+    private func handleScenePhaseChange(from oldPhase: ScenePhase, to newPhase: ScenePhase) {
+        switch newPhase {
+        case .active:
+            // App进入前台
+            print("🌅 App进入前台")
+            
+            // 如果是从后台返回（不是首次启动），开始新session并生成打招呼
+            if oldPhase == .background {
+                appState.startNewSession()
+                appState.generateSessionGreeting(modelContext: modelContainer.mainContext)
+            } else if oldPhase == .inactive {
+                // 从inactive回来（比如下拉通知栏后收起），不需要重新生成
+                print("ℹ️ 从inactive恢复，不重新生成打招呼")
+            }
+            
+        case .inactive:
+            // App即将进入后台（过渡状态）
+            print("🌙 App进入inactive状态")
+            
+        case .background:
+            // App进入后台
+            print("💤 App进入后台")
+            
+            // 生成当前session的聊天总结
+            appState.generateSessionSummary(modelContext: modelContainer.mainContext)
+            
+        @unknown default:
+            break
         }
     }
     

@@ -1,15 +1,11 @@
 platform :ios, '18.0'
 
-target 'Matters' do
+target 'Yuanyuan' do
   use_frameworks!
   
   # 阿里云 OSS SDK
   pod 'AliyunOSSiOS', '~> 2.10.19'
   
-end
-
-target 'MattersWidget' do
-  use_frameworks!
 end
 
 post_install do |installer|
