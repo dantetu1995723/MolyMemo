@@ -4,11 +4,15 @@ import SwiftUI
 struct BlobShape: Shape {
     var time: Double  // 时间驱动相位变化
     var isAnimating: Bool // 是否播放动画
+    var amplitude: CGFloat = 0.2 // 波动幅度，默认 0.2
     
-    // 使形状可动画化
-    var animatableData: Double {
-        get { time }
-        set { time = newValue }
+    // 使形状可动画化（同时支持 time 和 amplitude 的动画）
+    var animatableData: AnimatablePair<Double, Double> {
+        get { AnimatablePair(time, Double(amplitude)) }
+        set {
+            time = newValue.first
+            amplitude = CGFloat(newValue.second)
+        }
     }
     
     func path(in rect: CGRect) -> Path {
@@ -23,8 +27,8 @@ struct BlobShape: Shape {
         var points: [CGPoint] = []
         
         // 预计算幅度，减少循环内计算
-        // 固定幅度：说话时 0.08，不说话时 0
-        let distortionScale: CGFloat = isAnimating ? 0.08 : 0
+        // 使用自定义幅度：说话时使用 amplitude，不说话时 0
+        let distortionScale: CGFloat = isAnimating ? amplitude : 0
         
         for i in 0..<pointsCount {
             let angle = Double(i) * angleStep
@@ -78,6 +82,10 @@ struct VoiceRecordingOverlay: View {
     @State private var showContent: Bool = false
     @State private var isExpanded: Bool = false
     @State private var showBlob: Bool = false
+    
+    // 语音转文字状态（学习底部圆的逻辑）
+    @State private var isOutputtingText: Bool = false
+    @State private var textOutputTimer: Timer?
     
     var body: some View {
         ZStack {
@@ -209,6 +217,28 @@ struct VoiceRecordingOverlay: View {
         }
         .onDisappear {
             stopTimeLoop()
+            textOutputTimer?.invalidate()
+        }
+        .onChange(of: transcript) { oldValue, newValue in
+            // 学习底部圆的逻辑：当识别到文字变化时
+            if !newValue.isEmpty {
+                // 激活转文字状态
+                if !isOutputtingText {
+                    isOutputtingText = true
+                }
+                
+                // 重置倒计时（语音转文字结束 1 秒后退回静止状态）
+                textOutputTimer?.invalidate()
+                textOutputTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: false) { _ in
+                    isOutputtingText = false
+                }
+            } else {
+                // 如果文字被清空，重置状态
+                if isOutputtingText {
+                    isOutputtingText = false
+                }
+                textOutputTimer?.invalidate()
+            }
         }
     }
     
@@ -232,14 +262,15 @@ struct VoiceRecordingOverlay: View {
     
     // 声波条高度计算
     private func waveBarHeight(for index: Int) -> CGFloat {
-        // 只有当语音转文字成功（transcript不为空）时才启动波动动画
+        // 学习底部圆的逻辑：区分静止和活跃波动状态
         let isSpeaking = !transcript.isEmpty && audioPower > 0.05
+        let isActiveWave = isSpeaking || isOutputtingText  // 统一活跃状态
         let baseHeight: CGFloat = 8
         
-        // 没声音时保持静止高度
-        guard isSpeaking else { return baseHeight }
+        // 非活跃状态时保持静止高度
+        guard isActiveWave else { return baseHeight }
         
-        // 有声音时固定幅度规律波动
+        // 活跃状态时波动
         // 让 time 持续变化产生动画
         let wave = sin(Double(index) * 0.8 + time * 6) * 0.5 + 0.5 // 0...1
         let height = baseHeight + 8 * CGFloat(wave)

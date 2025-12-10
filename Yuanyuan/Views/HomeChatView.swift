@@ -31,6 +31,12 @@ struct HomeChatView: View {
     @State private var blobTime: Double = 0
     @State private var blobTimer: Timer?
     @State private var showBlob: Bool = false
+    @State private var rotationAngle: Double = 0  // 小内切圆旋转角度
+    @State private var colorSpread: CGFloat = 0  // 颜色扩散比例 (0.0 -> 1.5)
+    
+    // 录音文字输出状态
+    @State private var isOutputtingText: Bool = false
+    @State private var textOutputTimer: Timer?
     
     // 语音输入状态
     @StateObject private var speechRecognizer = SpeechRecognizer()
@@ -137,6 +143,35 @@ struct HomeChatView: View {
             
             // 请求语音识别权限
             speechRecognizer.requestAuthorization()
+        }
+        .onChange(of: recordingTranscript) { oldValue, newValue in
+            // 当识别到文字变化时
+            if !newValue.isEmpty {
+                // 如果文字不为空，且有新内容（通常newValue会比oldValue长，或者是全新的内容）
+                // 激活波纹状态 - 使用与形状切换一致的动画
+                if !isOutputtingText {
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                        isOutputtingText = true
+                    }
+                }
+                
+                // 重置倒计时（语音转文字结束 1 秒后退回绕圈状态）
+                textOutputTimer?.invalidate()
+                textOutputTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: false) { _ in
+                    // 1 秒后如果没有新文字，恢复到初始状态 - 使用与形状切换一致的动画
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                        isOutputtingText = false
+                    }
+                }
+            } else {
+                // 如果文字被清空（比如重新开始录音），平滑重置
+                if isOutputtingText {
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                        isOutputtingText = false
+                    }
+                }
+                textOutputTimer?.invalidate()
+            }
         }
     }
     
@@ -252,14 +287,17 @@ struct HomeChatView: View {
     
     private func runRecordingAnimation() {
         // 1. 融合渐变：输入框背景变宽、变色，同时文字开始淡出
-        withAnimation(.easeOut(duration: 0.25)) {
+        // 加快整体速度：0.6s -> 0.3s
+        withAnimation(.easeInOut(duration: 0.3)) {
             recordingState = .morphing
+            colorSpread = 1.2 // 触发颜色扩散动画
         }
         
-        // 2. 缩圆：0.25s后从全宽收缩成圆形，颜色变深
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+        // 2. 缩圆：0.3s后从全宽收缩成圆形，颜色变深
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
             if self.speechRecognizer.isRecording {
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+                // 收缩阶段也加快：0.5s -> 0.3s
+                withAnimation(.easeInOut(duration: 0.3)) {
                     self.recordingState = .shrinking
                 }
                 // 启动波纹动画
@@ -272,11 +310,26 @@ struct HomeChatView: View {
     }
     
     private func resetRecordingAnimation() {
-        withAnimation(.easeOut(duration: 0.2)) {
-            recordingState = .idle
+        stopBlobAnimation()
+        
+        // 1. 从圆变回长条 (Reverse of shrinking)
+        // 对应 runRecordingAnimation 第2步的时长 0.3s
+        withAnimation(.easeInOut(duration: 0.3)) {
+            recordingState = .morphing
             showBlob = false
         }
-        stopBlobAnimation()
+        
+        // 2. 恢复初始状态 (Reverse of morphing)
+        // 对应 runRecordingAnimation 第1步的时长 0.3s
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            // 确保没有开始新的录音
+            if !self.speechRecognizer.isRecording && self.recordingState == .morphing {
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    self.recordingState = .idle
+                    self.colorSpread = 0 // 颜色收回
+                }
+            }
+        }
     }
     
     private func startBlobAnimation() {
@@ -284,6 +337,11 @@ struct HomeChatView: View {
         // 使用更快的刷新率 (~60fps) 驱动相位变化
         blobTimer = Timer.scheduledTimer(withTimeInterval: 1.0/60.0, repeats: true) { _ in
             blobTime += 0.05
+            // 小内切圆旋转动画（每帧旋转约1度，约6秒转一圈）
+            rotationAngle += 1.0
+            if rotationAngle >= 360 {
+                rotationAngle = 0
+            }
         }
     }
     
@@ -291,6 +349,7 @@ struct HomeChatView: View {
         blobTimer?.invalidate()
         blobTimer = nil
         blobTime = 0
+        rotationAngle = 0
     }
     
     // MARK: - Components
@@ -421,7 +480,15 @@ struct HomeChatView: View {
             // InputContainerWidth = AreaWidth - HorizontalPadding - ButtonSize - Spacing
             let inputContainerWidth = areaWidth - horizontalPadding - buttonSize - spacing
             
-            let circleSize: CGFloat = 60  // 最终圆形尺寸
+            // 是否在说话（用于波纹动画和状态判断）
+            let isSpeaking = !recordingTranscript.isEmpty && audioPower > 0.05
+            
+            // 统一活跃状态：只要在说话或正在转文字，都视为活跃态，使用统一的大圆动画
+            let isActiveBlob = isSpeaking || isOutputtingText
+            
+            let baseCircleSize: CGFloat = 80  // 基础圆形尺寸
+            // 活跃状态下圆变大
+            let circleSize: CGFloat = isActiveBlob ? baseCircleSize * 1.15 : baseCircleSize
             let fullWidth = areaWidth - horizontalPadding
             let inputHeight: CGFloat = 44
             
@@ -429,7 +496,7 @@ struct HomeChatView: View {
             var targetWidth: CGFloat {
                 switch recordingState {
                 case .idle: return inputContainerWidth
-                case .morphing: return fullWidth
+                case .morphing: return inputContainerWidth // 保持输入框宽度不变，使用中间连接体来融合
                 case .shrinking: return circleSize
                 }
             }
@@ -450,57 +517,133 @@ struct HomeChatView: View {
                 }
             }
             
-            // 计算偏移量
-            // idle 时，InputContainer 位于左侧。GeometryReader 的原点在左上角。
-            // 我们的 ZStack 是居中的。
-            // InputContainer 的中心 x: HorizontalPadding/2 + InputContainerWidth/2
-            // Area 的中心 x: AreaWidth / 2
-            // Offset = InputCenter - AreaCenter
-            //        = (16 + InputContainerWidth/2) - (AreaWidth/2)
-            var xOffset: CGFloat {
-                if recordingState == .idle {
-                    let inputCenter = 16 + inputContainerWidth / 2
-                    let areaCenter = areaWidth / 2
-                    return inputCenter - areaCenter
+            // 计算位置偏移
+            // 1. 输入框中心的偏移
+            let inputIdleOffset = (16 + inputContainerWidth / 2) - (areaWidth / 2)
+            
+            // 2. 按钮中心的偏移
+            let buttonIdleOffset = (areaWidth - 16 - buttonSize / 2) - (areaWidth / 2)
+            
+            // 当前输入框的偏移
+            var currentInputOffset: CGFloat {
+                if recordingState == .idle || recordingState == .morphing {
+                    return inputIdleOffset
                 }
-                return 0
+                return 0 // Shrinking 时居中
             }
             
             // 颜色逻辑
-            let lightBlueGradient = LinearGradient(
-                colors: [Color(hex: "E6F0FF"), Color(hex: "CCE0FF")],
-                startPoint: .top,
-                endPoint: .bottom
-            )
+            // 移除渐变色，使用纯色过渡
             let deepBlue = Color.blue
             let activeColor: Color = isCanceling ? Color.red : deepBlue
             
-            // 是否在说话（用于波纹动画）
-            let isSpeaking = !recordingTranscript.isEmpty && audioPower > 0.05
+            // 小内切圆参数
+            let mainCircleRadius = circleSize / 2  // 主圆半径
+            let smallCircleRadius: CGFloat = mainCircleRadius * 0.7  // 小圆半径为主圆半径的70%
+            let orbitRadius = mainCircleRadius - smallCircleRadius  // 轨道半径：让小圆紧贴主圆内部
             
             ZStack {
-                // 1. 统一的变形背景 (The Morphing Shape)
+                // 1. 粘滞融合背景 (Sticky/Gooey Background)
                 ZStack {
-                    // 背景色层
-                    if recordingState == .idle {
-                        Color.white
-                    } else if recordingState == .morphing {
-                        lightBlueGradient
-                    } else {
+                    // 统一的颜色层 (The Ink) - 使用遮罩扩散技术实现 "由蓝到白色渐变"
+                    ZStack {
+                        Color.white // 默认底色是白色
+                        
+                        // 蓝色扩散层：通过 colorSpread 变量控制宽度，从中心向两边扩散
                         activeColor
+                            .mask(
+                                GeometryReader { proxy in
+                                    // 使用胶囊体作为扩散遮罩
+                                    Capsule()
+                                        .frame(width: max(0, proxy.size.width * colorSpread))
+                                        .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
+                                        .blur(radius: 20) // 模糊边缘，形成渐变效果
+                                }
+                            )
+                    }
+                    .mask {
+                        // 遮罩层：生成粘滞效果的形状 (The Mask)
+                        // 原理：绘制白色形状 -> 模糊 -> 提高对比度阈值 -> 亮度转Alpha
+                        ZStack {
+                            // 底色必须是黑色（Alpha 0）
+                            Color.black
+                            
+                            // 白色形状组
+                            Group {
+                                // 形状1: 输入框基础形状
+                                // 注意：它在 idle / morphing / shrinking 三个状态中始终存在，
+                                //       通过 targetWidth / targetHeight / targetCornerRadius 的变化
+                                //       实现从“粘滞长条”向中间圆球收缩的过渡。
+                                RoundedRectangle(cornerRadius: targetCornerRadius)
+                                    .frame(width: targetWidth, height: targetHeight)
+                                    .offset(x: currentInputOffset)
+                                
+                                // 形状1b: 活跃状态时的 Blob 轮廓（仅在收缩阶段叠加在主圆之上）
+                                if recordingState == .shrinking && isActiveBlob {
+                                    BlobShape(time: blobTime, isAnimating: true, amplitude: 0.35)
+                                        .frame(width: circleSize * 1.25, height: circleSize * 1.25)
+                                        .offset(x: 0)
+                                }
+                                
+                                // 形状2: 右侧按钮 (只在非收缩阶段显示，参与融合)
+                                if recordingState != .shrinking {
+                                    Circle()
+                                        .frame(width: buttonSize, height: buttonSize)
+                                        .offset(x: buttonIdleOffset)
+                                }
+                                
+                                // 形状3: 连接体 (Connector) - 仅在 morphing 阶段出现，连接两者
+                                if recordingState == .morphing {
+                                    // 计算连接位置
+                                    let inputRightEdge = inputIdleOffset + inputContainerWidth / 2
+                                    let buttonLeftEdge = buttonIdleOffset - buttonSize / 2
+                                    let connectorWidth = buttonLeftEdge - inputRightEdge + 30 // +30 确保重叠
+                                    let connectorX = (inputRightEdge + buttonLeftEdge) / 2
+                                    
+                                    Rectangle()
+                                        .frame(width: connectorWidth, height: 20)
+                                        .offset(x: connectorX)
+                                }
+                                
+                                // 形状4: 旋转小圆 - 仅在 shrinking 且“当前没有文字输出动画”时出现
+                                // 当 isOutputtingText = true 时，用 Blob 表达状态，不再显示小圆。
+                                // 旋转小圆：仅在静音且非活跃状态时显示
+                                // 当处于活跃状态（说话或转文字）时，用 Blob 表达状态，不再显示小圆。
+                                if recordingState == .shrinking && !isActiveBlob {
+                                    Circle()
+                                        .frame(width: smallCircleRadius * 2, height: smallCircleRadius * 2)
+                                        // 注意：这里的 offset 是相对于 ZStack 中心的，而 shrinking 状态下主圆也是居中的
+                                        .offset(x: orbitRadius) 
+                                        .rotationEffect(.degrees(rotationAngle))
+                                }
+                            }
+                            .foregroundColor(.white)
+                            .blur(radius: 10) // 粘滞半径
+                        }
+                        .compositingGroup() // 必须组合后处理
+                        .contrast(20)      // 阈值化：将模糊边缘锐化
+                        .luminanceToAlpha() // 黑透白显
                     }
                 }
-                .mask(
-                    RoundedRectangle(cornerRadius: targetCornerRadius)
-                        .frame(width: targetWidth, height: targetHeight)
-                )
                 .shadow(color: recordingState == .idle ? Color.black.opacity(0.05) : activeColor.opacity(0.2), radius: recordingState == .shrinking ? 15 : 2, x: 0, y: recordingState == .shrinking ? 5 : 0)
+                // 描边层 (只在 Idle 状态显示，使用条件渲染确保完全移除)
                 .overlay(
-                    RoundedRectangle(cornerRadius: targetCornerRadius)
-                        .stroke(Color(hex: "E5E5EA"), lineWidth: recordingState == .idle ? 0.5 : 0)
-                        .frame(width: targetWidth, height: targetHeight)
+                    Group {
+                        if recordingState == .idle {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 22)
+                            .stroke(Color(hex: "E5E5EA"), lineWidth: 0.5)
+                            .frame(width: inputContainerWidth, height: inputHeight)
+                            .offset(x: inputIdleOffset)
+                        
+                        Circle()
+                            .stroke(Color(hex: "E5E5EA"), lineWidth: 0.5)
+                            .frame(width: buttonSize, height: buttonSize)
+                            .offset(x: buttonIdleOffset)
+                    }
+                        }
+                    }
                 )
-                .offset(x: xOffset)
                 
                 // 2. 内容层 (UI Content)
                 ZStack {
@@ -542,11 +685,7 @@ struct HomeChatView: View {
                                 .font(.system(size: 20))
                                 .foregroundColor(Color(hex: "666666"))
                                 .frame(width: buttonSize, height: buttonSize)
-                                .background(
-                                    Circle()
-                                        .fill(Color.white)
-                                        .overlay(Circle().stroke(Color(hex: "E5E5EA"), lineWidth: 0.5))
-                                )
+                                .contentShape(Circle())
                         }
                         .opacity(recordingState == .idle ? 1 : 0)
                     }
@@ -554,30 +693,30 @@ struct HomeChatView: View {
                     // 确保 HStack 占满宽度以便对齐
                     .frame(width: areaWidth, alignment: .leading)
                     
-                    // 输入 UI 在 shrinking 时完全隐藏，在 morphing 时淡出
-                    .opacity(recordingState == .shrinking ? 0 : (recordingState == .morphing ? 0.5 : 1))
+                    // 输入 UI 在 shrinking 和 morphing 时都完全隐藏 (只在 idle 显示)
+                    .opacity(recordingState == .idle ? 1 : 0)
+                    .animation(nil, value: recordingState) // 立即隐藏，无动画，防止残影
                     
-                    // B. 录音状态 UI
+                    // B. 录音状态 UI（仅保留外层波纹光晕，不再叠加图标圆）
                     if recordingState == .shrinking {
-                        // 波纹光晕
                         if showBlob {
-                            BlobShape(time: blobTime, isAnimating: isSpeaking)
-                                .fill(activeColor.opacity(isSpeaking ? 0.2 : 0.1))
-                                .frame(width: circleSize + 30, height: circleSize + 30)
-                                .scaleEffect(isSpeaking ? 1.08 : 1.0)
+                            // 活跃状态下使用更大的圆和更大的波动幅度
+                            let blobSize = isActiveBlob ? circleSize + 50 : circleSize + 30
+                            let blobAmplitude: CGFloat = isActiveBlob ? 0.35 : 0.2
+                            // 统一使用 isActiveBlob 控制动画和缩放
+                            BlobShape(time: blobTime, isAnimating: isActiveBlob, amplitude: blobAmplitude)
+                                .fill(activeColor.opacity(isActiveBlob ? 0.2 : 0.1))
+                                .frame(width: blobSize, height: blobSize)
+                                .scaleEffect(isActiveBlob ? 1.08 : 1.0)
                         }
-                        
-                        // 麦克风图标
-                        Image(systemName: isCanceling ? "xmark" : "mic.fill")
-                            .font(.system(size: 24, weight: .semibold))
-                            .foregroundColor(.white)
-                            .transition(.scale.combined(with: .opacity))
                     }
                 }
             }
             .frame(height: 60) // 固定高度容器
-            .animation(.spring(response: 0.35, dampingFraction: 0.75), value: recordingState)
+            // 移除 recordingState 的隐式动画，完全由 runRecordingAnimation 中的 withAnimation 精确控制
             .animation(.easeInOut(duration: 0.2), value: isCanceling)
+            // 添加 isOutputtingText 变化的平滑动画，确保圆的大小和波动幅度变化流畅
+            .animation(.spring(response: 0.4, dampingFraction: 0.7), value: isOutputtingText)
         }
         .frame(height: 60) // GeometryReader 需要明确高度
         .padding(.bottom, 8)
