@@ -288,15 +288,9 @@ class AppState: ObservableObject {
     // 首次显示标记
     @Published var isFirstAppearance: Bool = true
     
-    // AI生成的打招呼
-    @Published var aiGreeting: String = ""
-    @Published var displayedGreeting: String = ""  // 用于打字效果显示的文字
-    @Published var isGeneratingGreeting: Bool = false
-    
     // Session管理（app打开到关闭之间的聊天）
     @Published var sessionStartTime: Date = Date()  // 当前session开始时间
     @Published var lastSessionSummary: String? = nil  // 上次session的总结
-    @Published var hasGeneratedSessionGreeting: Bool = false  // 当前session是否已生成打招呼
     
     // 聊天室状态 - 保存对话历史
     @Published var chatMessages: [ChatMessage] = []
@@ -312,39 +306,6 @@ class AppState: ObservableObject {
     @Published var isTyping: Bool = false
     private var typingTask: Task<Void, Never>?
     
-    // 打字机效果 - 只用于主页打招呼
-    func typeText(_ text: String, speed: TimeInterval = 0.05) {
-        typingTask?.cancel()
-        displayedGreeting = ""
-        isTyping = true
-        
-        typingTask = Task {
-            var charCount = 0
-            for char in text {
-                if Task.isCancelled { break }
-                
-                await MainActor.run {
-                    displayedGreeting.append(char)
-                    // 每2个字符触发一次轻微震动，营造有节奏的打字感
-                    if charCount % 2 == 0 {
-                        HapticFeedback.soft()
-                    }
-                }
-                
-                charCount += 1
-                try? await Task.sleep(nanoseconds: UInt64(speed * 1_000_000_000))
-            }
-            
-            await MainActor.run {
-                isTyping = false
-            }
-        }
-    }
-    
-    func cancelTyping() {
-        typingTask?.cancel()
-        isTyping = false
-    }
     
     // MARK: - 截图处理（从相册）
 
@@ -373,7 +334,6 @@ class AppState: ObservableObject {
     }
     
     // MARK: - 聊天室流式更新方法
-    private let typingInterval: UInt64 = 15_000_000  // 15ms打字速度
     
     /// 开始流式接收
     func startStreaming(messageId: UUID) {
@@ -393,75 +353,42 @@ class AppState: ObservableObject {
         StreamingMessageManager.completeStreaming(messageId: messageId, in: &chatMessages)
     }
 
-    /// 播放完整响应 - 逐字显示，优化索引查找
+    /// 设置完整响应内容 - 由AIBubble负责逐字显示动画
     func playResponse(_ content: String, for messageId: UUID) async {
-        print("🎬 开始播放响应，内容长度: \(content.count)")
+        print("🎬 设置响应内容，总长度: \(content.count)")
         
-        // 立即隐藏 typing indicator，避免出现两个头像
-        isAgentTyping = false
-        
-        // 一次性查找并缓存索引，避免循环中重复查找
+        // 查找消息索引
         guard let messageIndex = chatMessages.firstIndex(where: { $0.id == messageId }) else {
             print("⚠️ 找不到消息ID: \(messageId)")
             return
         }
         
-        print("✅ 找到消息，索引: \(messageIndex)，当前内容: \(chatMessages[messageIndex].content)")
-
-        // 如果内容为空，显示错误提示
-        guard !content.isEmpty else {
-            print("⚠️ 收到空内容")
-            await MainActor.run {
+        // 在同一个主线程事务里同时更新 typing 状态和消息内容，
+        // 避免出现「正在思考」消失但内容还没刷新的空档
+        await MainActor.run {
+            // 如果内容为空，显示错误提示
+            guard !content.isEmpty else {
+                print("⚠️ 收到空内容")
                 var updatedMessage = chatMessages[messageIndex]
                 updatedMessage.content = "抱歉，没有收到AI的回复内容"
                 updatedMessage.streamingState = .error("空响应")
                 chatMessages[messageIndex] = updatedMessage
-            }
-            return
-        }
-
-        var accumulatedText = ""
-        var charCount = 0
-
-        // 逐字符显示，每次更新都刷新（整个方法在 MainActor 上执行）
-        for char in content {
-            accumulatedText.append(char)
-            charCount += 1
-
-            // 确保索引仍然有效（简单边界检查）
-            guard messageIndex < chatMessages.count else {
-                print("⚠️ 播放中消息索引失效")
-                break
+                
+                // 无论成功与否，都结束打字中状态
+                isAgentTyping = false
+                return
             }
             
-            // 直接更新消息内容，使用缓存的索引
+            // 正常设置完整内容，让 AIBubble 负责逐字显示动画
             var updatedMessage = chatMessages[messageIndex]
-            updatedMessage.content = accumulatedText
+            updatedMessage.content = content
+            updatedMessage.streamingState = .completed
             chatMessages[messageIndex] = updatedMessage
             
-            // 每2个字符触发一次轻微震动
-            if charCount % 2 == 0 {
-                HapticFeedback.soft()
-            }
-            
-            // 字符间隔延迟
-            try? await Task.sleep(nanoseconds: typingInterval)
+            // 内容与状态一起更新，避免 UI 闪一下空白
+            isAgentTyping = false
+            print("✅ 消息内容已设置，由AIBubble负责逐字显示")
         }
-
-        // 最终更新：确保显示完整内容
-        guard messageIndex < chatMessages.count else {
-            print("⚠️ 最终更新时消息索引失效")
-            return
-        }
-        
-        var updatedMessage = chatMessages[messageIndex]
-        updatedMessage.content = content
-        updatedMessage.streamingState = .completed
-        chatMessages[messageIndex] = updatedMessage
-        print("✅ 消息状态已更新为completed")
-        
-        // 播放完成时触发一次成功反馈
-        HapticFeedback.success()
     }
 
     /// 处理流式错误
@@ -682,7 +609,6 @@ class AppState: ObservableObject {
     /// 开始新的session
     func startNewSession() {
         sessionStartTime = Date()
-        hasGeneratedSessionGreeting = false
         print("🆕 开始新Session - 时间: \(sessionStartTime)")
     }
     
@@ -752,44 +678,6 @@ class AppState: ObservableObject {
         }
     }
     
-    /// 生成基于上次session的打招呼（app启动时调用）
-    func generateSessionGreeting(modelContext: ModelContext) {
-        // 如果已经生成过，跳过
-        guard !hasGeneratedSessionGreeting else {
-            print("ℹ️ 当前session已生成过打招呼，跳过")
-            return
-        }
-        
-        hasGeneratedSessionGreeting = true
-        isGeneratingGreeting = true
-        
-        // 先加载上次的总结
-        loadLastSessionSummary(modelContext: modelContext)
-        
-        Task {
-            do {
-                let greetingContent = try await QwenAPIService.generateGreeting(
-                    mode: currentMode,
-                    latestSummary: lastSessionSummary
-                )
-                
-                await MainActor.run {
-                    aiGreeting = greetingContent
-                    typeText(greetingContent)
-                    isGeneratingGreeting = false
-                    print("✅ 基于历史生成的打招呼: \(greetingContent)")
-                }
-            } catch {
-                await MainActor.run {
-                    let defaultGreeting = "你好呀！今天想聊点什么~"
-                    aiGreeting = defaultGreeting
-                    typeText(defaultGreeting)
-                    isGeneratingGreeting = false
-                    print("⚠️ 生成打招呼失败，使用默认: \(error)")
-                }
-            }
-        }
-    }
 }
 
 

@@ -21,10 +21,8 @@ struct ContactListView: View {
         self._showAddSheet = showAddSheet
     }
     
-    // 主题色 - 跟随主页颜色
-    private var themeColor: Color {
-        YuanyuanTheme.color(at: appState.colorIndex)
-    }
+    // 主题色 - 统一灰色
+    private let themeColor = Color(white: 0.55)
     
     // 分组的联系人
     private var groupedContacts: [(String, [Contact])] {
@@ -350,10 +348,8 @@ struct ContactRowView: View {
     @EnvironmentObject var appState: AppState
     @Bindable var contact: Contact
 
-    // 主题色 - 跟随主页颜色
-    private var themeColor: Color {
-        YuanyuanTheme.color(at: appState.colorIndex)
-    }
+    // 主题色 - 统一灰色
+    private let themeColor = Color(white: 0.55)
 
     // 副内容项结构
     struct SecondaryInfoItem {
@@ -618,10 +614,8 @@ struct LoadingView: View {
     @EnvironmentObject var appState: AppState
     @State private var isAnimating = false
     
-    // 主题色 - 跟随主页颜色
-    private var themeColor: Color {
-        YuanyuanTheme.color(at: appState.colorIndex)
-    }
+    // 主题色 - 统一灰色
+    private let themeColor = Color(white: 0.55)
     
     var body: some View {
         VStack(spacing: 24) {

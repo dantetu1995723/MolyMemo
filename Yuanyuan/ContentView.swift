@@ -5,32 +5,29 @@ import UIKit
 
 struct ContentView: View {
     @EnvironmentObject var appState: AppState
-    @State private var showMainContent = false
     @State private var showModuleContainer = false
-
+    
     var body: some View {
         NavigationStack {
-            ZStack {
-                // 主界面 - 新设计
-                YuanyuanHomeView(showModuleContainer: $showModuleContainer)
-                    .environmentObject(appState)
-            }
-            .statusBar(hidden: false)
-            .navigationDestination(isPresented: $showModuleContainer) {
-                ModuleContainerView()
-                    .environmentObject(appState)
-            }
+            // 直接进入对话界面（首次引导在对话中完成）
+            HomeChatView(showModuleContainer: $showModuleContainer)
+                .environmentObject(appState)
+                .statusBar(hidden: false)
+                .navigationDestination(isPresented: $showModuleContainer) {
+                    ModuleContainerView()
+                        .environmentObject(appState)
+                }
         }
         .sheet(isPresented: $appState.showChatRoom) {
-                ChatRoomPage(initialMode: appState.currentMode)
+            ChatRoomPage(initialMode: appState.currentMode)
                 .presentationDragIndicator(.visible)
-            }
+        }
         .sheet(isPresented: $appState.showSettings) {
-                SettingsView()
+            SettingsView()
                 .presentationDragIndicator(.visible)
-            }
-            .fullScreenCover(isPresented: $appState.showLiveRecording) {
-                LiveRecordingView()
+        }
+        .fullScreenCover(isPresented: $appState.showLiveRecording) {
+            LiveRecordingView()
         }
     }
 }
@@ -65,34 +62,15 @@ struct YuanyuanHomeView: View {
     @State private var titlePulseTimer: Timer?
     @State private var titlePulseTime: Double = 0.0
     @State private var titlePulseScale: CGFloat = 1.0
-    @State private var hasShownWelcome: Bool = false
     @State private var notificationsExpanded: Bool = false // 通知栏展开状态
     @State private var upcomingTodos: [TodoItem] = [] // 即将到来的待办
     @State private var isUserDismissingChat: Bool = false // 用户是否主动退出聊天
     
-    // 使用全局颜色数组
-    private var selectedColor: Color {
-        YuanyuanTheme.color(at: appState.colorIndex)
-    }
-    
-    private var darkerColor: Color {
-        let uiColor = UIColor(selectedColor)
-        var hue: CGFloat = 0
-        var saturation: CGFloat = 0
-        var brightness: CGFloat = 0
-        var alpha: CGFloat = 0
-        
-        uiColor.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
-        return Color(hue: hue, saturation: min(saturation * 1.2, 1.0), brightness: brightness * 0.7, opacity: alpha)
-    }
+    // 统一灰白主题色
+    private let themeGray = Color(white: 0.55)
+    private let darkGray = Color(white: 0.35)
     
     @State private var isChatMode: Bool = false
-    
-    private func nextColor() {
-        withAnimation(.easeInOut(duration: 0.2)) {
-            appState.colorIndex = (appState.colorIndex + 1) % YuanyuanTheme.colorOptions.count
-        }
-    }
     
     var body: some View {
         GeometryReader { geometry in
@@ -137,12 +115,12 @@ struct YuanyuanHomeView: View {
                                     dismissChatMode()
                                 }
                             
-                            // 模糊分界线 - 在聊天区域顶部，使用主题色创建柔和的过渡
+                            // 模糊分界线 - 灰色柔和过渡
                             VStack {
                                 LinearGradient(
                                     gradient: Gradient(stops: [
-                                        .init(color: selectedColor.opacity(0.35), location: 0.0),
-                                        .init(color: selectedColor.opacity(0.15), location: 0.6),
+                                        .init(color: themeGray.opacity(0.25), location: 0.0),
+                                        .init(color: themeGray.opacity(0.1), location: 0.6),
                                         .init(color: Color.clear, location: 1.0)
                                     ]),
                                     startPoint: .top,
@@ -195,16 +173,11 @@ struct YuanyuanHomeView: View {
                         isChatMode = false
                     }
                     
-                    // 如果只有欢迎消息或为空，则清空
-                    let hasOnlyGreeting = appState.chatMessages.count == 1 &&
-                                          appState.chatMessages.first?.isGreeting == true
-                    let isEmpty = appState.chatMessages.isEmpty
-                    
-                    if hasOnlyGreeting || isEmpty {
+                    // 如果为空，则清空
+                    if appState.chatMessages.isEmpty {
                         withAnimation {
                             appState.chatMessages.removeAll()
                         }
-                        hasShownWelcome = false
                     }
                     
                     isUserDismissingChat = false
@@ -227,100 +200,6 @@ struct YuanyuanHomeView: View {
     
     // MARK: - 子区域
     
-    // MARK: - 打招呼区域（上下滑动展示聊天历史记录，默认显示最新消息）
-    private func greetingSection() -> some View {
-        let greetingHeight: CGFloat = 160
-        
-        return ScrollViewReader { proxy in
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(spacing: 18) {
-                    // 当前打招呼或生成状态
-                    if appState.isGeneratingGreeting {
-                        HStack(spacing: 8) {
-                            ProgressView()
-                                .scaleEffect(0.8)
-                                .tint(.white)
-                            Text("正在想说什么...")
-                                .font(.system(size: 22, weight: .regular))
-                                .foregroundColor(.white)
-                                // 内层白色光晕
-                                .shadow(color: Color.white.opacity(0.6), radius: 0, x: 0, y: 0)
-                                .shadow(color: Color.white.opacity(0.5), radius: 2, x: 0, y: 0)
-                                .shadow(color: Color.white.opacity(0.35), radius: 4, x: 0, y: 0)
-                                // 外层柔和光晕
-                                .shadow(color: Color.white.opacity(0.25), radius: 6, x: 0, y: 0)
-                                // 深色阴影确保可读性
-                                .shadow(color: Color.black.opacity(0.2), radius: 2, x: 0, y: 1)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 24)
-                    } else if !appState.displayedGreeting.isEmpty && appState.chatMessages.isEmpty {
-                        // 只在没有聊天历史时显示打招呼
-                        Text(appState.displayedGreeting)
-                            .font(.system(size: 22, weight: .regular))
-                            .foregroundColor(.white)
-                            .multilineTextAlignment(.leading)
-                            .lineSpacing(8)
-                            // 内层白色光晕
-                            .shadow(color: Color.white.opacity(0.6), radius: 0, x: 0, y: 0)
-                            .shadow(color: Color.white.opacity(0.5), radius: 2, x: 0, y: 0)
-                            .shadow(color: Color.white.opacity(0.35), radius: 4, x: 0, y: 0)
-                            // 外层柔和光晕
-                            .shadow(color: Color.white.opacity(0.25), radius: 6, x: 0, y: 0)
-                            // 深色阴影确保可读性
-                            .shadow(color: Color.black.opacity(0.2), radius: 2, x: 0, y: 1)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 24)
-                    } else if appState.chatMessages.isEmpty {
-                        Text("今天怎么样？")
-                            .font(.system(size: 22, weight: .regular))
-                            .foregroundColor(.white)
-                            // 内层白色光晕
-                            .shadow(color: Color.white.opacity(0.6), radius: 0, x: 0, y: 0)
-                            .shadow(color: Color.white.opacity(0.5), radius: 2, x: 0, y: 0)
-                            .shadow(color: Color.white.opacity(0.35), radius: 4, x: 0, y: 0)
-                            // 外层柔和光晕
-                            .shadow(color: Color.white.opacity(0.25), radius: 6, x: 0, y: 0)
-                            // 深色阴影确保可读性
-                            .shadow(color: Color.black.opacity(0.2), radius: 2, x: 0, y: 1)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 24)
-                    }
-                    
-                    // 聊天历史记录 - 使用原版大小气泡
-                    ForEach(appState.chatMessages) { message in
-                        HomeChatBubble(message: message)
-                            .id(message.id)
-                    }
-                }
-                .padding(.vertical, 16)
-            }
-            .onAppear {
-                // 滚动到最新消息
-                if let lastId = appState.chatMessages.last?.id {
-                    proxy.scrollTo(lastId, anchor: .bottom)
-                }
-            }
-            .onChange(of: appState.chatMessages.count) { _, _ in
-                // 有新消息时滚动到底部
-                if let lastId = appState.chatMessages.last?.id {
-                    withAnimation(.easeOut(duration: 0.2)) {
-                        proxy.scrollTo(lastId, anchor: .bottom)
-                    }
-                }
-            }
-        }
-        // 上边界虚化融入背景
-        .mask(
-            VStack(spacing: 0) {
-                LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
-                    .frame(height: 20)
-                Rectangle().fill(Color.black)
-            }
-        )
-        .frame(height: greetingHeight)
-        .padding(.bottom, 24)
-    }
     
     // 通知栏区域 - 显示待办项目
     private func todoNotificationsSection() -> some View {
@@ -395,7 +274,7 @@ struct YuanyuanHomeView: View {
                 
                 Image(systemName: "calendar")
                     .font(.system(size: 18, weight: .semibold))
-                    .foregroundColor(selectedColor)
+                    .foregroundColor(darkGray)
                     .frame(width: 32, height: 32)
                     .opacity(showContent ? 1 : 0.3)
             }
@@ -528,59 +407,55 @@ struct YuanyuanHomeView: View {
         )
     }
     
-    // 顶部区域
+    // 顶部区域 - 灰白色调
     private func topSection() -> some View {
         HStack(spacing: 0) {
-            // 左侧：颜色按钮做成胶囊，内部文字「圆圆」，增加与中间光圈联动的呼吸光圈
-            Button(action: {
-                nextColor()
-            }) {
-                HStack(spacing: 6) {
-                    // 呼吸小圆环：只做亮度呼吸，不做扇形扫描
-                    let haloOpacity = 0.25 + Double(breathingBrightness) * 0.9
-                    Circle()
-                        .strokeBorder(Color.white.opacity(haloOpacity), lineWidth: 1.6)
-                        .overlay(
-                            Circle()
-                                .strokeBorder(selectedColor.opacity(haloOpacity * 0.7), lineWidth: 0.8)
-                        )
-                        .frame(width: 16, height: 16)
-                    
-                    Text("圆圆")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(.white)
-                        // 发光效果 - 跟随光球呼吸动画
-                        .shadow(color: Color.white.opacity(0.5 + Double(breathingBrightness) * 0.3), radius: 0, x: 0, y: 0)
-                        .shadow(color: Color.white.opacity(0.4 + Double(breathingBrightness) * 0.3), radius: 2, x: 0, y: 0)
-                        .shadow(color: Color.white.opacity(0.3 + Double(breathingBrightness) * 0.2), radius: 4, x: 0, y: 0)
-                        .shadow(color: Color.white.opacity(0.2 + Double(breathingBrightness) * 0.15), radius: 6, x: 0, y: 0)
-                        .shadow(color: Color.black.opacity(0.2), radius: 2, x: 0, y: 1)
-                }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 6)
-                    .background(
-                            LinearGradient(
-                                gradient: Gradient(stops: [
-                                .init(color: selectedColor.opacity(0.95), location: 0.0),
-                                .init(color: selectedColor.opacity(0.75), location: 1.0)
-                                ]),
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                    .clipShape(Capsule())
-                        .overlay(
-                        Capsule()
-                                .strokeBorder(Color.white.opacity(0.3), lineWidth: 2)
-                        )
-                        .shadow(color: Color.black.opacity(0.1), radius: 4, x: 0, y: 2)
-                    .scaleEffect(titlePulseScale)
-                }
+            // 左侧：品牌标识胶囊
+            HStack(spacing: 6) {
+                // 呼吸小圆环
+                let haloOpacity = 0.25 + Double(breathingBrightness) * 0.9
+                Circle()
+                    .strokeBorder(Color.white.opacity(haloOpacity), lineWidth: 1.6)
+                    .overlay(
+                        Circle()
+                            .strokeBorder(themeGray.opacity(haloOpacity * 0.7), lineWidth: 0.8)
+                    )
+                    .frame(width: 16, height: 16)
+                
+                Text("圆圆")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(.white)
+                    // 发光效果 - 跟随光球呼吸动画
+                    .shadow(color: Color.white.opacity(0.5 + Double(breathingBrightness) * 0.3), radius: 0, x: 0, y: 0)
+                    .shadow(color: Color.white.opacity(0.4 + Double(breathingBrightness) * 0.3), radius: 2, x: 0, y: 0)
+                    .shadow(color: Color.white.opacity(0.3 + Double(breathingBrightness) * 0.2), radius: 4, x: 0, y: 0)
+                    .shadow(color: Color.white.opacity(0.2 + Double(breathingBrightness) * 0.15), radius: 6, x: 0, y: 0)
+                    .shadow(color: Color.black.opacity(0.2), radius: 2, x: 0, y: 1)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 6)
+            .background(
+                LinearGradient(
+                    gradient: Gradient(stops: [
+                        .init(color: themeGray.opacity(0.95), location: 0.0),
+                        .init(color: themeGray.opacity(0.75), location: 1.0)
+                    ]),
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .clipShape(Capsule())
+            .overlay(
+                Capsule()
+                    .strokeBorder(Color.white.opacity(0.3), lineWidth: 2)
+            )
+            .shadow(color: Color.black.opacity(0.1), radius: 4, x: 0, y: 2)
+            .scaleEffect(titlePulseScale)
             .frame(height: 32)
             
             Spacer()
             
-            // 右侧设置按钮（跟随主题色的胶囊按钮制式）
+            // 右侧设置按钮 - 灰色胶囊
             Button(action: {
                 HapticFeedback.light()
                 appState.showSettings = true
@@ -593,8 +468,8 @@ struct YuanyuanHomeView: View {
                     .background(
                         LinearGradient(
                             gradient: Gradient(stops: [
-                                .init(color: selectedColor.opacity(0.95), location: 0.0),
-                                .init(color: selectedColor.opacity(0.75), location: 1.0)
+                                .init(color: themeGray.opacity(0.95), location: 0.0),
+                                .init(color: themeGray.opacity(0.75), location: 1.0)
                             ]),
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
@@ -666,10 +541,10 @@ struct YuanyuanHomeView: View {
         }
     }
     
-    // 中间光圈区域
+    // 中间光圈区域 - 灰白色光球
     private func middleSection(availableSize: CGSize, screenWidth: CGFloat, breathingBrightness: CGFloat, isChatMode: Bool = false) -> some View {
         let maxSize = min(availableSize.width, availableSize.height) * 1.05
-        let ballColor = selectedColor
+        let ballColor = themeGray  // 使用灰色
         // 光球半径
         let ballRadius = maxSize * 0.32
         let coronaRadius = maxSize * 0.65
@@ -679,7 +554,7 @@ struct YuanyuanHomeView: View {
         let ballPositionY = isChatMode ? availableSize.height * 0.45 : availableSize.height * 0.42
         
         return ZStack {
-            // 底层：日冕效果 - 围绕光球的光晕
+            // 底层：日冕效果 - 灰色光晕
             ZStack {
                 // 日冕外层光晕
                 Circle()
@@ -751,9 +626,9 @@ struct YuanyuanHomeView: View {
             }
             .zIndex(0)
             
-            // 上层：光球 - 和底色同颜色的实心球，白色实边发亮，带亮度呼吸动画
+            // 上层：光球 - 灰白色渐变
             ZStack {
-                // 灰黑色日冕 - 最外层，模糊效果
+                // 灰黑色日冕 - 最外层
                 Circle()
                     .fill(
                         RadialGradient(
@@ -773,7 +648,7 @@ struct YuanyuanHomeView: View {
                     .frame(width: ballRadius * 5.0, height: ballRadius * 5.0)
                     .blur(radius: maxSize * 0.08)
                 
-                // 银白色日冕 - 外日冕，从光球边缘向外扩散
+                // 银白色日冕 - 外日冕
                 Circle()
                     .fill(
                         RadialGradient(
@@ -794,7 +669,7 @@ struct YuanyuanHomeView: View {
                     .frame(width: ballRadius * 3.6, height: ballRadius * 3.6)
                     .blur(radius: maxSize * 0.05)
                 
-                // 光球主体 - 从中心向外，由主体色向白色渐变，亮度随呼吸变化
+                // 光球主体 - 灰白渐变
                 Circle()
                     .fill(
                         RadialGradient(
@@ -812,7 +687,7 @@ struct YuanyuanHomeView: View {
                     )
                     .frame(width: ballRadius * 2, height: ballRadius * 2)
                 
-                // 白色实边 - 固定亮度，不随呼吸变化
+                // 白色实边
                 Circle()
                     .strokeBorder(Color.white.opacity(0.8), lineWidth: 0)
                     .frame(width: ballRadius * 2, height: ballRadius * 2)
@@ -820,41 +695,28 @@ struct YuanyuanHomeView: View {
             .zIndex(1)
         }
         .frame(width: availableSize.width, height: availableSize.height)
-        // 光球位置根据模式变化
         .position(x: availableSize.width / 2, y: ballPositionY)
         .animation(.easeInOut(duration: 0.3), value: isChatMode)
     }
     
-    // 背景径向渐变 - 从中心向边缘加深，增强与白色光球的对比
+    // 背景径向渐变 - 灰白色调，从中心向边缘加深
     private func backgroundGradient(geometry: GeometryProxy) -> some View {
-        // 计算深色版本（饱和度略高，亮度略低）
-        let uiColor = UIColor(selectedColor)
-        var hue: CGFloat = 0
-        var saturation: CGFloat = 0
-        var brightness: CGFloat = 0
-        var alpha: CGFloat = 0
-        uiColor.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
-        
-        // 边缘颜色：更深、更饱和
-        let edgeColor = Color(
-            hue: Double(hue),
-            saturation: min(Double(saturation) * 1.25, 0.7),
-            brightness: Double(brightness) * 0.75
-        )
+        let centerColor = Color(white: 0.75)  // 中心浅灰
+        let edgeColor = Color(white: 0.45)    // 边缘深灰
         
         return ZStack {
-            // 底层：边缘深色
+            // 底层：边缘深灰
             edgeColor
             
-            // 径向渐变：中心亮，边缘暗
+            // 径向渐变：中心浅，边缘深
             RadialGradient(
                 gradient: Gradient(stops: [
-                    .init(color: selectedColor, location: 0.0),
-                    .init(color: selectedColor.opacity(0.95), location: 0.35),
+                    .init(color: centerColor, location: 0.0),
+                    .init(color: centerColor.opacity(0.95), location: 0.35),
                     .init(color: edgeColor.opacity(0.6), location: 0.7),
                     .init(color: edgeColor, location: 1.0)
                 ]),
-                center: .init(x: 0.5, y: 0.42),  // 光球位置略偏上
+                center: .init(x: 0.5, y: 0.42),
                 startRadius: 0,
                 endRadius: max(geometry.size.width, geometry.size.height) * 0.75
             )
@@ -865,11 +727,6 @@ struct YuanyuanHomeView: View {
     // 底部区域：模块按钮 + 输入框
     private func bottomSection() -> some View {
         VStack(spacing: 0) {
-            // 问候语 - 非聊天模式时显示
-            if !isChatMode {
-                greetingSection()
-            }
-            
             // 输入框容器 - 条形布局
             HStack(spacing: 12) {
                 // 统一的输入框/录音按钮容器
@@ -972,12 +829,6 @@ struct YuanyuanHomeView: View {
                                 withAnimation(.easeInOut(duration: 0.25)) {
                                     isChatMode = true
                                 }
-                                if appState.chatMessages.isEmpty && !hasShownWelcome {
-                                    hasShownWelcome = true
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                                        sendWelcomeMessage()
-                                    }
-                                }
                             }
                         }
                     ),
@@ -1061,12 +912,6 @@ struct YuanyuanHomeView: View {
         // 立即进入聊天模式
         withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
             isChatMode = true
-        }
-        
-        // 确保有打招呼消息
-        if !hasShownWelcome {
-            hasShownWelcome = true
-            sendWelcomeMessage()
         }
         
         // 创建用户消息气泡（空内容，实时更新）
@@ -1242,8 +1087,8 @@ struct YuanyuanHomeView: View {
         
         // 启动长按检测定时器
         longPressCheckTimer?.invalidate()
-        longPressCheckTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: false) { _ in
-            // 0.25秒后仍在按住，开始录音
+        longPressCheckTimer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: false) { _ in
+            // 0.15秒后仍在按住，开始录音（更敏感）
             if self.isPressedDown && !self.speechRecognizer.isRecording {
                 self.cachedInputBeforeRecording = self.inputText
                 self.startRecording()
@@ -1267,9 +1112,9 @@ struct YuanyuanHomeView: View {
             print("🔵 正在录音，调用 stopRecording")
             stopRecording(shouldSend: true)
         } else if wasPressedDown, let startTime = longPressStartTime {
-            // 如果按下时间小于0.25秒，视为点击，激活输入框
+            // 如果按下时间小于0.15秒，视为点击，激活输入框（更敏感）
             let pressDuration = Date().timeIntervalSince(startTime)
-            if pressDuration < 0.25 {
+            if pressDuration < 0.15 {
                 isInputFocused = true
             }
         }
@@ -1484,15 +1329,6 @@ struct YuanyuanHomeView: View {
     
     // MARK: - 消息处理
     
-    private func sendWelcomeMessage() {
-        // 使用AI生成的打招呼，如果没有则使用默认文字
-        let greetingContent = appState.aiGreeting.isEmpty ? "今天怎么样？" : appState.aiGreeting
-        let welcomeMsg = ChatMessage(role: .agent, content: greetingContent, isGreeting: true)
-        withAnimation {
-            appState.chatMessages.append(welcomeMsg)
-        }
-    }
-    
     private func sendMessage() {
         let trimmedText = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty, !appState.isAgentTyping else { return }
@@ -1503,11 +1339,6 @@ struct YuanyuanHomeView: View {
         // 确保进入聊天模式
         if !isChatMode {
             isChatMode = true
-        }
-        // 确保有打招呼消息
-        if !hasShownWelcome {
-            hasShownWelcome = true
-            sendWelcomeMessage()
         }
         
         // 添加用户消息并保存
@@ -1562,16 +1393,11 @@ struct YuanyuanHomeView: View {
                 isChatMode = false
             }
             
-            // 如果只有欢迎消息或为空，则清空，恢复初始状态
-            let hasOnlyGreeting = appState.chatMessages.count == 1 &&
-                                  appState.chatMessages.first?.isGreeting == true
-            let isEmpty = appState.chatMessages.isEmpty
-            
-            if hasOnlyGreeting || isEmpty {
+            // 如果为空，则清空，恢复初始状态
+            if appState.chatMessages.isEmpty {
                 withAnimation {
                     appState.chatMessages.removeAll()
                 }
-                hasShownWelcome = false
             }
         }
     }
@@ -1630,6 +1456,8 @@ private struct HomeChatBubble: View {
                             .fill(Color.white.opacity(0.85))
                     )
                     .frame(maxWidth: UIScreen.main.bounds.width * 0.75, alignment: .trailing)
+                
+                Spacer(minLength: 20)
             } else {
                 // AI消息：白色发光文字 - 柔和光晕效果
                 Text(shouldShowWaitingText ? waitingText : message.content)
@@ -1708,7 +1536,7 @@ struct ChatTextField: UIViewRepresentable {
         
         // 添加长按手势（只在未获得焦点时触发录音）
         let longPress = UILongPressGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleLongPress(_:)))
-        longPress.minimumPressDuration = 0.25
+        longPress.minimumPressDuration = 0.05  // 尽量贴近按下即录音
         textField.addGestureRecognizer(longPress)
         
         return textField
@@ -1748,6 +1576,8 @@ struct ChatTextField: UIViewRepresentable {
         
         @objc func handleLongPress(_ gesture: UILongPressGestureRecognizer) {
             if gesture.state == .began {
+                // 长按时触发触觉反馈
+                HapticFeedback.medium()
                 // 长按时直接触发录音，保持键盘弹起状态（不调用resignFirstResponder）
                 parent.onLongPressStart?()
             } else if gesture.state == .ended || gesture.state == .cancelled || gesture.state == .failed {

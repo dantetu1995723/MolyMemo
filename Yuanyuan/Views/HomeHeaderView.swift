@@ -32,7 +32,7 @@ struct HomeHeaderView: View {
             VStack(spacing: 0) {
                 // 标题和设置按钮
                 ZStack {
-                    // 标题 - 赛博朋克2077风格 - 居中
+                    // 标题 - 简洁灰白风格 - 居中
                     Text("圆圆")
                         .font(.system(size: 32, weight: .black, design: .rounded))
                         .italic()
@@ -42,9 +42,9 @@ struct HomeHeaderView: View {
                         .shadow(color: Color.black, radius: 0, x: -2, y: 2)
                         .shadow(color: Color.black, radius: 0, x: 2, y: 2)
                         .shadow(color: Color.black, radius: 1, x: 0, y: 0)
-                        .shadow(color: Color(red: 0.85, green: 1.0, blue: 0.25).opacity(0.8), radius: 12, x: 0, y: 0)
-                        .shadow(color: Color(red: 0.85, green: 1.0, blue: 0.25).opacity(0.6), radius: 20, x: 0, y: 0)
-                        .shadow(color: Color(red: 0.85, green: 1.0, blue: 0.25).opacity(0.4), radius: 30, x: 0, y: 0)
+                        .shadow(color: Color.white.opacity(0.6), radius: 12, x: 0, y: 0)
+                        .shadow(color: Color.white.opacity(0.4), radius: 20, x: 0, y: 0)
+                        .shadow(color: Color.white.opacity(0.3), radius: 30, x: 0, y: 0)
                     
                     // 设置按钮 - 右对齐
                     HStack {

@@ -15,12 +15,22 @@ private final class ExportSessionBox: @unchecked Sendable {
 class SpeechRecognizer: ObservableObject {
     @Published var isRecording = false
     @Published var recognizedText = ""
+    @Published var audioLevel: Float = 0.0
     
     private let speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "zh-CN"))
+    // 独立音频队列，避免主线程被音频会话/引擎阻塞
+    private let audioQueue = DispatchQueue(label: "com.yuanyuan.speech.audio")
+    // 会话配置/激活状态，避免每次重复配置导致卡顿
+    private var isSessionConfigured = false
+    private var isSessionActive = false
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
     private let audioEngine = AVAudioEngine()
     private var shouldAcceptUpdates = false  // 是否接受识别回调的更新
+    
+    // 平滑处理参数
+    private var smoothedLevel: Float = 0
+    private let smoothingFactor: Float = 0.3  // 0~1, 越小越平滑，越大越敏感
     
     func requestAuthorization() {
         SFSpeechRecognizer.requestAuthorization { authStatus in
@@ -46,111 +56,178 @@ class SpeechRecognizer: ObservableObject {
         // 停止之前的任务
         stopRecording()
         
-        // 配置音频会话
-        let audioSession = AVAudioSession.sharedInstance()
-        do {
-            // 使用标准的录音配置，简单可靠
-            try audioSession.setCategory(.record, mode: .default, options: .duckOthers)
-            // 激活音频会话
-            try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
-        } catch {
-            print("❌ 音频会话配置失败: \(error)")
-            return
+        // 提前在主线程更新状态，让 UI 立即反馈
+        DispatchQueue.main.async {
+            self.isRecording = true
+            self.shouldAcceptUpdates = true
         }
         
-        // 创建识别请求
-        recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
-        guard let recognitionRequest = recognitionRequest else {
-            print("❌ 无法创建识别请求")
-            return
-        }
-        
-        // 启用实时识别结果
-        recognitionRequest.shouldReportPartialResults = true
-        // 添加上下文信息以提高识别准确度
-        if #available(iOS 16.0, *) {
-            recognitionRequest.addsPunctuation = true  // 自动添加标点符号
-        }
-        // 使用设备端识别（如果可用），提高隐私性和速度
-        if #available(iOS 13.0, *) {
-            recognitionRequest.requiresOnDeviceRecognition = false  // 先尝试云端，获得更好的准确度
-        }
-        
-        // 配置音频引擎
-        let inputNode = audioEngine.inputNode
-        let recordingFormat = inputNode.outputFormat(forBus: 0)
-        
-        // 使用更大的缓冲区（4096）以获得更好的音频质量和连续性
-        inputNode.installTap(onBus: 0, bufferSize: 4096, format: recordingFormat) { buffer, _ in
-            recognitionRequest.append(buffer)
-        }
-        
-        audioEngine.prepare()
-        
-        do {
-            try audioEngine.start()
-            isRecording = true
-            shouldAcceptUpdates = true  // 开始接受更新
-            print("🎤 开始录音")
-        } catch {
-            print("❌ 启动音频引擎失败: \(error)")
-            return
-        }
-        
-        // 开始识别
-        recognitionTask = speechRecognizer.recognitionTask(with: recognitionRequest) { [weak self] result, error in
+        audioQueue.async { [weak self] in
             guard let self = self else { return }
             
-            // 只在允许更新时处理识别结果
-            if let result = result, self.shouldAcceptUpdates {
-                let text = result.bestTranscription.formattedString
+            let audioSession = AVAudioSession.sharedInstance()
+            do {
+                if !self.isSessionConfigured {
+                    try audioSession.setCategory(.record, mode: .default, options: .duckOthers)
+                    self.isSessionConfigured = true
+                }
+                if !self.isSessionActive {
+                    try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+                    self.isSessionActive = true
+                }
+            } catch {
+                print("❌ 音频会话配置失败: \(error)")
                 DispatchQueue.main.async {
-                    self.recognizedText = text
-                    onTextUpdate(text)
+                    self.isRecording = false
+                    self.shouldAcceptUpdates = false
+                }
+                return
+            }
+            
+            // 创建识别请求
+            self.recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
+            guard let recognitionRequest = self.recognitionRequest else {
+                print("❌ 无法创建识别请求")
+                DispatchQueue.main.async {
+                    self.isRecording = false
+                    self.shouldAcceptUpdates = false
+                }
+                return
+            }
+            
+            recognitionRequest.shouldReportPartialResults = true
+            if #available(iOS 16.0, *) {
+                recognitionRequest.addsPunctuation = true
+            }
+            if #available(iOS 13.0, *) {
+                recognitionRequest.requiresOnDeviceRecognition = false
+            }
+            
+            let inputNode = self.audioEngine.inputNode
+            let recordingFormat = inputNode.outputFormat(forBus: 0)
+            
+            inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
+                recognitionRequest.append(buffer)
+                
+                guard let self = self else { return }
+                let level = self.calculateAudioLevel(buffer: buffer)
+                DispatchQueue.main.async {
+                    self.audioLevel = level
                 }
             }
             
-            if let error = error {
-                // Code 301 是手动停止录音的正常错误，不需要打印
-                let nsError = error as NSError
-                if nsError.code == 301 || nsError.domain == "kLSRErrorDomain" && error.localizedDescription.contains("canceled") {
-                    // 正常的停止录音操作，忽略
-                    return
+            self.audioEngine.prepare()
+            
+            do {
+                try self.audioEngine.start()
+                print("🎤 开始录音")
+            } catch {
+                print("❌ 启动音频引擎失败: \(error)")
+                DispatchQueue.main.async {
+                    self.isRecording = false
+                    self.shouldAcceptUpdates = false
+                }
+                return
+            }
+            
+            self.recognitionTask = speechRecognizer.recognitionTask(with: recognitionRequest) { [weak self] result, error in
+                guard let self = self else { return }
+                
+                if let result = result, self.shouldAcceptUpdates {
+                    let text = result.bestTranscription.formattedString
+                    DispatchQueue.main.async {
+                        self.recognizedText = text
+                        onTextUpdate(text)
+                    }
                 }
                 
-                // 其他错误才打印并停止
-                print("❌ 语音识别错误: \(error)")
-                self.stopRecording()
+                if let error = error {
+                    let nsError = error as NSError
+                    if nsError.code == 301 || nsError.domain == "kLSRErrorDomain" && error.localizedDescription.contains("canceled") {
+                        return
+                    }
+                    
+                    print("❌ 语音识别错误: \(error)")
+                    self.stopRecording()
+                }
             }
         }
+    }
+    
+    private func calculateAudioLevel(buffer: AVAudioPCMBuffer) -> Float {
+        guard let channelData = buffer.floatChannelData?[0] else { return smoothedLevel }
+        let frames = Int(buffer.frameLength)
+        guard frames > 0 else { return smoothedLevel }
+        
+        // 计算峰值和RMS的混合值
+        var sum: Float = 0
+        var peak: Float = 0
+        
+        // 全量采样以获得最精确的结果
+        for i in 0..<frames {
+            let sample = abs(channelData[i])
+            sum += sample * sample
+            if sample > peak {
+                peak = sample
+            }
+        }
+        
+        let rms = sqrt(sum / Float(frames))
+        
+        // 混合RMS和峰值
+        let rawLevel = rms * 0.6 + peak * 0.4
+        
+        // 提高噪声门限，过滤环境噪音（说话时一般 > 0.03）
+        let gatedLevel = rawLevel < 0.025 ? 0 : rawLevel
+        
+        // 线性放大，不要太激进
+        let amplifiedLevel = gatedLevel * 3.0
+        
+        // 限制在0~1范围
+        let clampedLevel = min(amplifiedLevel, 1.0)
+        
+        // 平滑处理：上升快，下降快（让静音时快速归零）
+        if clampedLevel > smoothedLevel {
+            smoothedLevel = smoothedLevel + (clampedLevel - smoothedLevel) * 0.5
+        } else {
+            // 下降更快，让静音检测更灵敏
+            smoothedLevel = smoothedLevel + (clampedLevel - smoothedLevel) * 0.4
+        }
+        
+        return smoothedLevel
     }
     
     func stopRecording() {
         guard isRecording else { return }
         
-        isRecording = false
-        shouldAcceptUpdates = false  // 立即停止接受更新，防止后续回调覆盖已识别的文字
+        DispatchQueue.main.async {
+            self.isRecording = false
+            self.audioLevel = 0
+            self.smoothedLevel = 0
+            self.shouldAcceptUpdates = false
+        }
         
         print("🛑 停止录音")
         
-        // 先停止音频引擎和移除tap
-        if audioEngine.isRunning {
-            audioEngine.stop()
-            audioEngine.inputNode.removeTap(onBus: 0)
+        audioQueue.async { [weak self] in
+            guard let self = self else { return }
+            
+            if self.audioEngine.isRunning {
+                self.audioEngine.stop()
+                self.audioEngine.inputNode.removeTap(onBus: 0)
+            }
+            
+            self.recognitionRequest?.endAudio()
+            
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                self?.recognitionRequest = nil
+                self?.recognitionTask?.finish()
+                self?.recognitionTask = nil
+            }
+            
+            // 保持会话活跃，避免下次重新激活导致延迟
+            // 仅在 app 退出录音场景时（如后台/退出）再统一收回
         }
-        
-        // 结束音频输入
-        recognitionRequest?.endAudio()
-        
-        // 延迟清理识别任务
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-            self?.recognitionRequest = nil
-            self?.recognitionTask?.finish()
-            self?.recognitionTask = nil
-        }
-        
-        // 重置音频会话
-        try? AVAudioSession.sharedInstance().setActive(false)
     }
     
     // 识别录音文件（使用苹果原始框架，整段）

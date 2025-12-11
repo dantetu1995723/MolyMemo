@@ -10,10 +10,8 @@ struct SettingsView: View {
     @State private var showCompanySettings = false
     @State private var showFeishuSettings = false
     
-    // 主题色
-    private var themeColor: Color {
-        YuanyuanTheme.color(at: appState.colorIndex)
-    }
+    // 主题色 - 统一灰色
+    private let themeColor = Color(white: 0.55)
 
     var body: some View {
         ZStack {

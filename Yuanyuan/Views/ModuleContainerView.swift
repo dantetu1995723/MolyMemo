@@ -24,21 +24,11 @@ struct ModuleContainerView: View {
     @State private var showAddSheet = false
     @Namespace private var tabNamespace
     
-    // 主题色
-    private var themeColor: Color {
-        YuanyuanTheme.color(at: appState.colorIndex)
-    }
+    // 主题色 - 统一灰色
+    private let themeColor = Color(white: 0.55)
     
-    // 计算主题色的深色版本（用于选中态）
-    private var accentColor: Color {
-        let uiColor = UIColor(themeColor)
-        var hue: CGFloat = 0
-        var saturation: CGFloat = 0
-        var brightness: CGFloat = 0
-        var alpha: CGFloat = 0
-        uiColor.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
-        return Color(hue: hue, saturation: min(saturation * 1.3, 1.0), brightness: brightness * 0.7, opacity: alpha)
-    }
+    // 深色版本（用于选中态）
+    private let accentColor = Color(white: 0.35)
     
     var body: some View {
         GeometryReader { geometry in

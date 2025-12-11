@@ -30,10 +30,8 @@ struct ContactEditView: View {
     // 图片选择相关状态
     @State private var selectedImageIndices: Set<Int> = []
     
-    // 主题色 - 跟随主页颜色
-    private var themeColor: Color {
-        YuanyuanTheme.color(at: appState.colorIndex)
-    }
+    // 主题色 - 统一灰色
+    private let themeColor = Color(white: 0.55)
     
     var body: some View {
         NavigationView {
@@ -482,10 +480,8 @@ struct SelectableThumbnail: View {
         selectedImageIndices.contains(index)
     }
     
-    // 主题色 - 跟随主页颜色
-    private var themeColor: Color {
-        YuanyuanTheme.color(at: appState.colorIndex)
-    }
+    // 主题色 - 统一灰色
+    private let themeColor = Color(white: 0.55)
 
     var body: some View {
         if let uiImage = UIImage(data: imageData) {

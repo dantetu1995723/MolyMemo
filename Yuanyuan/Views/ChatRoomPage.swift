@@ -30,24 +30,6 @@ struct ChatRoomPage: View {
 
     let initialMode: AppMode
     
-    // 检查今天是否需要打招呼（一天一次）
-    // 如果今天已经有一条打招呼消息，就不再生成
-    private func shouldAddGreetingToday() -> Bool {
-        let calendar = Calendar.current
-        let today = calendar.startOfDay(for: Date())
-        
-        // 检查今天是否已经有打招呼消息
-        let hasGreetingToday = appState.chatMessages.contains { message in
-            message.isGreeting && calendar.isDate(message.timestamp, inSameDayAs: today)
-        }
-        
-        print("🔍 检查是否需要打招呼:")
-        print("   - 今天日期: \(today)")
-        print("   - 今天是否已有打招呼消息: \(hasGreetingToday)")
-        print("   - 是否需要生成打招呼: \(!hasGreetingToday)")
-        
-        return !hasGreetingToday
-    }
     
     // 从相册发送最近一张照片（用于截图分析shortcut）
     private func sendScreenshotFromClipboard() {
@@ -680,52 +662,16 @@ struct ChatRoomPage: View {
                     appState.shouldSendClipboardImage = false
                 }
 
-                // 异步加载最近的聊天记录（无论是否有截图都要加载）
+                        // 异步加载最近的聊天记录（无论是否有截图都要加载）
                 Task {
                     print("🚀 开始懒加载聊天记录...")
                     appState.loadRecentMessages(modelContext: modelContext, limit: 50)
 
                     await MainActor.run {
-                        print("✅ 聊天记录加载完成，消息数: \(appState.chatMessages.count)")
-
-                        // 如果不需要发送截图，检查是否需要打招呼（一天一次）
-                        if !needsSendScreenshot {
-                            let shouldGreet = shouldAddGreetingToday()
-
-                            if shouldGreet {
-                                print("✅ 今天还没有打招呼，开始生成打招呼消息")
-
-                                Task {
-                                    let greetingContent: String
-                                    let latestSummary = appState.getLatestDailySummary(modelContext: modelContext)
-
-                                    do {
-                                        greetingContent = try await QwenAPIService.generateGreeting(
-                                            mode: appState.currentMode,
-                                            latestSummary: latestSummary
-                                        )
-                                    } catch {
-                                        greetingContent = "你好呀！今天想聊点什么~"
-                                    }
-
-                                    await MainActor.run {
-                                        let greetingMessage = ChatMessage(
-                                            role: .agent,
-                                            content: greetingContent,
-                                            isGreeting: true
-                                        )
-                                        appState.chatMessages.append(greetingMessage)
-                                        appState.saveMessageToStorage(greetingMessage, modelContext: modelContext)
-                                        print("✅ 打招呼消息已生成并保存")
-                                    }
-                                }
-                            } else {
-                                print("ℹ️ 今天已经有打招呼消息了，跳过生成")
-                            }
-                        }
-
-                        // 加载完成，隐藏加载图层
-                        isLoadingHistory = false
+                            print("✅ 聊天记录加载完成，消息数: \(appState.chatMessages.count)")
+                            
+                            // 加载完成，隐藏加载图层
+                            isLoadingHistory = false
 
                         // 如果需要发送截图，在历史记录加载完成后发送
                         if needsSendScreenshot {
@@ -1649,7 +1595,6 @@ struct ChatRoomInputBar: View {
     @State private var isOptimizingText = false  // 是否正在优化文本
     @State private var internalFocused: Bool = false  // 内部焦点状态（用于桥接FocusState）
     @State private var isLongPressing = false  // 是否正在长按
-    @State private var longPressTask: Task<Void, Never>?  // 长按任务
     @State private var dragStartLocation: CGPoint?  // 拖拽起始位置
 
     // 回调：触发自动开票WebView
@@ -1700,52 +1645,37 @@ struct ChatRoomInputBar: View {
                             .shadow(color: Color.black.opacity(0.08), radius: 4, x: 0, y: 2)
                     )
                     .simultaneousGesture(
-                        // 使用 DragGesture 检测按下和松开，配合时间检测实现长按
+                        // 使用 DragGesture 检测按下和松开，零延迟进入录音
                         DragGesture(minimumDistance: 0)
                             .onChanged { value in
-                                // 记录起始位置
                                 if dragStartLocation == nil {
                                     dragStartLocation = value.startLocation
                                 }
                                 
-                                // 检查手指是否移动（移动超过5点则认为是拖拽，取消长按）
+                                // 移动超过阈值视为拖拽，取消录音尝试
                                 if let start = dragStartLocation {
                                     let distance = sqrt(pow(value.location.x - start.x, 2) + pow(value.location.y - start.y, 2))
                                     if distance > 5 {
-                                        // 手指移动了，取消长按任务
-                                        longPressTask?.cancel()
-                                        longPressTask = nil
                                         dragStartLocation = nil
                                         return
                                     }
                                 }
                                 
-                                // 按下时，延迟0.3秒后开始录音（如果还没开始且手指未移动）
-                                if !isLongPressing && !speechRecognizer.isRecording && longPressTask == nil {
-                                    longPressTask = Task {
-                                        try? await Task.sleep(nanoseconds: 300_000_000) // 0.3秒
-                                        if !Task.isCancelled {
-                                            await MainActor.run {
-                                                // 再次检查手指是否移动
-                                                if dragStartLocation != nil {
-                                                    if isTextFieldFocused {
-                                                        isTextFieldFocused = false
-                                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                                                            startRecording()
-                                                        }
-                                                    } else {
-                                                        startRecording()
-                                                    }
-                                                }
-                                            }
+                                // 首次按下立即启动录音
+                                if !isLongPressing && !speechRecognizer.isRecording {
+                                    HapticFeedback.medium()
+                                    if isTextFieldFocused {
+                                        // 先收起键盘，再立刻开始录音，避免冲突
+                                        isTextFieldFocused = false
+                                        DispatchQueue.main.async {
+                                            startRecording()
                                         }
+                                    } else {
+                                        startRecording()
                                     }
                                 }
                             }
                             .onEnded { _ in
-                                // 松开手指
-                                longPressTask?.cancel()
-                                longPressTask = nil
                                 dragStartLocation = nil
                                 if speechRecognizer.isRecording {
                                     stopRecording()

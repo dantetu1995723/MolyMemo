@@ -41,23 +41,13 @@ struct TodoListView: View {
         self._showAddSheet = showAddSheet
     }
     
-    // 行程主题色 - 跟随全局主题配色
-    private var scheduleAccentColor: Color {
-        themeVariant(saturationMultiplier: 1.25, brightnessMultiplier: 0.75)
-    }
+    // 行程主题色 - 统一灰色调
+    private let scheduleAccentColor = Color(white: 0.35)
+    private let scheduleBackgroundColor = Color(white: 0.92)
+    private let scheduleGlowColor = Color(white: 0.85)
     
-    private var scheduleBackgroundColor: Color {
-        themeVariant(saturationMultiplier: 0.65, brightnessMultiplier: 1.15)
-    }
-    
-    private var scheduleGlowColor: Color {
-        themeVariant(saturationMultiplier: 0.9, brightnessMultiplier: 1.25)
-    }
-    
-    // 背景色 - 使用主题色
-    private var themeColor: Color {
-        YuanyuanTheme.color(at: appState.colorIndex)
-    }
+    // 背景色 - 统一灰色
+    private let themeColor = Color(white: 0.55)
     
     // 当前选中日期的全部事项
     private var currentDayTodos: [TodoItem] {
@@ -517,23 +507,6 @@ struct TodoListView: View {
             }
         }
         return months
-    }
-    
-    // 根据主题色生成不同深浅的行程配色
-    private func themeVariant(saturationMultiplier: CGFloat, brightnessMultiplier: CGFloat) -> Color {
-        let uiColor = UIColor(themeColor)
-        var hue: CGFloat = 0
-        var saturation: CGFloat = 0
-        var brightness: CGFloat = 0
-        var alpha: CGFloat = 0
-        
-        guard uiColor.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha) else {
-            return themeColor
-        }
-        
-        let newSaturation = min(max(saturation * saturationMultiplier, 0), 1)
-        let newBrightness = min(max(brightness * brightnessMultiplier, 0), 1)
-        return Color(hue: hue, saturation: newSaturation, brightness: newBrightness, opacity: alpha)
     }
 }
 

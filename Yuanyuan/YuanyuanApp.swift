@@ -68,9 +68,8 @@ struct YuanyuanApp: App {
                         _ = await CalendarManager.shared.requestNotificationPermission()
                     }
                     
-                    // App首次启动时，开始新session并生成基于历史的打招呼
+                    // App首次启动时，开始新session
                     appState.startNewSession()
-                    appState.generateSessionGreeting(modelContext: modelContainer.mainContext)
                 }
                 .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("TriggerScreenshotAnalysis"))) { notification in
                     print("🎯 收到截图分析触发通知")
@@ -182,13 +181,9 @@ struct YuanyuanApp: App {
             // App进入前台
             print("🌅 App进入前台")
             
-            // 如果是从后台返回（不是首次启动），开始新session并生成打招呼
+            // 如果是从后台返回（不是首次启动），开始新session
             if oldPhase == .background {
                 appState.startNewSession()
-                appState.generateSessionGreeting(modelContext: modelContainer.mainContext)
-            } else if oldPhase == .inactive {
-                // 从inactive回来（比如下拉通知栏后收起），不需要重新生成
-                print("ℹ️ 从inactive恢复，不重新生成打招呼")
             }
             
         case .inactive:

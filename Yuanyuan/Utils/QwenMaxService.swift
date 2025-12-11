@@ -19,6 +19,12 @@ class QwenMaxService {
             request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             
+            // 获取当前日期信息，帮助AI更好地理解时间相关的问题
+            let dateFormatter = DateFormatter()
+            dateFormatter.dateFormat = "yyyy年MM月dd日 EEEE"
+            dateFormatter.locale = Locale(identifier: "zh_CN")
+            let currentDateStr = dateFormatter.string(from: Date())
+            
             let systemPrompt = mode == .work ?
                 """
                 你是圆圆，一位知性、温柔、理性的秘书型助理。
@@ -26,7 +32,13 @@ class QwenMaxService {
                 说话克制、有条理、有温度，不撒娇、不卖萌，也尽量不用「~」这类夸张语气词。
                 回答时先给出清晰结论，再用简洁的理由和可执行建议支持结论，避免长篇堆砌和套路化表达。
                 
-                当用户询问实时信息或需要最新数据时，使用联网搜索获取结果，再用冷静、专业但温和的语气说明给用户。
+                重要：联网搜索使用规则
+                - 当用户询问日期、时间、星期几、实时信息或需要最新数据时，必须使用联网搜索获取准确结果
+                - 不要依赖训练数据中的日期信息，必须通过联网搜索获取当前真实日期
+                - 例如：用户问"昨天是星期几"、"今天是几号"等问题时，必须先联网搜索当前日期，再计算答案
+                - 搜索到信息后，用冷静、专业但温和的语气说明给用户
+                
+                当前系统时间参考：\(currentDateStr)（仅供参考，实际日期请通过联网搜索确认）
                 """ :
                 """
                 你是圆圆，一位知性、温柔、理性的秘书型伙伴。
@@ -34,7 +46,13 @@ class QwenMaxService {
                 语气平和细腻，不矫情、不卖萌，不过度热情；先接住用户情绪，再用清晰的结构帮对方分析和整理思路。
                 回答时优先给用户可以直接执行的建议，少用列表条目，更多像自然对话一样完整表达。
                 
-                当用户询问与现实世界、当前时间相关的问题时，使用联网搜索获取准确答案，再用温柔理性的方式转述给用户。
+                重要：联网搜索使用规则
+                - 当用户询问日期、时间、星期几、实时信息或与现实世界、当前时间相关的问题时，必须使用联网搜索获取准确答案
+                - 不要依赖训练数据中的日期信息，必须通过联网搜索获取当前真实日期
+                - 例如：用户问"昨天是星期几"、"今天是几号"等问题时，必须先联网搜索当前日期，再计算答案
+                - 搜索到信息后，用温柔理性的方式转述给用户
+                
+                当前系统时间参考：\(currentDateStr)（仅供参考，实际日期请通过联网搜索确认）
                 """
             
             // 构建消息列表 - 只保留最近2-3轮对话（约4-6条消息）
@@ -78,7 +96,11 @@ class QwenMaxService {
             print("消息数量: \(apiMessages.count)")
             print("联网搜索: 已启用 (enable_search: true)")
             print("stream: true")
+            print("当前日期参考: \(currentDateStr)")
             print("过滤后的消息历史（共\(filteredMessages.count)条），实际发送最近\(recentMessages.count)条：")
+            if recentMessages.isEmpty {
+                print("⚠️ 警告：消息历史为空，这是首次消息发送")
+            }
             for (index, msg) in recentMessages.enumerated() {
                 let roleStr = msg.role == .user ? "👤 User" : "🤖 Agent"
                 print("[\(index)] \(roleStr): \(msg.content.prefix(50))...")

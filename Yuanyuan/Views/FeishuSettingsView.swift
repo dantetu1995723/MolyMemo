@@ -18,10 +18,8 @@ struct FeishuSettingsView: View {
     @State private var inputAppId = ""
     @State private var inputAppSecret = ""
     
-    // 主题色
-    private var themeColor: Color {
-        YuanyuanTheme.color(at: appState.colorIndex)
-    }
+    // 主题色 - 统一灰色
+    private let themeColor = Color(white: 0.55)
     
     var body: some View {
         ZStack {

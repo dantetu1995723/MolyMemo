@@ -22,6 +22,12 @@ class QwenOmniService {
             request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             
+            // 获取当前日期信息，帮助AI更好地理解时间相关的问题
+            let dateFormatter = DateFormatter()
+            dateFormatter.dateFormat = "yyyy年MM月dd日 EEEE"
+            dateFormatter.locale = Locale(identifier: "zh_CN")
+            let currentDateStr = dateFormatter.string(from: Date())
+            
             let systemPrompt = mode == .work ?
                 """
                 你是圆圆，一位知性、温柔、理性的秘书型助理，能够理解文字、图片等多模态内容。
@@ -29,7 +35,13 @@ class QwenOmniService {
                 语气沉稳、有礼、有温度，不撒娇、不卖萌，尽量不用「~」这类夸张语气词。
                 回答时先给出清晰结论，再用简洁、逻辑清晰的分析和步骤说明支持结论，避免流水账式堆砌。
                 
-                当用户询问实时信息或需要最新数据时，使用联网搜索获取结果，再用冷静专业但温柔的方式说明给用户。
+                重要：联网搜索使用规则
+                - 当用户询问日期、时间、星期几、实时信息或需要最新数据时，必须使用联网搜索获取准确结果
+                - 不要依赖训练数据中的日期信息，必须通过联网搜索获取当前真实日期
+                - 例如：用户问"昨天是星期几"、"今天是几号"等问题时，必须先联网搜索当前日期，再计算答案
+                - 搜索到信息后，用冷静专业但温柔的方式说明给用户
+                
+                当前系统时间参考：\(currentDateStr)（仅供参考，实际日期请通过联网搜索确认）
                 """ :
                 """
                 你是圆圆，一位知性、温柔、理性的秘书型伙伴，能够理解文字、图片等多模态内容。
@@ -37,7 +49,13 @@ class QwenOmniService {
                 和用户聊天时，先共情、再分析：先用简短温和的话回应对方感受，然后用理性、结构化的方式帮对方看清问题。
                 语气自然、不矫情，不过度卖萌，也尽量不用「~」等语气词；更像一位稳重、细心的私人秘书。
                 
-                当话题涉及现实世界和当前时间时，可以用联网搜索获取准确信息，再用平静、靠谱的语气转述给用户。
+                重要：联网搜索使用规则
+                - 当用户询问日期、时间、星期几、实时信息或与现实世界、当前时间相关的问题时，必须使用联网搜索获取准确答案
+                - 不要依赖训练数据中的日期信息，必须通过联网搜索获取当前真实日期
+                - 例如：用户问"昨天是星期几"、"今天是几号"等问题时，必须先联网搜索当前日期，再计算答案
+                - 搜索到信息后，用平静、靠谱的语气转述给用户
+                
+                当前系统时间参考：\(currentDateStr)（仅供参考，实际日期请通过联网搜索确认）
                 """
             
             var apiMessages: [[String: Any]] = [
@@ -95,6 +113,23 @@ class QwenOmniService {
                 "modalities": ["text"],
                 "enable_search": true  // 使用简单的联网搜索参数，和 qwen-plus 一致
             ]
+            
+            // 调试输出
+            print("\n========== 📤 qwen-omni API Request ==========")
+            print("模型: \(model)")
+            print("API URL: \(apiURL)")
+            print("消息数量: \(apiMessages.count)")
+            print("联网搜索: 已启用 (enable_search: true)")
+            print("当前日期参考: \(currentDateStr)")
+            print("过滤后的消息历史（共\(filteredMessages.count)条），实际发送最近\(recentMessages.count)条：")
+            if recentMessages.isEmpty {
+                print("⚠️ 警告：消息历史为空，这是首次消息发送")
+            }
+            for (index, msg) in recentMessages.enumerated() {
+                let roleStr = msg.role == .user ? "👤 User" : "🤖 Agent"
+                print("[\(index)] \(roleStr): \(msg.content.prefix(50))...")
+            }
+            print("==========================================\n")
             
             request.httpBody = try JSONSerialization.data(withJSONObject: payload)
             

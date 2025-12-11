@@ -19,10 +19,8 @@ struct ContactImportView: View {
 
     private let contactsManager = ContactsManager.shared
     
-    // 主题色 - 跟随主页颜色
-    private var themeColor: Color {
-        YuanyuanTheme.color(at: appState.colorIndex)
-    }
+    // 主题色 - 统一灰色
+    private let themeColor = Color(white: 0.55)
     
     // 过滤后的联系人
     private var filteredContacts: [SystemContact] {

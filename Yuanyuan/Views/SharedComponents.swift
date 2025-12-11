@@ -2,45 +2,60 @@ import SwiftUI
 import UIKit
 import Photos
 
+struct GeometryGetter: ViewModifier {
+    @Binding var rect: CGRect
+    
+    func body(content: Content) -> some View {
+        content.background(
+            GeometryReader { proxy in
+                Color.clear.onAppear {
+                    self.rect = proxy.frame(in: .global)
+                }
+                .onChange(of: proxy.frame(in: .global)) { _, newFrame in
+                    self.rect = newFrame
+                }
+            }
+        )
+    }
+}
+
+extension View {
+    func getRect(_ rect: Binding<CGRect>) -> some View {
+        self.modifier(GeometryGetter(rect: rect))
+    }
+}
+
 // MARK: - ===== 圆圆UI设计系统 =====
 
-// 主题色定义
+// 主题色定义 - 统一灰白色调
 struct YuanyuanTheme {
-    // 黄绿主色调
-    static let primaryLight = Color(red: 0.85, green: 1.0, blue: 0.25)
-    static let primaryDark = Color(red: 0.78, green: 0.98, blue: 0.2)
+    // 主色调 - 系统灰色
+    static let primaryGray = Color(white: 0.45)  // 中性灰
+    static let lightGray = Color(white: 0.65)    // 浅灰
+    static let darkGray = Color(white: 0.25)     // 深灰
     
-    // 渐变组合
+    // 渐变组合 - 灰色渐变
     static var primaryGradient: LinearGradient {
         LinearGradient(
-            colors: [primaryLight, primaryDark],
+            colors: [lightGray, primaryGray],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
     }
     
-    // 暖色背景色（首页默认）
-    static let warmBackground = Color(red: 1, green: 0.89, blue: 0.79)
+    // 背景色 - 浅灰白
+    static let warmBackground = Color(white: 0.96)
     
-    // 全局调色板（与首页同步）- 高饱和度版本，与白色光球形成对比
-    static let colorOptions: [Color] = [
-        Color(hue: 0.58, saturation: 0.12, brightness: 0.75),    // 雾蓝灰（默认）- 低调高级
-        Color(hue: 0.98, saturation: 0.60, brightness: 0.95),   // 粉红 - 现代活力（原珊瑚粉）
-        Color(hue: 0.06, saturation: 0.58, brightness: 0.96),   // 活力橙 - 现代鲜明（原杏橙）
-        Color(hue: 0.22, saturation: 0.45, brightness: 0.88),   // 青柠绿 - 清新自然
-        Color(hue: 0.52, saturation: 0.42, brightness: 0.90),   // 天青蓝 - 清澈透亮
-        Color(hue: 0.60, saturation: 0.48, brightness: 0.88),   // 钴蓝 - 沉稳深邃
-        Color(hue: 0.78, saturation: 0.38, brightness: 0.88),   // 薰衣草紫 - 优雅梦幻
-        Color(hue: 0.04, saturation: 0.52, brightness: 0.97)    // 暖橙 - 现代温暖（原暖杏）
-    ]
+    // 统一主题色 - 单一灰色
+    static let themeColor = Color(white: 0.55)
     
-    // 根据索引获取颜色
+    // 根据索引获取颜色（保持API兼容，但返回统一灰色）
     static func color(at index: Int) -> Color {
-        colorOptions[index % colorOptions.count]
+        themeColor
     }
 }
 
-// MARK: - 模块渐变背景
+// MARK: - 模块渐变背景 - 灰白渐变
 struct ModuleBackgroundView: View {
     var themeColor: Color = YuanyuanTheme.warmBackground
     
@@ -48,8 +63,9 @@ struct ModuleBackgroundView: View {
         LinearGradient(
             gradient: Gradient(stops: [
                 .init(color: .white, location: 0.0),
-                .init(color: themeColor.opacity(0.35), location: 0.45),
-                .init(color: .white, location: 1.0)
+                .init(color: Color(white: 0.95), location: 0.3),
+                .init(color: Color(white: 0.92), location: 0.6),
+                .init(color: Color(white: 0.96), location: 1.0)
             ]),
             startPoint: .top,
             endPoint: .bottom
@@ -82,16 +98,9 @@ struct ModuleHeaderView: View {
     var rightButton: AnyView? = nil
     var themeColor: Color = YuanyuanTheme.warmBackground
     
-    // 计算深色标题颜色
+    // 标题颜色 - 深灰色
     private var titleColor: Color {
-        let uiColor = UIColor(themeColor)
-        var hue: CGFloat = 0
-        var saturation: CGFloat = 0
-        var brightness: CGFloat = 0
-        var alpha: CGFloat = 0
-        
-        uiColor.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
-        return Color(hue: hue, saturation: min(saturation * 1.3, 1.0), brightness: brightness * 0.55, opacity: alpha)
+        Color(white: 0.25)
     }
     
     var body: some View {
@@ -375,23 +384,17 @@ struct ModuleAddButton: View {
     }
 }
 
-// MARK: - Tab选择器样式 - 跟随主题色调
+// MARK: - Tab选择器样式 - 灰色调
 struct ModuleTabButton: View {
     let title: String
     let value: String
     let isSelected: Bool
     let action: () -> Void
-    var themeColor: Color = YuanyuanTheme.warmBackground  // 可选主题色参数
+    var themeColor: Color = YuanyuanTheme.warmBackground  // 保持API兼容
     
-    // 计算深色版本
+    // 指示器颜色 - 深灰色
     private var indicatorColor: Color {
-        let uiColor = UIColor(themeColor)
-        var hue: CGFloat = 0
-        var saturation: CGFloat = 0
-        var brightness: CGFloat = 0
-        var alpha: CGFloat = 0
-        uiColor.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
-        return Color(hue: hue, saturation: min(saturation * 1.4, 1.0), brightness: brightness * 0.6, opacity: alpha)
+        Color(white: 0.35)
     }
     
     var body: some View {
@@ -727,7 +730,7 @@ struct FullScreenImageGallery: View {
                         .padding(.bottom, 12)
                     }
                     
-                    // 保存按钮（Liquid glass效果）
+                    // 保存按钮（Liquid glass效果）- 灰白色调
                     Button(action: {
                         saveCurrentImage()
                     }) {
@@ -750,13 +753,13 @@ struct FullScreenImageGallery: View {
                                 Capsule()
                                     .fill(.ultraThinMaterial)
                                 
-                                // 黄绿色渐变叠加层（与app整体风格一致）
+                                // 灰色渐变叠加层
                                 Capsule()
                                     .fill(
                                         LinearGradient(
                                             colors: [
-                                                Color(red: 0.85, green: 1.0, blue: 0.25).opacity(0.7),
-                                                Color(red: 0.78, green: 0.98, blue: 0.2).opacity(0.5)
+                                                Color(white: 0.4).opacity(0.7),
+                                                Color(white: 0.3).opacity(0.5)
                                             ],
                                             startPoint: .topLeading,
                                             endPoint: .bottomTrailing

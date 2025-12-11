@@ -23,10 +23,8 @@ struct CompanySettingsView: View {
         case companyName, taxNumber, phoneNumber, email, address, bankName, bankAccount
     }
     
-    // 主题色 - 跟随主页颜色
-    private var themeColor: Color {
-        YuanyuanTheme.color(at: appState.colorIndex)
-    }
+    // 主题色 - 统一灰色
+    private let themeColor = Color(white: 0.55)
     
     // 获取现有的公司信息（如果有）
     private var existingCompany: CompanyInfo? {

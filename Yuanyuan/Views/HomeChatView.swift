@@ -2,6 +2,7 @@ import SwiftUI
 import SwiftData
 import AVKit
 import AVFoundation
+import UIKit
 
 // MARK: - 布局常量
 private let agentAvatarSize: CGFloat = 30
@@ -130,9 +131,7 @@ struct HomeChatView: View {
                     }
                     
                 // 底部输入区域 (浮动在最上层)
-                    bottomInputArea
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 8)
+                bottomInputArea
                     .zIndex(101) // 确保在录音层之上
             }
         }
@@ -424,37 +423,13 @@ struct HomeChatView: View {
     // MARK: - 聊天内容
     private var normalChatContent: some View {
         Group {
-            // 如果没有聊天历史，显示打招呼
-            if appState.chatMessages.isEmpty {
-                if appState.isGeneratingGreeting {
-                    // 正在生成打招呼
-                    HStack(alignment: .top, spacing: 12) {
-                        AvatarVideoView(videoName: "Agent", size: agentAvatarSize)
-                        
-                        HStack(spacing: 6) {
-                            Text("正在想说什么")
-                                .font(.system(size: 16))
-                                .foregroundColor(Color(hex: "999999"))
-                            ProgressView()
-                                .scaleEffect(0.7)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        
-                        Spacer(minLength: 20)
-                    }
-                } else if !appState.aiGreeting.isEmpty {
-                    // 显示已生成的打招呼（用 AIBubble 展示打字机效果）
-                    AIBubble(text: appState.aiGreeting)
-                }
-            }
-            
             // 消息列表
             ForEach(appState.chatMessages) { message in
                 if message.role == .user {
                     UserBubble(text: message.content)
                         .id(message.id)
                 } else {
-                    AIBubble(text: message.content.isEmpty && appState.isAgentTyping ? "正在思考..." : message.content)
+                    AIBubble(text: message.content.isEmpty && appState.isAgentTyping ? "正在思考..." : message.content, messageId: message.id)
                         .id(message.id)
                 }
             }
@@ -469,16 +444,15 @@ struct HomeChatView: View {
     // MARK: - 底部输入区域
     private var bottomInputArea: some View {
         GeometryReader { geometry in
-            let areaWidth = geometry.size.width
-            let buttonSize: CGFloat = 44
+            let horizontalMargin: CGFloat = 20 // 与顶部导航栏对齐
+            let bottomMargin: CGFloat = 4 // 减小底部边距
+            let areaWidth = geometry.size.width - horizontalMargin * 2 // 减去左右边距后的可用宽度
+            let inputHeight: CGFloat = 48 // 输入框高度
+            let buttonSize: CGFloat = 48 // 按钮尺寸，与输入框高度一致
             let spacing: CGFloat = 10
-            let horizontalPadding: CGFloat = 32 // 16 * 2
-            let innerPadding: CGFloat = 28 // 14 * 2
             
-            // 计算输入框宽度: 总宽 - 左右边距 - 按钮宽 - 按钮间距 - 内部左侧加号按钮宽 - 内部间距
-            // 这里我们需要的是整个"输入框背景"的宽度，即包含加号按钮和TextField的那个容器
-            // InputContainerWidth = AreaWidth - HorizontalPadding - ButtonSize - Spacing
-            let inputContainerWidth = areaWidth - horizontalPadding - buttonSize - spacing
+            // 计算输入框宽度: 可用宽度 - 按钮宽 - 按钮间距
+            let inputContainerWidth = areaWidth - buttonSize - spacing
             
             // 是否在说话（用于波纹动画和状态判断）
             let isSpeaking = !recordingTranscript.isEmpty && audioPower > 0.05
@@ -489,8 +463,11 @@ struct HomeChatView: View {
             let baseCircleSize: CGFloat = 80  // 基础圆形尺寸
             // 活跃状态下圆变大
             let circleSize: CGFloat = isActiveBlob ? baseCircleSize * 1.15 : baseCircleSize
-            let fullWidth = areaWidth - horizontalPadding
-            let inputHeight: CGFloat = 44
+            // 容器高度：录音时需要更高的空间避免上下被裁剪
+            let baseContainerHeight: CGFloat = 64
+            // 球本身高度为 circleSize，这里上下各预留 20pt，让动态球完全不贴边
+            let recordingContainerHeight: CGFloat = circleSize + 40
+            let containerHeight: CGFloat = recordingState == .shrinking ? recordingContainerHeight : baseContainerHeight
             
             // 计算当前状态下的目标 Frame
             var targetWidth: CGFloat {
@@ -511,18 +488,18 @@ struct HomeChatView: View {
             
             var targetCornerRadius: CGFloat {
                 switch recordingState {
-                case .idle: return 22
-                case .morphing: return 22
+                case .idle: return 15
+                case .morphing: return 15
                 case .shrinking: return circleSize / 2
                 }
             }
             
-            // 计算位置偏移
+            // 计算位置偏移（相对于可用区域中心）
             // 1. 输入框中心的偏移
-            let inputIdleOffset = (16 + inputContainerWidth / 2) - (areaWidth / 2)
+            let inputIdleOffset = inputContainerWidth / 2 - areaWidth / 2
             
             // 2. 按钮中心的偏移
-            let buttonIdleOffset = (areaWidth - 16 - buttonSize / 2) - (areaWidth / 2)
+            let buttonIdleOffset = (areaWidth - buttonSize / 2) - areaWidth / 2
             
             // 当前输入框的偏移
             var currentInputOffset: CGFloat {
@@ -542,184 +519,157 @@ struct HomeChatView: View {
             let smallCircleRadius: CGFloat = mainCircleRadius * 0.7  // 小圆半径为主圆半径的70%
             let orbitRadius = mainCircleRadius - smallCircleRadius  // 轨道半径：让小圆紧贴主圆内部
             
-            ZStack {
-                // 1. 粘滞融合背景 (Sticky/Gooey Background)
-                ZStack {
-                    // 统一的颜色层 (The Ink) - 使用遮罩扩散技术实现 "由蓝到白色渐变"
-                    ZStack {
-                        Color.white // 默认底色是白色
-                        
-                        // 蓝色扩散层：通过 colorSpread 变量控制宽度，从中心向两边扩散
-                        activeColor
-                            .mask(
-                                GeometryReader { proxy in
-                                    // 使用胶囊体作为扩散遮罩
-                                    Capsule()
-                                        .frame(width: max(0, proxy.size.width * colorSpread))
-                                        .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
-                                        .blur(radius: 20) // 模糊边缘，形成渐变效果
-                                }
-                            )
-                    }
-                    .mask {
-                        // 遮罩层：生成粘滞效果的形状 (The Mask)
-                        // 原理：绘制白色形状 -> 模糊 -> 提高对比度阈值 -> 亮度转Alpha
-                        ZStack {
-                            // 底色必须是黑色（Alpha 0）
-                            Color.black
-                            
-                            // 白色形状组
-                            Group {
-                                // 形状1: 输入框基础形状
-                                // 注意：它在 idle / morphing / shrinking 三个状态中始终存在，
-                                //       通过 targetWidth / targetHeight / targetCornerRadius 的变化
-                                //       实现从“粘滞长条”向中间圆球收缩的过渡。
-                                RoundedRectangle(cornerRadius: targetCornerRadius)
-                                    .frame(width: targetWidth, height: targetHeight)
-                                    .offset(x: currentInputOffset)
-                                
-                                // 形状1b: 活跃状态时的 Blob 轮廓（仅在收缩阶段叠加在主圆之上）
-                                if recordingState == .shrinking && isActiveBlob {
-                                    BlobShape(time: blobTime, isAnimating: true, amplitude: 0.35)
-                                        .frame(width: circleSize * 1.25, height: circleSize * 1.25)
-                                        .offset(x: 0)
-                                }
-                                
-                                // 形状2: 右侧按钮 (只在非收缩阶段显示，参与融合)
-                                if recordingState != .shrinking {
-                                    Circle()
-                                        .frame(width: buttonSize, height: buttonSize)
-                                        .offset(x: buttonIdleOffset)
-                                }
-                                
-                                // 形状3: 连接体 (Connector) - 仅在 morphing 阶段出现，连接两者
-                                if recordingState == .morphing {
-                                    // 计算连接位置
-                                    let inputRightEdge = inputIdleOffset + inputContainerWidth / 2
-                                    let buttonLeftEdge = buttonIdleOffset - buttonSize / 2
-                                    let connectorWidth = buttonLeftEdge - inputRightEdge + 30 // +30 确保重叠
-                                    let connectorX = (inputRightEdge + buttonLeftEdge) / 2
-                                    
-                                    Rectangle()
-                                        .frame(width: connectorWidth, height: 20)
-                                        .offset(x: connectorX)
-                                }
-                                
-                                // 形状4: 旋转小圆 - 仅在 shrinking 且“当前没有文字输出动画”时出现
-                                // 当 isOutputtingText = true 时，用 Blob 表达状态，不再显示小圆。
-                                // 旋转小圆：仅在静音且非活跃状态时显示
-                                // 当处于活跃状态（说话或转文字）时，用 Blob 表达状态，不再显示小圆。
-                                if recordingState == .shrinking && !isActiveBlob {
-                                    Circle()
-                                        .frame(width: smallCircleRadius * 2, height: smallCircleRadius * 2)
-                                        // 注意：这里的 offset 是相对于 ZStack 中心的，而 shrinking 状态下主圆也是居中的
-                                        .offset(x: orbitRadius) 
-                                        .rotationEffect(.degrees(rotationAngle))
-                                }
-                            }
-                            .foregroundColor(.white)
-                            .blur(radius: 10) // 粘滞半径
-                        }
-                        .compositingGroup() // 必须组合后处理
-                        .contrast(20)      // 阈值化：将模糊边缘锐化
-                        .luminanceToAlpha() // 黑透白显
-                    }
-                }
-                .shadow(color: recordingState == .idle ? Color.black.opacity(0.05) : activeColor.opacity(0.2), radius: recordingState == .shrinking ? 15 : 2, x: 0, y: recordingState == .shrinking ? 5 : 0)
-                // 描边层 (只在 Idle 状态显示，使用条件渲染确保完全移除)
-                .overlay(
-                    Group {
-                        if recordingState == .idle {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 22)
-                            .stroke(Color(hex: "E5E5EA"), lineWidth: 0.5)
-                            .frame(width: inputContainerWidth, height: inputHeight)
-                            .offset(x: inputIdleOffset)
-                        
-                        Circle()
-                            .stroke(Color(hex: "E5E5EA"), lineWidth: 0.5)
-                            .frame(width: buttonSize, height: buttonSize)
-                            .offset(x: buttonIdleOffset)
-                    }
-                        }
-                    }
-                )
+            VStack {
+                Spacer(minLength: 0)
                 
-                // 2. 内容层 (UI Content)
                 ZStack {
-                    // A. 输入状态 UI
-                    HStack(spacing: spacing) {
-                        // 左侧输入框内容
-                        HStack(spacing: 10) {
-                            Button(action: {}) {
-                                Image(systemName: "plus.circle")
-                                    .font(.system(size: 22, weight: .medium))
-                                    .foregroundColor(Color(hex: "999999"))
-                            }
+                    // 1. 粘滞融合背景 (Sticky/Gooey Background)
+                    ZStack {
+                        // 统一的颜色层 (The Ink) - 使用遮罩扩散技术实现 "由蓝到白色渐变"
+                        ZStack {
+                            Color.white // 默认底色是白色
                             
-                            TextField("发送消息或按住说话", text: $inputText)
-                                .font(.system(size: 16))
-                                .foregroundColor(primaryGray)
-                                .focused($isInputFocused)
-                                .onSubmit { sendMessage() }
-                                // 当内容为空时，禁用 TextField 的直接交互，由外层手势接管
-                                // 这样可以防止 TextField 抢夺长按手势
-                                .disabled(inputText.isEmpty)
+                            // 蓝色扩散层：通过 colorSpread 变量控制宽度，从中心向两边扩散
+                            activeColor
+                                .mask(
+                                    GeometryReader { proxy in
+                                        // 使用胶囊体作为扩散遮罩
+                                        Capsule()
+                                            .frame(width: max(0, proxy.size.width * colorSpread))
+                                            .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
+                                            .blur(radius: 20) // 模糊边缘，形成渐变效果
+                                    }
+                                )
                         }
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
-                        .frame(width: inputContainerWidth, height: inputHeight)
-                        // 关键：手势绑定在这里，确保整个输入区域都能响应长按
-                        .contentShape(Rectangle()) 
-                        .gesture(
-                            // 仅在文本为空时响应长按
-                            inputText.isEmpty ? voiceInputGesture : nil
-                        )
-                        
-                        // 右侧工具箱按钮
-                        Button(action: {
-                            HapticFeedback.light()
-                            showModuleContainer = true
-                        }) {
-                            Image(systemName: "shippingbox")
-                                .font(.system(size: 20))
-                                .foregroundColor(Color(hex: "666666"))
-                                .frame(width: buttonSize, height: buttonSize)
-                                .contentShape(Circle())
+                        .mask {
+                            // 遮罩层：生成粘滞效果的形状 (The Mask)
+                            // 原理：绘制白色形状 -> 模糊 -> 提高对比度阈值 -> 亮度转Alpha
+                            ZStack {
+                                // 底色必须是黑色（Alpha 0）
+                                Color.black
+                                
+                                // 白色形状组
+                                Group {
+                                    // 形状1: 输入框基础形状
+                                    // 注意：它在 idle / morphing / shrinking 三个状态中始终存在，
+                                    //       通过 targetWidth / targetHeight / targetCornerRadius 的变化
+                                    //       实现从“粘滞长条”向中间圆球收缩的过渡。
+                                    RoundedRectangle(cornerRadius: targetCornerRadius)
+                                        .frame(width: targetWidth, height: targetHeight)
+                                        .offset(x: currentInputOffset)
+                                    
+                                    // 形状1b: 活跃状态时的 Blob 轮廓（仅在收缩阶段叠加在主圆之上）
+                                    if recordingState == .shrinking && isActiveBlob {
+                                        BlobShape(time: blobTime, isAnimating: true, amplitude: 0.35)
+                                            .frame(width: circleSize * 1.25, height: circleSize * 1.25)
+                                            .offset(x: 0)
+                                    }
+                                    
+                                    // 形状2: 右侧按钮 (只在非收缩阶段显示，参与融合)
+                                    if recordingState != .shrinking {
+                                        Circle()
+                                            .frame(width: buttonSize, height: buttonSize)
+                                            .offset(x: buttonIdleOffset)
+                                    }
+                                    
+                                    // 形状3: 连接体 (Connector) - 仅在 morphing 阶段出现，连接两者
+                                    if recordingState == .morphing {
+                                        // 计算连接位置
+                                        let inputRightEdge = inputIdleOffset + inputContainerWidth / 2
+                                        let buttonLeftEdge = buttonIdleOffset - buttonSize / 2
+                                        let connectorWidth = buttonLeftEdge - inputRightEdge + 30 // +30 确保重叠
+                                        let connectorX = (inputRightEdge + buttonLeftEdge) / 2
+                                        
+                                        Rectangle()
+                                            .frame(width: connectorWidth, height: 20)
+                                            .offset(x: connectorX)
+                                    }
+                                    
+                                    // 形状4: 旋转小圆 - 仅在 shrinking 且“当前没有文字输出动画”时出现
+                                    // 当 isOutputtingText = true 时，用 Blob 表达状态，不再显示小圆。
+                                    // 旋转小圆：仅在静音且非活跃状态时显示
+                                    // 当处于活跃状态（说话或转文字）时，用 Blob 表达状态，不再显示小圆。
+                                    if recordingState == .shrinking && !isActiveBlob {
+                                        Circle()
+                                            .frame(width: smallCircleRadius * 2, height: smallCircleRadius * 2)
+                                            // 注意：这里的 offset 是相对于 ZStack 中心的，而 shrinking 状态下主圆也是居中的
+                                            .offset(x: orbitRadius) 
+                                            .rotationEffect(.degrees(rotationAngle))
+                                    }
+                                }
+                                .foregroundColor(.white)
+                                .blur(radius: 10) // 粘滞半径
+                            }
+                            .compositingGroup() // 必须组合后处理
+                            .contrast(20)      // 阈值化：将模糊边缘锐化
+                            .luminanceToAlpha() // 黑透白显
                         }
-                        .opacity(recordingState == .idle ? 1 : 0)
                     }
-                    .padding(.horizontal, 16) // 对应 geometry 里的 padding
-                    // 确保 HStack 占满宽度以便对齐
-                    .frame(width: areaWidth, alignment: .leading)
-                    
-                    // 输入 UI 在 shrinking 和 morphing 时都完全隐藏 (只在 idle 显示)
-                    .opacity(recordingState == .idle ? 1 : 0)
-                    .animation(nil, value: recordingState) // 立即隐藏，无动画，防止残影
-                    
-                    // B. 录音状态 UI（仅保留外层波纹光晕，不再叠加图标圆）
-                    if recordingState == .shrinking {
-                        if showBlob {
-                            // 活跃状态下使用更大的圆和更大的波动幅度
-                            let blobSize = isActiveBlob ? circleSize + 50 : circleSize + 30
-                            let blobAmplitude: CGFloat = isActiveBlob ? 0.35 : 0.2
-                            // 统一使用 isActiveBlob 控制动画和缩放
-                            BlobShape(time: blobTime, isAnimating: isActiveBlob, amplitude: blobAmplitude)
-                                .fill(activeColor.opacity(isActiveBlob ? 0.2 : 0.1))
-                                .frame(width: blobSize, height: blobSize)
-                                .scaleEffect(isActiveBlob ? 1.08 : 1.0)
+                    .shadow(color: recordingState == .idle ? Color.black.opacity(0.05) : activeColor.opacity(0.2), radius: recordingState == .shrinking ? 15 : 2, x: 0, y: recordingState == .shrinking ? 5 : 0)
+                
+                    // 2. 内容层 (UI Content)
+                    ZStack {
+                        // A. 输入状态 UI
+                        HStack(spacing: spacing) {
+                            // 左侧输入框内容
+                            HStack(spacing: 10) {
+                                Button(action: {}) {
+                                    Image(systemName: "plus.circle")
+                                        .font(.system(size: 20, weight: .medium)) // 调整图标大小
+                                        .foregroundColor(Color(hex: "999999"))
+                                }
+                                
+                                TextField("发送消息或按住说话", text: $inputText)
+                                    .font(.system(size: 17)) // 调整字体大小
+                                    .foregroundColor(primaryGray)
+                                    .focused($isInputFocused)
+                                    .onSubmit { sendMessage() }
+                            }
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                            .frame(width: inputContainerWidth, height: inputHeight)
+                            // 关键：手势绑定在这里，确保整个输入区域都能响应长按
+                            .contentShape(Rectangle()) 
+                            .highPriorityGesture(
+                                // 仅在文本为空且当前没有键盘焦点时响应长按，
+                                // 避免与正常点按唤起键盘冲突
+                                (inputText.isEmpty && !isInputFocused) ? voiceInputGesture : nil
+                            )
+                            
+                            // 右侧工具箱按钮
+                            Button(action: {
+                                HapticFeedback.light()
+                                showModuleContainer = true
+                            }) {
+                                Image(systemName: "shippingbox")
+                                    .font(.system(size: 22)) // 调整图标大小以匹配按钮高度
+                                    .foregroundColor(Color(hex: "666666"))
+                                    .frame(width: buttonSize, height: buttonSize)
+                                    .contentShape(Circle())
+                            }
+                            .opacity(recordingState == .idle ? 1 : 0)
+                        }
+                        .frame(width: areaWidth, alignment: .leading)
+                        
+                        // 输入 UI 在 shrinking 和 morphing 时都完全隐藏 (只在 idle 显示)
+                        .opacity(recordingState == .idle ? 1 : 0)
+                        .animation(nil, value: recordingState) // 立即隐藏，无动画，防止残影
+                        
+                        // B. 录音状态 UI（原本有外层波纹光晕，这里去掉虚影）
+                        if recordingState == .shrinking {
+                            // 如需恢复波纹光晕，可在这里重新添加 BlobShape
                         }
                     }
                 }
+                .frame(height: containerHeight) // 根据状态动态调整高度，避免录音圆被裁剪
+                // 移除 recordingState 的隐式动画，完全由 runRecordingAnimation 中的 withAnimation 精确控制
+                .animation(.easeInOut(duration: 0.2), value: isCanceling)
+                // 添加 isOutputtingText 变化的平滑动画，确保圆的大小和波动幅度变化流畅
+                .animation(.spring(response: 0.4, dampingFraction: 0.7), value: isOutputtingText)
             }
-            .frame(height: 60) // 固定高度容器
-            // 移除 recordingState 的隐式动画，完全由 runRecordingAnimation 中的 withAnimation 精确控制
-            .animation(.easeInOut(duration: 0.2), value: isCanceling)
-            // 添加 isOutputtingText 变化的平滑动画，确保圆的大小和波动幅度变化流畅
-            .animation(.spring(response: 0.4, dampingFraction: 0.7), value: isOutputtingText)
+            .padding(.horizontal, horizontalMargin)
+            .padding(.bottom, bottomMargin)
         }
-        .frame(height: 60) // GeometryReader 需要明确高度
-        .padding(.bottom, 8)
         .opacity(showContent ? 1 : 0)
     }
     
@@ -997,6 +947,10 @@ struct TypewriterBubble: View {
 // 标准 AI 气泡（带打字机效果）
 struct AIBubble: View {
     let text: String
+    let messageId: UUID?
+    
+    @EnvironmentObject var appState: AppState
+    @Environment(\.modelContext) private var modelContext
     
     @State private var displayedText: String = ""
     @State private var isCompleted: Bool = false
@@ -1019,10 +973,25 @@ struct AIBubble: View {
                 
                 // 操作栏
                 HStack(spacing: 16) {
-                    ActionButton(icon: "doc.on.doc")
-                    ActionButton(icon: "hand.thumbsdown")
-                    ActionButton(icon: "hand.thumbsup")
-                    ActionButton(icon: "speaker.wave.2")
+                    // 复制按钮
+                    Button(action: {
+                        HapticFeedback.light()
+                        copyToClipboard()
+                    }) {
+                        Image(systemName: "doc.on.doc")
+                            .font(.system(size: 14))
+                            .foregroundColor(Color(hex: "999999"))
+                    }
+                    
+                    // 重新生成按钮
+                    Button(action: {
+                        HapticFeedback.light()
+                        regenerateMessage()
+                    }) {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 14))
+                            .foregroundColor(Color(hex: "999999"))
+                    }
                 }
                 .opacity(isCompleted ? 1 : 0)
             }
@@ -1041,6 +1010,53 @@ struct AIBubble: View {
         .onDisappear {
             timer?.invalidate()
             timer = nil
+        }
+    }
+    
+    // 复制到剪贴板
+    private func copyToClipboard() {
+        UIPasteboard.general.string = text
+    }
+    
+    // 重新生成消息
+    private func regenerateMessage() {
+        guard let messageId = messageId else { return }
+        
+        // 找到当前AI消息在列表中的位置
+        guard let currentIndex = appState.chatMessages.firstIndex(where: { $0.id == messageId }) else {
+            return
+        }
+        
+        // 找到这条AI消息对应的用户消息（应该是前一条）
+        guard currentIndex > 0 else { return }
+        let userMessage = appState.chatMessages[currentIndex - 1]
+        guard userMessage.role == .user else { return }
+        
+        // 清空当前AI消息内容，准备重新生成
+        appState.chatMessages[currentIndex].content = ""
+        appState.chatMessages[currentIndex].streamingState = .idle
+        
+        // 重新调用API
+        Task {
+            appState.isAgentTyping = true
+            appState.startStreaming(messageId: messageId)
+            
+            await SmartModelRouter.sendMessageStream(
+                messages: Array(appState.chatMessages.prefix(currentIndex)), // 只包含当前消息之前的消息
+                mode: appState.currentMode,
+                onComplete: { finalText in
+                    await appState.playResponse(finalText, for: messageId)
+                    await MainActor.run {
+                        if let completedMessage = appState.chatMessages.first(where: { $0.id == messageId }) {
+                            appState.saveMessageToStorage(completedMessage, modelContext: modelContext)
+                        }
+                    }
+                },
+                onError: { error in
+                    appState.handleStreamingError(error, for: messageId)
+                    appState.isAgentTyping = false
+                }
+            )
         }
     }
     
@@ -1148,12 +1164,12 @@ struct BubbleShape: Shape {
         let width = rect.width
         let height = rect.height
         
-        // 用户：右下角为小圆角（气泡尾巴在右下）
+        // 用户：所有角都是圆角
         // AI：左上角为小圆角（气泡尾巴在左上）
         let topLeftRadius: CGFloat = myRole == .agent ? 4 : 20
         let topRightRadius: CGFloat = 20
         let bottomLeftRadius: CGFloat = 20
-        let bottomRightRadius: CGFloat = myRole == .user ? 4 : 20
+        let bottomRightRadius: CGFloat = 20
         
         return Path { path in
             path.move(to: CGPoint(x: topLeftRadius, y: 0))

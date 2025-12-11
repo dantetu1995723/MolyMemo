@@ -89,10 +89,8 @@ struct MeetingRecordView: View {
         self._showAddSheet = showAddSheet
     }
     
-    // 主题色 - 跟随主页颜色
-    private var themeColor: Color {
-        YuanyuanTheme.color(at: appState.colorIndex)
-    }
+    // 主题色 - 统一灰色
+    private let themeColor = Color(white: 0.55)
     
     var body: some View {
         ZStack {
