@@ -6,6 +6,8 @@ import UIKit
 
 // MARK: - 布局常量
 private let agentAvatarSize: CGFloat = 30
+/// 底部输入区域的基础高度（不含安全区），用于计算聊天内容可视区域
+private let bottomInputBaseHeight: CGFloat = 64
 
 struct HomeChatView: View {
     @EnvironmentObject var appState: AppState
@@ -17,6 +19,8 @@ struct HomeChatView: View {
     @State private var showContent: Bool = false
     @FocusState private var isInputFocused: Bool
     @State private var contentHeight: CGFloat = 0
+    /// 卡片横向翻页时，临时禁用外层聊天上下滚动，避免手势冲突
+    @State private var isCardHorizontalPaging: Bool = false
     
     // 录音动画状态
     enum RecordingAnimationState {
@@ -27,13 +31,23 @@ struct HomeChatView: View {
     @State private var recordingState: RecordingAnimationState = .idle
     @State private var inputBoxSize: CGSize = .zero   // 输入框尺寸（不含右边按钮）
     @State private var fullAreaSize: CGSize = .zero   // 整个底部区域尺寸（含按钮）
+    @State private var bottomInputAreaHeight: CGFloat = 64   // 底部输入区域的实际高度（含安全区域）
     
     // 动画驱动
     @State private var blobTime: Double = 0
     @State private var blobTimer: Timer?
-    @State private var showBlob: Bool = false
     @State private var rotationAngle: Double = 0  // 小内切圆旋转角度
     @State private var colorSpread: CGFloat = 0  // 颜色扩散比例 (0.0 -> 1.5)
+    
+    /// 静音球 → 动态Blob 的过渡量（0 = 稳定球，1 = 无规则动态球）
+    @State private var blobMorphAmount: CGFloat = 0
+    /// 录音圆球的当前缩放（用于“稳定球变大 → 再进化成动态球”的分段过渡）
+    @State private var recordingBallScale: CGFloat = 1.0
+    @State private var ballTransitionToken: UUID = UUID()
+    
+    // 说话状态（带滞回，避免 audioPower 临界抖动导致频繁切换）
+    @State private var isSpeakingLatched: Bool = false
+    @State private var speakingOffTimer: Timer?
     
     // 录音文字输出状态
     @State private var isOutputtingText: Bool = false
@@ -51,6 +65,28 @@ struct HomeChatView: View {
     @State private var hasStartedRecording: Bool = false
     @State private var longPressTimer: Timer?
     
+    // MARK: - 动画时长（输入框 -> 球）
+    /// 输入框与按钮“融合阶段”时长（越小越快）
+    private let recordMorphDuration: Double = 0.18
+    /// 融合后“收缩成球”时长（越小越快）
+    private let recordShrinkDuration: Double = 0.22
+    
+    // MARK: - 静音 -> 说话（稳定球 -> 动态球）过渡参数
+    // 更灵敏：降低触发阈值，同时保持滞回避免抖动
+    private let speakOnThreshold: CGFloat = 0.035
+    private let speakOffThreshold: CGFloat = 0.02
+    /// 停止说话的“静音确认”时长（越小越快回落）
+    private let speakSilenceConfirmDelay: Double = 0.18
+    /// 转文字结束后回落到静音态的等待（越小越快）
+    private let textOutputCooldown: Double = 0.45
+    private let activeBallScale: CGFloat = 1.22
+    private let overshootStableScale: CGFloat = 1.28
+    
+    /// 统一活跃状态：说话/转文字任一成立即进入动态球逻辑
+    private var isActiveBlob: Bool {
+        isSpeakingLatched || isOutputtingText
+    }
+    
     // 主题色
     private let primaryGray = Color(hex: "333333")
     private let secondaryGray = Color(hex: "666666")
@@ -60,6 +96,16 @@ struct HomeChatView: View {
     
     var body: some View {
         GeometryReader { geometry in
+            // 根据屏幕高度和底部输入区域高度，计算聊天内容可见高度
+            let bottomSafeArea = geometry.safeAreaInsets.bottom
+            // 聊天记录与输入栏之间预留的间距（负值会让遮罩更贴近输入框）
+            let clipGap: CGFloat = -20
+            // 历史记录在触碰这个高度之前完全清晰，之后进入虚化淡出区域
+            let visibleChatHeight = max(
+                0,
+                geometry.size.height - (bottomSafeArea + bottomInputBaseHeight + clipGap)
+            )
+            
             ZStack(alignment: .bottom) {
                 // 背景
                 backgroundView
@@ -89,13 +135,19 @@ struct HomeChatView: View {
                                 normalChatContent
                                 
                                 // 底部垫高 (确保最后一条消息不被输入框遮挡)
-                                Color.clear.frame(height: max(20, fullAreaSize.height + 20))
+                                Color.clear.frame(height: 20)
                             }
                             .padding(.horizontal, 16)
                             .padding(.vertical, 10)
                         }
+                        .scrollDisabled(isCardHorizontalPaging)
                         .scrollIndicators(.hidden)
                         .scrollDismissesKeyboard(.interactively) // 滑动时渐进收回键盘
+                        .safeAreaInset(edge: .bottom) {
+                            // 为底部输入区域预留空间，确保滚动内容不被遮挡
+                            Color.clear
+                                .frame(height: bottomInputAreaHeight)
+                        }
                         .onTapGesture {
                             // 点击空白处收回键盘
                             isInputFocused = false
@@ -105,6 +157,33 @@ struct HomeChatView: View {
                         }
                     }
                 }
+                // 裁剪 + 虚化聊天内容区域：
+                // - 上方区域完全清晰
+                // - 接近底部的一段做渐变虚化
+                // - 输入栏及以下不再显示聊天记录
+                .mask(
+                    VStack(spacing: 0) {
+                        let fadeHeight: CGFloat = 10
+                        
+                        // 完全清晰区域 - 自动填充剩余空间
+                        Color.white
+                        
+                        // 虚化淡出区域（从不透明到完全透明）
+                        LinearGradient(
+                            gradient: Gradient(colors: [
+                                Color.white,
+                                Color.white.opacity(0.0)
+                            ]),
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                        .frame(height: fadeHeight)
+                        
+                        // 透明区域 - 与输入框高度一致，确保遮罩和输入框上边缘对齐
+                        Color.clear
+                            .frame(height: bottomInputAreaHeight)
+                    }
+                )
                 
                 // 语音录制全屏层 (在内容层之上，但在输入框之下)
                 if speechRecognizer.isRecording {
@@ -142,6 +221,53 @@ struct HomeChatView: View {
             
             // 请求语音识别权限
             speechRecognizer.requestAuthorization()
+            
+            // DEMO: 如果没有消息，添加示例日程消息
+            if appState.chatMessages.isEmpty {
+                appState.addSampleScheduleMessage()
+                
+                // 延迟一点添加人脉示例，模拟对话流
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    appState.addSampleContactMessage()
+                    
+                    // 再延迟一点添加发票示例
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                        appState.addSampleInvoiceMessage()
+                    }
+                }
+            }
+        }
+        .onChange(of: speechRecognizer.isRecording) { _, newValue in
+            // 真机偶发：音频会话/引擎启动失败，isRecording 会很快变回 false，
+            // 这时必须回滚 UI，否则会卡在 morphing（如你截图）。
+            if !newValue {
+                if recordingState != .idle && pressStartTime != nil {
+                    handleRecordingFailureReset()
+                }
+            }
+        }
+        .onChange(of: audioPower) { _, newValue in
+            // 仅在录音球存在时更新说话锁存，避免无意义的抖动
+            if speechRecognizer.isRecording {
+                updateSpeakingLatch(with: newValue)
+            } else if isSpeakingLatched {
+                isSpeakingLatched = false
+            }
+        }
+        .onChange(of: recordingState) { _, newValue in
+            // 进入/退出“球”态时，初始化视觉状态，避免残留
+            if newValue == .shrinking {
+                applyBallVisualDefaultsForCurrentState()
+            } else {
+                ballTransitionToken = UUID()
+                blobMorphAmount = 0
+                recordingBallScale = 1.0
+            }
+        }
+        .onChange(of: isActiveBlob) { _, newValue in
+            // 只在“球态”下做静音 <-> 说话的分段过渡
+            guard recordingState == .shrinking else { return }
+            animateBallTransition(toActive: newValue)
         }
         .onChange(of: recordingTranscript) { oldValue, newValue in
             // 当识别到文字变化时
@@ -156,8 +282,8 @@ struct HomeChatView: View {
                 
                 // 重置倒计时（语音转文字结束 1 秒后退回绕圈状态）
                 textOutputTimer?.invalidate()
-                textOutputTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: false) { _ in
-                    // 1 秒后如果没有新文字，恢复到初始状态 - 使用与形状切换一致的动画
+                textOutputTimer = Timer.scheduledTimer(withTimeInterval: textOutputCooldown, repeats: false) { _ in
+                    // 短等待后如果没有新文字，恢复到初始状态 - 使用与形状切换一致的动画
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
                         isOutputtingText = false
                     }
@@ -181,6 +307,9 @@ struct HomeChatView: View {
         recordingTranscript = ""
         isCanceling = false
         audioPower = 0.0
+        isSpeakingLatched = false
+        speakingOffTimer?.invalidate()
+        speakingOffTimer = nil
         
         // 启动动画
         runRecordingAnimation()
@@ -194,6 +323,9 @@ struct HomeChatView: View {
     private func endRecording() {
         // 停止语音识别
         speechRecognizer.stopRecording()
+        isSpeakingLatched = false
+        speakingOffTimer?.invalidate()
+        speakingOffTimer = nil
         
         // 重置动画
         resetRecordingAnimation()
@@ -286,25 +418,47 @@ struct HomeChatView: View {
     
     private func runRecordingAnimation() {
         // 1. 融合渐变：输入框背景变宽、变色，同时文字开始淡出
-        // 加快整体速度：0.6s -> 0.3s
-        withAnimation(.easeInOut(duration: 0.3)) {
+        // 加快整体速度：0.3s -> 0.18s
+        withAnimation(.easeInOut(duration: recordMorphDuration)) {
             recordingState = .morphing
             colorSpread = 1.2 // 触发颜色扩散动画
         }
         
-        // 2. 缩圆：0.3s后从全宽收缩成圆形，颜色变深
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            if self.speechRecognizer.isRecording {
-                // 收缩阶段也加快：0.5s -> 0.3s
-                withAnimation(.easeInOut(duration: 0.3)) {
+        // 2. 缩圆：融合结束后，从全宽收缩成圆形，颜色变深
+        DispatchQueue.main.asyncAfter(deadline: .now() + recordMorphDuration) {
+            // 不依赖 isRecording（真机有时会延迟/失败，导致卡在 morphing）
+            // 这里用手势启动标记来推进到“球态”，后续若录音失败会自动回滚
+            if self.hasStartedRecording {
+                // 收缩阶段加快：0.3s -> 0.22s
+                withAnimation(.easeInOut(duration: recordShrinkDuration)) {
                     self.recordingState = .shrinking
                 }
                 // 启动波纹动画
                 self.startBlobAnimation()
-                withAnimation(.easeIn(duration: 0.2)) {
-                    self.showBlob = true
-                }
             }
+        }
+    }
+
+    private func handleRecordingFailureReset() {
+        // 录音引擎/会话启动失败时，避免 UI 停在 morphing/球态
+        longPressTimer?.invalidate()
+        longPressTimer = nil
+        pressStartTime = nil
+        hasStartedRecording = false
+        
+        speakingOffTimer?.invalidate()
+        speakingOffTimer = nil
+        
+        textOutputTimer?.invalidate()
+        textOutputTimer = nil
+        
+        // 让视觉状态快速回落
+        resetRecordingAnimation()
+        isSpeakingLatched = false
+        isOutputtingText = false
+        recordingTranscript = ""
+        withAnimation(.easeOut(duration: 0.12)) {
+            audioPower = 0
         }
     }
     
@@ -312,18 +466,17 @@ struct HomeChatView: View {
         stopBlobAnimation()
         
         // 1. 从圆变回长条 (Reverse of shrinking)
-        // 对应 runRecordingAnimation 第2步的时长 0.3s
-        withAnimation(.easeInOut(duration: 0.3)) {
+        // 对应 runRecordingAnimation 第2步的时长
+        withAnimation(.easeInOut(duration: recordShrinkDuration)) {
             recordingState = .morphing
-            showBlob = false
         }
         
         // 2. 恢复初始状态 (Reverse of morphing)
-        // 对应 runRecordingAnimation 第1步的时长 0.3s
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+        // 对应 runRecordingAnimation 第1步的时长
+        DispatchQueue.main.asyncAfter(deadline: .now() + recordMorphDuration) {
             // 确保没有开始新的录音
             if !self.speechRecognizer.isRecording && self.recordingState == .morphing {
-                withAnimation(.easeInOut(duration: 0.3)) {
+                withAnimation(.easeInOut(duration: recordMorphDuration)) {
                     self.recordingState = .idle
                     self.colorSpread = 0 // 颜色收回
                 }
@@ -335,7 +488,9 @@ struct HomeChatView: View {
         stopBlobAnimation()
         // 使用更快的刷新率 (~60fps) 驱动相位变化
         blobTimer = Timer.scheduledTimer(withTimeInterval: 1.0/60.0, repeats: true) { _ in
-            blobTime += 0.05
+            // 动态球过渡期间，先慢后快：让“进化”更自然
+            let t = max(0, min(1, Double(blobMorphAmount)))
+            blobTime += (0.018 + 0.045 * t)
             // 小内切圆旋转动画（每帧旋转约1度，约6秒转一圈）
             rotationAngle += 1.0
             if rotationAngle >= 360 {
@@ -349,6 +504,89 @@ struct HomeChatView: View {
         blobTimer = nil
         blobTime = 0
         rotationAngle = 0
+    }
+    
+    // MARK: - 静音/说话状态更新与过渡
+    
+    private func updateSpeakingLatch(with power: CGFloat) {
+        // 1) 进入说话态：高于 on 阈值立即触发
+        if power > speakOnThreshold {
+            speakingOffTimer?.invalidate()
+            speakingOffTimer = nil
+            if !isSpeakingLatched {
+                isSpeakingLatched = true
+            }
+            return
+        }
+        
+        // 2) 退出说话态：低于 off 阈值时，启动一个很短的“静音确认计时器”
+        //    避免 audioPower 由于平滑衰减导致回落慢、体感“不灵敏”
+        guard isSpeakingLatched else { return }
+        
+        if power < speakOffThreshold {
+            if speakingOffTimer == nil {
+                speakingOffTimer = Timer.scheduledTimer(withTimeInterval: speakSilenceConfirmDelay, repeats: false) { _ in
+                    Task { @MainActor in
+                        // 确保计时器期间没有被新的声音取消
+                        self.isSpeakingLatched = false
+                        self.speakingOffTimer?.invalidate()
+                        self.speakingOffTimer = nil
+                    }
+                }
+            }
+        } else {
+            // 介于阈值之间：视为仍在说话，取消退出计时
+            speakingOffTimer?.invalidate()
+            speakingOffTimer = nil
+        }
+    }
+    
+    private func applyBallVisualDefaultsForCurrentState() {
+        ballTransitionToken = UUID()
+        blobMorphAmount = isActiveBlob ? 1 : 0
+        recordingBallScale = isActiveBlob ? activeBallScale : 1.0
+    }
+    
+    private func animateBallTransition(toActive: Bool) {
+        guard recordingState == .shrinking else { return }
+        
+        let token = UUID()
+        ballTransitionToken = token
+        
+        if toActive {
+            // 过渡帧节奏：
+            // 1) 稳定球变大到“动态球”的目标尺寸
+            // 2) 再变大到一个更大的稳定球（短暂停留的过渡帧）
+            // 3) 回落到目标尺寸，同时逐渐进化成当前的无规则运动球体
+            blobMorphAmount = 0
+            
+            withAnimation(.easeOut(duration: 0.12)) {
+                recordingBallScale = activeBallScale
+            }
+            
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+                guard self.ballTransitionToken == token, self.recordingState == .shrinking else { return }
+                withAnimation(.easeInOut(duration: 0.10)) {
+                    self.recordingBallScale = self.overshootStableScale
+                }
+            }
+            
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) {
+                guard self.ballTransitionToken == token, self.recordingState == .shrinking else { return }
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.72)) {
+                    self.recordingBallScale = self.activeBallScale
+                    self.blobMorphAmount = 1
+                }
+            }
+        } else {
+            // 反向：先收回不规则形态，再回到稳定球尺寸
+            withAnimation(.easeOut(duration: 0.12)) {
+                blobMorphAmount = 0
+            }
+            withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
+                recordingBallScale = 1.0
+            }
+        }
     }
     
     // MARK: - Components
@@ -429,8 +667,78 @@ struct HomeChatView: View {
                     UserBubble(text: message.content)
                         .id(message.id)
                 } else {
-                    AIBubble(text: message.content.isEmpty && appState.isAgentTyping ? "正在思考..." : message.content, messageId: message.id)
-                        .id(message.id)
+                    VStack(alignment: .leading, spacing: 12) {
+                        // 文字部分：如果有卡片，不显示操作按钮；如果没有卡片，显示操作按钮
+                        AIBubble(
+                            text: message.content.isEmpty && appState.isAgentTyping ? "正在思考..." : message.content,
+                            messageId: message.id,
+                            showActionButtons: (message.scheduleEvents == nil || message.scheduleEvents?.isEmpty == true) && 
+                                             (message.contacts == nil || message.contacts?.isEmpty == true) &&
+                                             (message.invoices == nil || message.invoices?.isEmpty == true),
+                            isInterrupted: message.isInterrupted
+                        )
+                        
+                        // 卡片部分
+                        if let _ = message.scheduleEvents, 
+                           let index = appState.chatMessages.firstIndex(where: { $0.id == message.id }) {
+                            ScheduleCardStackView(events: Binding(
+                                get: { appState.chatMessages[index].scheduleEvents ?? [] },
+                                set: { appState.chatMessages[index].scheduleEvents = $0 }
+                            ), isParentScrollDisabled: $isCardHorizontalPaging)
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, -10) // Slight adjustment to bring it closer to text
+                            
+                            // 操作按钮：当有卡片时，显示在卡片下方，与文字左对齐
+                            HStack(alignment: .center, spacing: 0) {
+                                // 与头像宽度对齐的占位，使按钮和文字左对齐
+                                Spacer()
+                                    .frame(width: agentAvatarSize + 12) // 头像宽度 + spacing
+                                
+                                // 操作按钮
+                                MessageActionButtons(messageId: message.id)
+                            }
+                            .padding(.top, 4)
+                        }
+                        
+                        // 人脉卡片部分
+                        if let _ = message.contacts,
+                           let index = appState.chatMessages.firstIndex(where: { $0.id == message.id }) {
+                            ContactCardStackView(contacts: Binding(
+                                get: { appState.chatMessages[index].contacts ?? [] },
+                                set: { appState.chatMessages[index].contacts = $0 }
+                            ), isParentScrollDisabled: $isCardHorizontalPaging)
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, -10)
+                            
+                            // 操作按钮
+                            HStack(alignment: .center, spacing: 0) {
+                                Spacer()
+                                    .frame(width: agentAvatarSize + 12)
+                                MessageActionButtons(messageId: message.id)
+                            }
+                            .padding(.top, 4)
+                        }
+                        
+                        // 发票卡片部分
+                        if let _ = message.invoices,
+                           let index = appState.chatMessages.firstIndex(where: { $0.id == message.id }) {
+                            InvoiceCardStackView(invoices: Binding(
+                                get: { appState.chatMessages[index].invoices ?? [] },
+                                set: { appState.chatMessages[index].invoices = $0 }
+                            ))
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, -10)
+                            
+                            // 操作按钮
+                            HStack(alignment: .center, spacing: 0) {
+                                Spacer()
+                                    .frame(width: agentAvatarSize + 12)
+                                MessageActionButtons(messageId: message.id)
+                            }
+                            .padding(.top, 4)
+                        }
+                    }
+                    .id(message.id)
                 }
             }
             
@@ -454,17 +762,27 @@ struct HomeChatView: View {
             // 计算输入框宽度: 可用宽度 - 按钮宽 - 按钮间距
             let inputContainerWidth = areaWidth - buttonSize - spacing
             
-            // 是否在说话（用于波纹动画和状态判断）
-            let isSpeaking = !recordingTranscript.isEmpty && audioPower > 0.05
+            let baseCircleSize: CGFloat = 92  // 基础圆形尺寸（调大球体）
+            // 圆球尺寸由“分段过渡”驱动（静音稳定球 -> 目标尺寸 -> 过渡大稳定球 -> 进化成动态球）
+            let circleSize: CGFloat = baseCircleSize * recordingBallScale
             
-            // 统一活跃状态：只要在说话或正在转文字，都视为活跃态，使用统一的大圆动画
-            let isActiveBlob = isSpeaking || isOutputtingText
+            // 声音跟随：不改变布局尺寸，只做轻微渲染脉冲（更灵敏、更“跟手”）
+            let audioNormalized = max(0, min(1, audioPower))
+            let audioPulseScale: CGFloat = {
+                guard recordingState == .shrinking, isSpeakingLatched else { return 1.0 }
+                // 小幅脉冲：软声也能有反馈
+                return 1.0 + 0.045 * pow(audioNormalized, 0.55)
+            }()
             
-            let baseCircleSize: CGFloat = 80  // 基础圆形尺寸
-            // 活跃状态下圆变大
-            let circleSize: CGFloat = isActiveBlob ? baseCircleSize * 1.15 : baseCircleSize
+            // Blob 振幅：直接跟随音量（解决“检测不够灵敏/不跟手”的体感）
+            let blobAmplitude: CGFloat = {
+                // 说话时更强，静音转文字时保持较小但持续的动感
+                let base: CGFloat = isSpeakingLatched ? 0.10 : 0.07
+                let reactive: CGFloat = isSpeakingLatched ? (0.38 * pow(audioNormalized, 0.6)) : 0.10
+                return (base + reactive) * blobMorphAmount
+            }()
             // 容器高度：录音时需要更高的空间避免上下被裁剪
-            let baseContainerHeight: CGFloat = 64
+            let baseContainerHeight: CGFloat = bottomInputBaseHeight
             // 球本身高度为 circleSize，这里上下各预留 20pt，让动态球完全不贴边
             let recordingContainerHeight: CGFloat = circleSize + 40
             let containerHeight: CGFloat = recordingState == .shrinking ? recordingContainerHeight : baseContainerHeight
@@ -558,9 +876,9 @@ struct HomeChatView: View {
                                         .frame(width: targetWidth, height: targetHeight)
                                         .offset(x: currentInputOffset)
                                     
-                                    // 形状1b: 活跃状态时的 Blob 轮廓（仅在收缩阶段叠加在主圆之上）
-                                    if recordingState == .shrinking && isActiveBlob {
-                                        BlobShape(time: blobTime, isAnimating: true, amplitude: 0.35)
+                                    // 形状1b: 动态 Blob 轮廓（在收缩阶段存在，通过 blobMorphAmount 从 0 -> 1 “进化”出来）
+                                    if recordingState == .shrinking && blobMorphAmount > 0 {
+                                        BlobShape(time: blobTime, isAnimating: true, amplitude: blobAmplitude)
                                             .frame(width: circleSize * 1.25, height: circleSize * 1.25)
                                             .offset(x: 0)
                                     }
@@ -585,13 +903,12 @@ struct HomeChatView: View {
                                             .offset(x: connectorX)
                                     }
                                     
-                                    // 形状4: 旋转小圆 - 仅在 shrinking 且“当前没有文字输出动画”时出现
-                                    // 当 isOutputtingText = true 时，用 Blob 表达状态，不再显示小圆。
-                                    // 旋转小圆：仅在静音且非活跃状态时显示
-                                    // 当处于活跃状态（说话或转文字）时，用 Blob 表达状态，不再显示小圆。
-                                    if recordingState == .shrinking && !isActiveBlob {
+                                    // 形状4: 旋转小圆（静音稳定球态）
+                                    // 用 blobMorphAmount 渐隐，避免从“稳定球”到“动态球”时形态突变
+                                    if recordingState == .shrinking && blobMorphAmount < 1 {
+                                        let t = max(0, min(1, 1 - blobMorphAmount))
                                         Circle()
-                                            .frame(width: smallCircleRadius * 2, height: smallCircleRadius * 2)
+                                            .frame(width: smallCircleRadius * 2 * t, height: smallCircleRadius * 2 * t)
                                             // 注意：这里的 offset 是相对于 ZStack 中心的，而 shrinking 状态下主圆也是居中的
                                             .offset(x: orbitRadius) 
                                             .rotationEffect(.degrees(rotationAngle))
@@ -599,6 +916,8 @@ struct HomeChatView: View {
                                 }
                                 .foregroundColor(.white)
                                 .blur(radius: 10) // 粘滞半径
+                                // 声音脉冲仅影响渲染，不影响布局与容器高度
+                                .scaleEffect(audioPulseScale)
                             }
                             .compositingGroup() // 必须组合后处理
                             .contrast(20)      // 阈值化：将模糊边缘锐化
@@ -633,10 +952,10 @@ struct HomeChatView: View {
                             .highPriorityGesture(
                                 // 仅在文本为空且当前没有键盘焦点时响应长按，
                                 // 避免与正常点按唤起键盘冲突
-                                (inputText.isEmpty && !isInputFocused) ? voiceInputGesture : nil
+                                    (inputText.isEmpty && !isInputFocused && !appState.isAgentTyping) ? voiceInputGesture : nil
                             )
                             
-                            // 右侧工具箱按钮
+                            // 右侧按钮：工具箱（发送仅通过系统键盘回车）
                             Button(action: {
                                 HapticFeedback.light()
                                 showModuleContainer = true
@@ -647,6 +966,7 @@ struct HomeChatView: View {
                                     .frame(width: buttonSize, height: buttonSize)
                                     .contentShape(Circle())
                             }
+                            .disabled(appState.isAgentTyping)
                             .opacity(recordingState == .idle ? 1 : 0)
                         }
                         .frame(width: areaWidth, alignment: .leading)
@@ -664,13 +984,34 @@ struct HomeChatView: View {
                 .frame(height: containerHeight) // 根据状态动态调整高度，避免录音圆被裁剪
                 // 移除 recordingState 的隐式动画，完全由 runRecordingAnimation 中的 withAnimation 精确控制
                 .animation(.easeInOut(duration: 0.2), value: isCanceling)
-                // 添加 isOutputtingText 变化的平滑动画，确保圆的大小和波动幅度变化流畅
-                .animation(.spring(response: 0.4, dampingFraction: 0.7), value: isOutputtingText)
             }
             .padding(.horizontal, horizontalMargin)
             .padding(.bottom, bottomMargin)
+            .background(
+                GeometryReader { innerGeometry in
+                    Color.clear
+                        .preference(
+                            key: BottomInputAreaHeightKey.self,
+                            value: containerHeight + bottomMargin + innerGeometry.safeAreaInsets.bottom
+                        )
+                }
+            )
+            .onPreferenceChange(BottomInputAreaHeightKey.self) { newHeight in
+                bottomInputAreaHeight = newHeight
+            }
+            .onChange(of: recordingState) { _, _ in
+                // 当录音状态变化时，触发重新计算（通过 PreferenceKey）
+            }
         }
         .opacity(showContent ? 1 : 0)
+    }
+    
+    // MARK: - PreferenceKey for bottom input area height
+    private struct BottomInputAreaHeightKey: PreferenceKey {
+        static var defaultValue: CGFloat = 64
+        static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+            value = nextValue()
+        }
     }
     
     // MARK: - 发送消息
@@ -711,16 +1052,16 @@ struct HomeChatView: View {
         let messageId = agentMsg.id
         
         // 调用 AI
-        Task {
-            appState.isAgentTyping = true
-            appState.startStreaming(messageId: messageId)
-            
+        appState.isAgentTyping = true
+        appState.startStreaming(messageId: messageId)
+        let generationTask = Task {
             await SmartModelRouter.sendMessageStream(
                 messages: appState.chatMessages,
                 mode: appState.currentMode,
                 onComplete: { finalText in
                     await appState.playResponse(finalText, for: messageId)
                     await MainActor.run {
+                        appState.isAgentTyping = false
                         if let completedMessage = appState.chatMessages.first(where: { $0.id == messageId }) {
                             appState.saveMessageToStorage(completedMessage, modelContext: modelContext)
                         }
@@ -732,6 +1073,7 @@ struct HomeChatView: View {
                 }
             )
         }
+        _ = generationTask
     }
 }
 
@@ -948,6 +1290,8 @@ struct TypewriterBubble: View {
 struct AIBubble: View {
     let text: String
     let messageId: UUID?
+    var showActionButtons: Bool = true // 控制是否显示操作按钮
+    var isInterrupted: Bool = false // 是否被中断
     
     @EnvironmentObject var appState: AppState
     @Environment(\.modelContext) private var modelContext
@@ -971,36 +1315,60 @@ struct AIBubble: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 
-                // 操作栏
-                HStack(spacing: 16) {
-                    // 复制按钮
-                    Button(action: {
-                        HapticFeedback.light()
-                        copyToClipboard()
-                    }) {
-                        Image(systemName: "doc.on.doc")
-                            .font(.system(size: 14))
-                            .foregroundColor(Color(hex: "999999"))
-                    }
-                    
-                    // 重新生成按钮
-                    Button(action: {
-                        HapticFeedback.light()
-                        regenerateMessage()
-                    }) {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 14))
-                            .foregroundColor(Color(hex: "999999"))
-                    }
+                // 停止标记
+                if isInterrupted {
+                    Text("回答已停止")
+                        .font(.system(size: 12))
+                        .foregroundColor(Color(hex: "999999"))
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                        .padding(.top, -8)
                 }
-                .opacity(isCompleted ? 1 : 0)
+                
+                // 操作栏（仅在需要时显示）
+                if showActionButtons {
+                    HStack(spacing: 12) {
+                        // 复制按钮
+                        Button(action: {
+                            HapticFeedback.light()
+                            copyToClipboard()
+                        }) {
+                            Image(systemName: "square.on.square")
+                                .font(.system(size: 16))
+                                .foregroundColor(Color(hex: "999999"))
+                        }
+                        
+                        // 重新生成按钮
+                        Button(action: {
+                            HapticFeedback.light()
+                            regenerateMessage()
+                        }) {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.system(size: 16))
+                                .foregroundColor(Color(hex: "999999"))
+                        }
+                    }
+                    .opacity(isCompleted ? 1 : 0)
+                }
             }
             .frame(maxWidth: UIScreen.main.bounds.width * 0.75, alignment: .leading)
             
             Spacer(minLength: 20)
         }
         .onAppear {
+            if isInterrupted {
+                isCompleted = true
+                displayedText = text
+            } else {
             startTypewriter()
+            }
+        }
+        .onChange(of: isInterrupted) { _, newValue in
+            if newValue {
+                timer?.invalidate()
+                timer = nil
+                isCompleted = true
+                displayedText = text
+            }
         }
         .onChange(of: text) { oldValue, newValue in
             if oldValue != newValue {
@@ -1037,16 +1405,16 @@ struct AIBubble: View {
         appState.chatMessages[currentIndex].streamingState = .idle
         
         // 重新调用API
-        Task {
-            appState.isAgentTyping = true
-            appState.startStreaming(messageId: messageId)
-            
+        appState.isAgentTyping = true
+        appState.startStreaming(messageId: messageId)
+        let generationTask = Task {
             await SmartModelRouter.sendMessageStream(
                 messages: Array(appState.chatMessages.prefix(currentIndex)), // 只包含当前消息之前的消息
                 mode: appState.currentMode,
                 onComplete: { finalText in
                     await appState.playResponse(finalText, for: messageId)
                     await MainActor.run {
+                        appState.isAgentTyping = false
                         if let completedMessage = appState.chatMessages.first(where: { $0.id == messageId }) {
                             appState.saveMessageToStorage(completedMessage, modelContext: modelContext)
                         }
@@ -1058,14 +1426,22 @@ struct AIBubble: View {
                 }
             )
         }
+        _ = generationTask
     }
     
     private func startTypewriter() {
+        if isInterrupted {
+            isCompleted = true
+            displayedText = text
+            return
+        }
+        
         guard !text.isEmpty else { return }
         
         // 如果已经显示完整，直接显示
         if displayedText == text {
             isCompleted = true
+            displayedText = text
             return
         }
         
@@ -1080,7 +1456,7 @@ struct AIBubble: View {
             
             self.timer?.invalidate()
             
-            // 先立即显示第一个字符，再启动定时器，减少从「正在思考」到首字出现的空档
+            // 先立即显示第一个字符
             if !chars.isEmpty {
                 self.displayedText = String(chars[0])
                 charIndex = 1
@@ -1148,6 +1524,158 @@ struct ActionButton: View {
                 .font(.system(size: 14))
                 .foregroundColor(Color(hex: "999999"))
         }
+    }
+}
+
+// 消息操作按钮（用于整条消息，包括文字和卡片）
+struct MessageActionButtons: View {
+    let messageId: UUID
+    
+    @EnvironmentObject var appState: AppState
+    @Environment(\.modelContext) private var modelContext
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            // 复制按钮
+            Button(action: {
+                HapticFeedback.light()
+                copyMessageToClipboard()
+            }) {
+                Image(systemName: "square.on.square")
+                    .font(.system(size: 16))
+                    .foregroundColor(.gray)
+            }
+            
+            // 重新生成按钮
+            Button(action: {
+                HapticFeedback.light()
+                regenerateMessage()
+            }) {
+                Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 16))
+                    .foregroundColor(.gray)
+            }
+        }
+    }
+    
+    // 复制整条消息到剪贴板（包括文字和卡片信息）
+    private func copyMessageToClipboard() {
+        guard let message = appState.chatMessages.first(where: { $0.id == messageId }) else {
+            return
+        }
+        
+        var textToCopy = message.content
+        
+        // 如果有日程卡片，添加卡片信息
+        if let scheduleEvents = message.scheduleEvents, !scheduleEvents.isEmpty {
+            textToCopy += "\n\n日程安排：\n"
+            for (index, event) in scheduleEvents.enumerated() {
+                let dateFormatter = DateFormatter()
+                dateFormatter.dateFormat = "yyyy年MM月dd日 EEEE"
+                let dateStr = dateFormatter.string(from: event.startTime)
+                
+                let timeFormatter = DateFormatter()
+                timeFormatter.dateFormat = "HH:mm"
+                let startTimeStr = timeFormatter.string(from: event.startTime)
+                let endTimeStr = timeFormatter.string(from: event.endTime)
+                
+                textToCopy += "\n\(index + 1). \(event.title)\n"
+                textToCopy += "   时间：\(dateStr) \(startTimeStr) - \(endTimeStr)\n"
+                textToCopy += "   描述：\(event.description)\n"
+            }
+        }
+        
+        // 如果有人脉卡片，添加卡片信息
+        if let contacts = message.contacts, !contacts.isEmpty {
+            textToCopy += "\n\n人脉信息：\n"
+            for (index, contact) in contacts.enumerated() {
+                textToCopy += "\n\(index + 1). \(contact.name)"
+                if let englishName = contact.englishName {
+                    textToCopy += " (\(englishName))"
+                }
+                textToCopy += "\n"
+                
+                if let company = contact.company {
+                    textToCopy += "   公司：\(company)\n"
+                }
+                if let title = contact.title {
+                    textToCopy += "   职位：\(title)\n"
+                }
+                if let phone = contact.phone {
+                    textToCopy += "   电话：\(phone)\n"
+                }
+                if let email = contact.email {
+                    textToCopy += "   邮箱：\(email)\n"
+                }
+            }
+        }
+        
+        // 如果有发票卡片，添加卡片信息
+        if let invoices = message.invoices, !invoices.isEmpty {
+            textToCopy += "\n\n发票信息：\n"
+            for (index, invoice) in invoices.enumerated() {
+                textToCopy += "\n\(index + 1). \(invoice.merchantName)"
+                textToCopy += "\n   金额：¥\(String(format: "%.2f", invoice.amount))"
+                textToCopy += "\n   类型：\(invoice.type)"
+                textToCopy += "\n   发票号：\(invoice.invoiceNumber)"
+                
+                let dateFormatter = DateFormatter()
+                dateFormatter.dateFormat = "yyyy-MM-dd"
+                let dateStr = dateFormatter.string(from: invoice.date)
+                textToCopy += "\n   日期：\(dateStr)"
+                
+                if let notes = invoice.notes {
+                    textToCopy += "\n   备注：\(notes)"
+                }
+                textToCopy += "\n"
+            }
+        }
+        
+        UIPasteboard.general.string = textToCopy
+    }
+    
+    // 重新生成整条消息
+    private func regenerateMessage() {
+        // 找到当前AI消息在列表中的位置
+        guard let currentIndex = appState.chatMessages.firstIndex(where: { $0.id == messageId }) else {
+            return
+        }
+        
+        // 找到这条AI消息对应的用户消息（应该是前一条）
+        guard currentIndex > 0 else { return }
+        let userMessage = appState.chatMessages[currentIndex - 1]
+        guard userMessage.role == .user else { return }
+        
+        // 清空当前AI消息内容和卡片，准备重新生成
+        appState.chatMessages[currentIndex].content = ""
+        appState.chatMessages[currentIndex].scheduleEvents = nil
+        appState.chatMessages[currentIndex].contacts = nil
+        appState.chatMessages[currentIndex].invoices = nil
+        appState.chatMessages[currentIndex].streamingState = .idle
+        
+        // 重新调用API
+        appState.isAgentTyping = true
+        appState.startStreaming(messageId: messageId)
+        let generationTask = Task {
+            await SmartModelRouter.sendMessageStream(
+                messages: Array(appState.chatMessages.prefix(currentIndex)), // 只包含当前消息之前的消息
+                mode: appState.currentMode,
+                onComplete: { finalText in
+                    await appState.playResponse(finalText, for: messageId)
+                    await MainActor.run {
+                        appState.isAgentTyping = false
+                        if let completedMessage = appState.chatMessages.first(where: { $0.id == messageId }) {
+                            appState.saveMessageToStorage(completedMessage, modelContext: modelContext)
+                        }
+                    }
+                },
+                onError: { error in
+                    appState.handleStreamingError(error, for: messageId)
+                    appState.isAgentTyping = false
+                }
+            )
+        }
+        _ = generationTask
     }
 }
 

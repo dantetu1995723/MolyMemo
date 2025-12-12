@@ -68,7 +68,16 @@ class SpeechRecognizer: ObservableObject {
             let audioSession = AVAudioSession.sharedInstance()
             do {
                 if !self.isSessionConfigured {
-                    try audioSession.setCategory(.record, mode: .default, options: .duckOthers)
+                    // 使用 playAndRecord + measurement，避免某些路由下 inputNode format 无效导致 installTap 崩溃
+                    try audioSession.setCategory(
+                        .playAndRecord,
+                        mode: .measurement,
+                        options: [.duckOthers, .allowBluetooth, .defaultToSpeaker]
+                    )
+                    // 尽量让输入格式稳定（不强依赖，但能减少 route/format 抖动）
+                    try? audioSession.setPreferredSampleRate(48_000)
+                    try? audioSession.setPreferredInputNumberOfChannels(1)
+                    try? audioSession.setPreferredIOBufferDuration(0.005)
                     self.isSessionConfigured = true
                 }
                 if !self.isSessionActive {
@@ -104,9 +113,22 @@ class SpeechRecognizer: ObservableObject {
             }
             
             let inputNode = self.audioEngine.inputNode
-            let recordingFormat = inputNode.outputFormat(forBus: 0)
+            let bus = 0
             
-            inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
+            // 防御：如果上一次未正常清理，先移除旧 tap
+            inputNode.removeTap(onBus: bus)
+            
+            // 关键修复：
+            // 某些真机路由/会话瞬间，outputFormat 可能出现 sampleRate/channelCount 无效（0），
+            // 传入 installTap 会触发底层 precondition 崩溃。
+            // - 优先使用 inputFormat
+            // - 若格式仍不合法，则传 nil，让系统使用 tap point 的有效格式
+            let inputFormat = inputNode.inputFormat(forBus: bus)
+            let isValidFormat = inputFormat.sampleRate > 0 && inputFormat.channelCount > 0
+            let tapFormat: AVAudioFormat? = isValidFormat ? inputFormat : nil
+            
+            // 更高刷新率：更跟手（512 在 48kHz 下约 10ms）
+            inputNode.installTap(onBus: bus, bufferSize: 512, format: tapFormat) { [weak self] buffer, _ in
                 recognitionRequest.append(buffer)
                 
                 guard let self = self else { return }
@@ -177,24 +199,21 @@ class SpeechRecognizer: ObservableObject {
         // 混合RMS和峰值
         let rawLevel = rms * 0.6 + peak * 0.4
         
-        // 提高噪声门限，过滤环境噪音（说话时一般 > 0.03）
-        let gatedLevel = rawLevel < 0.025 ? 0 : rawLevel
+        // 更灵敏的能量映射（真机小声起音也能驱动 UI）：
+        // - 更低噪声底（soft gate），而不是直接归零
+        // - 非线性增强低电平（让 UI “更跟手”）
+        // - 上升更快、下降略快，兼顾响应与抖动
+        let noiseFloor: Float = 0.012
+        let normalized = max(0, rawLevel - noiseFloor) / max(0.0001, 1 - noiseFloor)
+        let gained = min(normalized * 5.5, 1.0)
+        let shaped = pow(gained, 0.55) // 提升小声段的可见度
         
-        // 线性放大，不要太激进
-        let amplifiedLevel = gatedLevel * 3.0
+        let attack: Float = 0.75   // 上升更快
+        let release: Float = 0.50  // 下降也比较快（收音停顿能及时反馈）
+        let k = shaped > smoothedLevel ? attack : release
+        smoothedLevel = smoothedLevel + (shaped - smoothedLevel) * k
         
-        // 限制在0~1范围
-        let clampedLevel = min(amplifiedLevel, 1.0)
-        
-        // 平滑处理：上升快，下降快（让静音时快速归零）
-        if clampedLevel > smoothedLevel {
-            smoothedLevel = smoothedLevel + (clampedLevel - smoothedLevel) * 0.5
-        } else {
-            // 下降更快，让静音检测更灵敏
-            smoothedLevel = smoothedLevel + (clampedLevel - smoothedLevel) * 0.4
-        }
-        
-        return smoothedLevel
+        return max(0, min(smoothedLevel, 1.0))
     }
     
     func stopRecording() {

@@ -99,18 +99,17 @@ class LiveRecordingManager: ObservableObject {
         
         // 准备录音文件（统一存放在 MeetingRecordings 文件夹）
         let recordingsFolder = ensureRecordingsFolder()
-        audioURL = recordingsFolder.appendingPathComponent("meeting_\(Int(Date().timeIntervalSince1970)).wav")
+        audioURL = recordingsFolder.appendingPathComponent("meeting_\(Int(Date().timeIntervalSince1970)).m4a")
         
         guard let audioURL = audioURL else { return }
         
-        // 配置录音设置（WAV 格式，便于后续处理）
+        // 配置录音设置（m4a AAC 格式，高质量压缩）
         let settings: [String: Any] = [
-            AVFormatIDKey: Int(kAudioFormatLinearPCM),
-            AVSampleRateKey: 16000.0,
+            AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
+            AVSampleRateKey: 44100.0,
             AVNumberOfChannelsKey: 1,
-            AVLinearPCMBitDepthKey: 16,
-            AVLinearPCMIsFloatKey: false,
-            AVLinearPCMIsBigEndianKey: false
+            AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
+            AVEncoderBitRateKey: 128000
         ]
         
         do {

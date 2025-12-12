@@ -101,6 +101,66 @@ struct TodoPreviewData: Equatable {
     var imageData: Data
 }
 
+// 日程卡片数据
+struct ScheduleEvent: Identifiable, Equatable, Codable {
+    var id = UUID()
+    var title: String
+    var description: String
+    var startTime: Date
+    var endTime: Date
+    var isSynced: Bool = false
+    
+    // 用于显示的辅助属性
+    var day: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "d"
+        return formatter.string(from: startTime)
+    }
+    
+    var monthYear: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy MMM"
+        return formatter.string(from: startTime)
+    }
+    
+    var weekDay: String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "EEEE"
+        return formatter.string(from: startTime)
+    }
+    
+    var timeRange: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return "\(formatter.string(from: startTime)) ~ \(formatter.string(from: endTime))"
+    }
+}
+
+// 人脉卡片数据
+struct ContactCard: Identifiable, Equatable, Codable {
+    var id = UUID()
+    var name: String
+    var englishName: String?
+    var company: String?
+    var title: String? // 职位
+    var phone: String?
+    var email: String?
+    var avatarData: Data? // 头像
+    var rawImage: Data? // 原始截图
+}
+
+// 发票卡片数据
+struct InvoiceCard: Identifiable, Equatable, Codable {
+    var id = UUID()
+    var invoiceNumber: String // 发票号码
+    var merchantName: String  // 商户名称
+    var amount: Double        // 金额
+    var date: Date            // 开票日期
+    var type: String          // 类型（餐饮、交通等）
+    var notes: String?        // 备注
+}
+
 // 人脉预览数据
 struct ContactPreviewData: Equatable {
     var name: String
@@ -144,10 +204,14 @@ struct ChatMessage: Identifiable, Equatable {
     var todoPreview: TodoPreviewData? = nil
     var contactPreview: ContactPreviewData? = nil
     var expensePreview: ExpensePreviewData? = nil
+    var scheduleEvents: [ScheduleEvent]? = nil // 日程卡片列表
+    var contacts: [ContactCard]? = nil // 人脉卡片列表
+    var invoices: [InvoiceCard]? = nil // 发票卡片列表
     var notes: String? = nil  // 临时存储数据（如待处理的报销信息）
     var showIntentSelection: Bool = false  // 是否显示意图选择器
     var isWrongClassification: Bool = false  // 是否是错误识别（用于"识别错了"按钮）
     var showReclassifyBubble: Bool = false  // 是否显示重新分类气泡
+    var isInterrupted: Bool = false // 是否被中断
     
     enum MessageRole {
         case user
@@ -198,9 +262,13 @@ struct ChatMessage: Identifiable, Equatable {
         lhs.todoPreview == rhs.todoPreview &&
         lhs.contactPreview == rhs.contactPreview &&
         lhs.expensePreview == rhs.expensePreview &&
+        lhs.scheduleEvents == rhs.scheduleEvents &&
+        lhs.contacts == rhs.contacts &&
+        lhs.invoices == rhs.invoices &&
         lhs.showIntentSelection == rhs.showIntentSelection &&
         lhs.isWrongClassification == rhs.isWrongClassification &&
-        lhs.showReclassifyBubble == rhs.showReclassifyBubble
+        lhs.showReclassifyBubble == rhs.showReclassifyBubble &&
+        lhs.isInterrupted == rhs.isInterrupted
     }
 }
 
@@ -305,8 +373,7 @@ class AppState: ObservableObject {
     // 打字机效果控制
     @Published var isTyping: Bool = false
     private var typingTask: Task<Void, Never>?
-    
-    
+
     // MARK: - 截图处理（从相册）
 
     /// 触发截图分析流程 - 打开聊天室并从相册发送最近一张照片
@@ -386,7 +453,7 @@ class AppState: ObservableObject {
             chatMessages[messageIndex] = updatedMessage
             
             // 内容与状态一起更新，避免 UI 闪一下空白
-            isAgentTyping = false
+            // isAgentTyping = false // 交给 AIBubble 打字机结束后处理，以支持打字过程中也能显示停止按钮
             print("✅ 消息内容已设置，由AIBubble负责逐字显示")
         }
     }
@@ -676,6 +743,115 @@ class AppState: ObservableObject {
             print("⚠️ 加载session总结失败: \(error)")
             lastSessionSummary = nil
         }
+    }
+    
+    // MARK: - 调试/演示
+    
+    /// 添加示例日程消息
+    func addSampleScheduleMessage() {
+        let calendar = Calendar.current
+        
+        // Helper to create dates
+        func createDate(day: Int, hour: Int, minute: Int) -> Date {
+            var components = DateComponents()
+            components.year = 2025
+            components.month = 12
+            components.day = day
+            components.hour = hour
+            components.minute = minute
+            return calendar.date(from: components) ?? Date()
+        }
+        
+        // Event 1
+        let event1 = ScheduleEvent(
+            title: "定粤菜馆",
+            description: "提前预定和王总吃饭的餐馆",
+            startTime: createDate(day: 9, hour: 10, minute: 30),
+            endTime: createDate(day: 9, hour: 11, minute: 0)
+        )
+        
+        // Event 2
+        let event2 = ScheduleEvent(
+            title: "和张总开会",
+            description: "讨论下季度项目规划",
+            startTime: createDate(day: 10, hour: 14, minute: 0),
+            endTime: createDate(day: 10, hour: 15, minute: 30)
+        )
+        
+        // Event 3
+        let event3 = ScheduleEvent(
+            title: "团队周会",
+            description: "同步本周工作进度和下周计划",
+            startTime: createDate(day: 11, hour: 9, minute: 30),
+            endTime: createDate(day: 11, hour: 11, minute: 0)
+        )
+        
+        // Event 4
+        let event4 = ScheduleEvent(
+            title: "客户拜访",
+            description: "去上海分公司拜访李总，确认合同细节",
+            startTime: createDate(day: 12, hour: 10, minute: 0),
+            endTime: createDate(day: 12, hour: 12, minute: 0)
+        )
+        
+        // Event 5
+        let event5 = ScheduleEvent(
+            title: "项目复盘",
+            description: "针对上一期项目进行复盘总结",
+            startTime: createDate(day: 13, hour: 15, minute: 0),
+            endTime: createDate(day: 13, hour: 17, minute: 0)
+        )
+        
+        var message = ChatMessage(role: .agent, content: "已为您创建了五个日程，可滑动查看，长按可调整。")
+        message.scheduleEvents = [event1, event2, event3, event4, event5]
+        
+        chatMessages.append(message)
+    }
+    
+    /// 添加示例人脉消息
+    func addSampleContactMessage() {
+        // Contact 1
+        let contact1 = ContactCard(
+            name: "庄靖瑶",
+            englishName: "Kinyoo",
+            company: "北京数据项素智能科技有限公司",
+            title: "UI 设计师",
+            phone: "18311117777",
+            email: "18311117777@dataelem.com"
+        )
+        
+        // Contact 2
+        let contact2 = ContactCard(
+            name: "王建国",
+            englishName: "James",
+            company: "上海科技创新中心",
+            title: "产品总监",
+            phone: "13900008888",
+            email: "james.wang@sh-tech.com"
+        )
+        
+        var message = ChatMessage(role: .agent, content: "识别到人脉信息，已为您创建了一个人脉卡片，长按可调整，点击可翻面查看。")
+        message.contacts = [contact1, contact2]
+        
+        chatMessages.append(message)
+    }
+    
+    /// 添加示例发票消息
+    func addSampleInvoiceMessage() {
+        // Invoice 1
+        let invoice1 = InvoiceCard(
+            invoiceNumber: "2511200000247821866",
+            merchantName: "北京市紫光园餐饮有限责任公司",
+            amount: 71.00,
+            date: Date(),
+            type: "餐饮",
+            notes: "中午请客吃饭"
+        )
+        
+        var message = ChatMessage(role: .agent, content: "识别到发票信息，已为您创建了发票记录，长按可调整。")
+        message.invoices = [invoice1]
+        
+        chatMessages.append(message)
     }
     
 }

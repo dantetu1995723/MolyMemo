@@ -19,7 +19,7 @@ struct RecordingRecoveryManager {
                 options: [.skipsHiddenFiles]
             )) ?? []
             
-            for fileURL in fileURLs where fileURL.pathExtension.lowercased() == "wav" {
+            for fileURL in fileURLs where ["wav", "m4a"].contains(fileURL.pathExtension.lowercased()) {
                 guard !existingPaths.contains(fileURL.path) else { continue }
                 
                 let creationDate = (try? fileURL.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? Date()

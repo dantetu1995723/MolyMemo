@@ -10,6 +10,7 @@ final class PersistentChatMessage {
     var content: String
     var timestamp: Date
     var isGreeting: Bool
+    var isInterrupted: Bool = false
     var messageTypeRawValue: String
     var encodedImageData: Data?
     
@@ -20,7 +21,8 @@ final class PersistentChatMessage {
         timestamp: Date,
         isGreeting: Bool,
         messageTypeRawValue: String,
-        encodedImageData: Data?
+        encodedImageData: Data?,
+        isInterrupted: Bool = false
     ) {
         self.id = id
         self.roleRawValue = roleRawValue
@@ -29,6 +31,7 @@ final class PersistentChatMessage {
         self.isGreeting = isGreeting
         self.messageTypeRawValue = messageTypeRawValue
         self.encodedImageData = encodedImageData
+        self.isInterrupted = isInterrupted
     }
 }
 
@@ -62,7 +65,8 @@ extension PersistentChatMessage {
             timestamp: message.timestamp,
             isGreeting: message.isGreeting,
             messageTypeRawValue: messageTypeValue,
-            encodedImageData: encodedData
+            encodedImageData: encodedData,
+            isInterrupted: message.isInterrupted
         )
     }
     
@@ -91,6 +95,7 @@ extension PersistentChatMessage {
         
         var mutableMessage = message
         mutableMessage.streamingState = .completed
+        mutableMessage.isInterrupted = isInterrupted
         return mutableMessage
     }
 }
