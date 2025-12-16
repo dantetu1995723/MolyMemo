@@ -53,7 +53,7 @@ struct InvoiceCardView: View {
                 Text("*发票记录*")
                     .font(.system(size: 17, weight: .bold))
                     .foregroundColor(.black)
-                    .padding(.top, 20) // 与日程卡片顶部padding一致
+                    .padding(.top, 14) // 与日程卡片顶部padding一致
                 
                 HStack {
                     Text(invoice.invoiceNumber)

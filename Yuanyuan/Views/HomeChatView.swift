@@ -18,7 +18,8 @@ struct HomeChatView: View {
     // UI State
     @State private var inputText: String = ""
     @State private var showContent: Bool = false
-    @FocusState private var isInputFocused: Bool
+    /// 输入框是否聚焦（现在输入控件是 UITextView，不走 SwiftUI FocusState，避免状态被系统回滚）
+    @State private var isInputFocused: Bool = false
     @State private var contentHeight: CGFloat = 0
     /// 卡片横向翻页时，临时禁用外层聊天上下滚动，避免手势冲突
     @State private var isCardHorizontalPaging: Bool = false
@@ -52,6 +53,8 @@ struct HomeChatView: View {
     
     @State private var inputBoxSize: CGSize = .zero   // 输入框尺寸（不含右边按钮）
     @State private var currentInputSize: CGSize = .init(width: 0, height: 48) // 当前输入框内容的实际尺寸
+    /// 多行输入的文本内容高度（不含外层 padding），用于驱动白底胶囊动态高度
+    @State private var textInputContentHeight: CGFloat = 0
     @State private var fullAreaSize: CGSize = .zero   // 整个底部区域尺寸（含按钮）
     @State private var bottomInputAreaHeight: CGFloat = 64   // 底部输入区域的实际高度（含安全区域）
     
@@ -904,9 +907,18 @@ struct HomeChatView: View {
                 return (base + reactive) * blobMorphAmount
             }()
             
-            // 容器高度
-            let inputHeight = max(48, currentInputSize.height)
-            let panelHeight: CGFloat = showAttachmentPanel ? 250 : 0
+            // === 输入框白底胶囊动态高度（最多 3.5 行，超过则内部滚动）===
+            let inputUIFont = UIFont.systemFont(ofSize: 17)
+            // 文本区外的固定“镶边高度”：内层(4*2) + 外层(10*2) = 28
+            let chromeVertical: CGFloat = 28
+            // 白底胶囊最大高度 = 3.5 行文本 + 固定镶边高度
+            let maxPillHeight: CGFloat = ceil(inputUIFont.lineHeight * 3.5) + chromeVertical
+            let maxTextHeight: CGFloat = max(24, maxPillHeight - chromeVertical)
+            // UITextView 测得的内容高度（至少一行）
+            let measuredTextHeight: CGFloat = max(inputUIFont.lineHeight, min(textInputContentHeight, maxTextHeight))
+            // 没有图片时，用“文本高度 + 镶边”驱动整体高度；有图片时，仍沿用原有测量（包含图片预览区）
+            let pillHeightFromText: CGFloat = min(max(48, measuredTextHeight + chromeVertical), maxPillHeight)
+            let inputHeight: CGFloat = (selectedImage == nil) ? pillHeightFromText : max(48, currentInputSize.height)
             
             // 球本身高度为 circleSize，这里上下各预留 20pt，让动态球完全不贴边
             let recordingContainerHeight: CGFloat = circleSize + 40
@@ -1003,6 +1015,8 @@ struct HomeChatView: View {
                             gooeyBackground
                             inputOverlay
                         }
+                        // 关键：这里必须约束高度，否则 gooeyBackground 会在 GeometryReader 下铺满全屏
+                        // idle/morphing：由“可测量文本高度”驱动动态高度；shrinking：固定球态高度
                         .frame(height: (recordingState == .shrinking ? circleSize + 40 : inputHeight))
                         .animation(.easeInOut(duration: 0.2), value: isCanceling)
                         
@@ -1013,7 +1027,9 @@ struct HomeChatView: View {
                     .padding(.horizontal, horizontalMargin)
                     .padding(.bottom, bottomMargin)
                     .background(
-                        backgroundGray
+                        // 录音相关的所有过渡态（morphing / shrinking 以及 isRecording）底部背景必须透明，
+                        // 避免“录音球回到输入框转化”过程中出现白/浅灰蒙版。
+                        ((recordingState == .idle && !speechRecognizer.isRecording) ? backgroundGray : Color.clear)
                             .padding(.top, -maskLift)
                             .ignoresSafeArea(edges: .bottom)
                     )
@@ -1181,7 +1197,8 @@ struct HomeChatView: View {
                             .transition(.scale.combined(with: .opacity))
                         }
 
-                        HStack(alignment: .center, spacing: 10) {
+                        // 多行输入变高时，左右按钮始终贴底
+                        HStack(alignment: .bottom, spacing: 10) {
                             if selectedImage == nil {
                                 Button(action: {
                                     if showAttachmentPanel {
@@ -1208,25 +1225,53 @@ struct HomeChatView: View {
                                 }
                             }
 
-                            TextField("发送消息或按住说话", text: $inputText, axis: .vertical)
-                                .font(.system(size: 17))
-                                .foregroundColor(primaryGray)
-                                .focused($isInputFocused)
-                                .frame(minHeight: 36)
-                                .padding(.vertical, 4)
-                                .highPriorityGesture(
-                                    (inputText.isEmpty && selectedImage == nil && !isInputFocused && !appState.isAgentTyping && !showAttachmentPanel)
-                                    ? voiceInputGesture
-                                    : nil
+                            // 多行输入：用 UITextView 精确控制“增长到 3.5 行后内部滚动”
+                            ZStack(alignment: .leading) {
+                                if inputText.isEmpty {
+                                    Text("发送消息或按住说话")
+                                        .font(.system(size: 17))
+                                        .foregroundColor(primaryGray.opacity(0.45))
+                                        // 占位文字不应拦截点击，否则点不到 UITextView
+                                        .allowsHitTesting(false)
+                                }
+                                
+                                GrowingTextView(
+                                    text: $inputText,
+                                    isFocused: $isInputFocused,
+                                    measuredHeight: $textInputContentHeight,
+                                    maxHeight: max(24, ceil(UIFont.systemFont(ofSize: 17).lineHeight * 3.5)),
+                                    font: UIFont.systemFont(ofSize: 17),
+                                    textColor: UIColor(primaryGray)
                                 )
-                                .onChange(of: isInputFocused) { _, isFocused in
-                                    if isFocused {
-                                        // 键盘弹起时，联动收起面板
-                                        withAnimation(.spring(response: 0.3, dampingFraction: 1.0)) {
-                                            showAttachmentPanel = false
-                                        }
+                                .frame(height: max(UIFont.systemFont(ofSize: 17).lineHeight, min(textInputContentHeight, ceil(UIFont.systemFont(ofSize: 17).lineHeight * 3.5))))
+                            }
+                            .padding(.vertical, 4)
+                            // 关键：初始空态时，UITextView 会优先吃掉触摸，导致外层 SwiftUI 手势拿不到事件；
+                            // 这里用“透明覆盖层”只在初始空态&未聚焦时接管触摸：短按聚焦、长按录音。
+                            .overlay {
+                                if inputText.isEmpty,
+                                   selectedImage == nil,
+                                   !isInputFocused,
+                                   !appState.isAgentTyping,
+                                   !showAttachmentPanel {
+                                    Color.clear
+                                        .contentShape(Rectangle())
+                                        .simultaneousGesture(
+                                            TapGesture().onEnded {
+                                                isInputFocused = true
+                                            }
+                                        )
+                                        .highPriorityGesture(voiceInputGesture)
+                                }
+                            }
+                            .onChange(of: isInputFocused) { _, isFocused in
+                                if isFocused {
+                                    // 键盘弹起时，联动收起面板
+                                    withAnimation(.spring(response: 0.3, dampingFraction: 1.0)) {
+                                        showAttachmentPanel = false
                                     }
                                 }
+                            }
 
                             if showSendButton {
                                 Button(action: sendMessage) {
@@ -1243,6 +1288,8 @@ struct HomeChatView: View {
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
                     .frame(width: inputContainerWidth)
+                    // 防止在 GeometryReader 场景下被拉伸到全高，导致测量/背景异常
+                    .fixedSize(horizontal: false, vertical: true)
                     .background(
                         GeometryReader { p in
                             Color.clear
@@ -1364,6 +1411,98 @@ struct HomeChatView: View {
         static var defaultValue: CGSize = .init(width: 0, height: 48)
         static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
             value = nextValue()
+        }
+    }
+
+    // MARK: - UIKit 多行输入（增长到 maxHeight 后启用内部滚动）
+    private struct GrowingTextView: UIViewRepresentable {
+        @Binding var text: String
+        @Binding var isFocused: Bool
+        @Binding var measuredHeight: CGFloat
+        
+        let maxHeight: CGFloat
+        let font: UIFont
+        let textColor: UIColor
+        
+        func makeUIView(context: Context) -> UITextView {
+            let tv = UITextView()
+            tv.backgroundColor = .clear
+            tv.font = font
+            tv.textColor = textColor
+            tv.isEditable = true
+            tv.isSelectable = true
+            tv.textContainerInset = .zero
+            tv.textContainer.lineFragmentPadding = 0
+            tv.isScrollEnabled = false
+            tv.showsVerticalScrollIndicator = false
+            tv.showsHorizontalScrollIndicator = false
+            tv.delegate = context.coordinator
+            tv.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            tv.setContentCompressionResistancePriority(.required, for: .vertical)
+            return tv
+        }
+        
+        func updateUIView(_ uiView: UITextView, context: Context) {
+            if uiView.text != text {
+                uiView.text = text
+            }
+            uiView.font = font
+            uiView.textColor = textColor
+            
+            // 焦点同步
+            if isFocused {
+                if !uiView.isFirstResponder {
+                    uiView.becomeFirstResponder()
+                }
+            } else {
+                if uiView.isFirstResponder {
+                    uiView.resignFirstResponder()
+                }
+            }
+            
+            recalcHeight(for: uiView)
+        }
+        
+        func makeCoordinator() -> Coordinator {
+            Coordinator(self)
+        }
+        
+        private func recalcHeight(for textView: UITextView) {
+            // 宽度为 0 时先跳过，等布局稳定后会再次回调
+            guard textView.bounds.width > 0 else { return }
+            let fitting = textView.sizeThatFits(
+                CGSize(width: textView.bounds.width, height: .greatestFiniteMagnitude)
+            )
+            let oneLine = max(font.lineHeight, 20)
+            let content = max(oneLine, fitting.height)
+            let clamped = min(content, maxHeight)
+            
+            // 超过上限后开启滚动（否则继续增长）
+            textView.isScrollEnabled = content > maxHeight + 1
+            
+            if abs(measuredHeight - clamped) > 0.5 {
+                DispatchQueue.main.async {
+                    measuredHeight = clamped
+                }
+            }
+        }
+        
+        final class Coordinator: NSObject, UITextViewDelegate {
+            var parent: GrowingTextView
+            init(_ parent: GrowingTextView) { self.parent = parent }
+            
+            func textViewDidChange(_ textView: UITextView) {
+                parent.text = textView.text ?? ""
+                parent.recalcHeight(for: textView)
+            }
+            
+            func textViewDidBeginEditing(_ textView: UITextView) {
+                if !parent.isFocused { parent.isFocused = true }
+            }
+            
+            func textViewDidEndEditing(_ textView: UITextView) {
+                if parent.isFocused { parent.isFocused = false }
+            }
         }
     }
     

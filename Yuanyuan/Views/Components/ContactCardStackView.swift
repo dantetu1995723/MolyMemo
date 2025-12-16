@@ -211,7 +211,7 @@ struct ContactCardView: View {
             
             Spacer()
         }
-        .padding(24)
+        .padding(14)
         .background(Color.white)
         .cornerRadius(24)
         .overlay(
