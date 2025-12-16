@@ -22,6 +22,19 @@ struct HomeChatView: View {
     @State private var contentHeight: CGFloat = 0
     /// 卡片横向翻页时，临时禁用外层聊天上下滚动，避免手势冲突
     @State private var isCardHorizontalPaging: Bool = false
+    /// 日程卡片菜单是否显示，用于显示全屏背景层
+    @State private var isScheduleMenuShowing: Bool = false
+    /// 胶囊菜单（含下拉）在全屏坐标系下的 frame，用于判断点击是否落在菜单内
+    @State private var scheduleMenuFrame: CGRect = .zero
+    /// 防抖：菜单刚打开时，忽略一次“抬手点击”导致的立刻关闭
+    @State private var scheduleMenuOpenedAt: CFTimeInterval = 0
+    /// 可靠防抖：菜单刚打开后的“抬手那一下”可能被识别成 tap，这里直接忽略一次
+    @State private var ignoreNextScheduleMenuTapClose: Bool = false
+    
+    // 删除确认弹窗状态
+    @State private var showDeleteConfirmation: Bool = false
+    @State private var eventToDelete: ScheduleEvent? = nil
+    @State private var messageIdToDeleteFrom: UUID? = nil
     
     // 录音动画状态
     enum RecordingAnimationState {
@@ -158,8 +171,18 @@ struct HomeChatView: View {
                                 .frame(height: bottomInputAreaHeight)
                         }
                         .onTapGesture {
-                            // 点击空白处收回键盘
-                            isInputFocused = false
+                            // 点击空白处收回键盘和面板
+                            // 1. 先收键盘（系统动画，不加 withAnimation）
+                            if isInputFocused {
+                                isInputFocused = false
+                            }
+                            
+                            // 2. 再收面板（UI动画）
+                            if showAttachmentPanel {
+                                withAnimation(.spring(response: 0.3, dampingFraction: 1.0)) {
+                                    showAttachmentPanel = false
+                                }
+                            }
                         }
                         .onChange(of: appState.chatMessages.count) { _, _ in
                             scrollToBottom(proxy: proxy)
@@ -225,6 +248,76 @@ struct HomeChatView: View {
                 // 底部输入区域 (浮动在最上层)
                 bottomInputArea
                     .zIndex(101) // 确保在录音层之上
+            }
+            // 接收日程卡片菜单状态
+            .onPreferenceChange(ScheduleMenuStateKey.self) { newValue in
+                isScheduleMenuShowing = newValue
+                if !newValue {
+                    scheduleMenuFrame = .zero
+                    ignoreNextScheduleMenuTapClose = false
+                } else {
+                    scheduleMenuOpenedAt = CACurrentMediaTime()
+                }
+            }
+            .onPreferenceChange(ScheduleMenuFrameKey.self) { newFrame in
+                scheduleMenuFrame = newFrame
+            }
+            // 菜单打开防抖：用通知确保比 Preference 更早更新 openedAt
+            .onReceive(NotificationCenter.default.publisher(for: .scheduleMenuDidOpen)) { _ in
+                scheduleMenuOpenedAt = CACurrentMediaTime()
+                ignoreNextScheduleMenuTapClose = true
+            }
+            // 全屏点击关闭：不靠盖一层透明 view（会抢按钮点击），而是用带坐标的 tap 手势判断
+            .contentShape(Rectangle())
+            .simultaneousGesture(
+                SpatialTapGesture(coordinateSpace: .global).onEnded { value in
+                    // 菜单未展示：不处理
+                    guard isScheduleMenuShowing else { return }
+                    // 忽略“刚打开菜单的抬手那一下”（比纯时间防抖更稳定）
+                    if ignoreNextScheduleMenuTapClose {
+                        ignoreNextScheduleMenuTapClose = false
+                        return
+                    }
+                    // 刚打开菜单时（通常来自长按抬手的那一下），不要立刻关闭
+                    if CACurrentMediaTime() - scheduleMenuOpenedAt < 0.35 { return }
+                    // 菜单刚出现的前几帧，frame 可能还是 .zero（尚未完成测量）。
+                    // 这时不要做“点外部关闭”的判定，否则会出现前几次长按抬手就被立刻关闭的现象。
+                    guard scheduleMenuFrame != .zero else { return }
+                    // 点在胶囊/下拉内：不关闭，让按钮正常响应
+                    guard !scheduleMenuFrame.contains(value.location) else { return }
+                    NotificationCenter.default.post(name: .dismissScheduleMenu, object: nil)
+                }
+            )
+            
+            // 删除确认弹窗
+            if showDeleteConfirmation, let event = eventToDelete {
+                DeleteConfirmationView(
+                    event: event,
+                    onCancel: {
+                        withAnimation {
+                            showDeleteConfirmation = false
+                            eventToDelete = nil
+                            messageIdToDeleteFrom = nil
+                        }
+                    },
+                    onConfirm: {
+                        if let messageId = messageIdToDeleteFrom, let eventId = eventToDelete?.id {
+                            // 执行删除逻辑
+                            if let index = appState.chatMessages.firstIndex(where: { $0.id == messageId }) {
+                                withAnimation {
+                                    appState.chatMessages[index].scheduleEvents?.removeAll(where: { $0.id == eventId })
+                                    appState.saveMessageToStorage(appState.chatMessages[index], modelContext: modelContext)
+                                }
+                            }
+                        }
+                        
+                        withAnimation {
+                            showDeleteConfirmation = false
+                            eventToDelete = nil
+                            messageIdToDeleteFrom = nil
+                        }
+                    }
+                )
             }
         }
         .onAppear {
@@ -423,16 +516,10 @@ struct HomeChatView: View {
                     endRecording()
                 } else {
                     // 如果还没触发录音（即短按）：
-                    // - 若附件面板已展开：优先收起面板，避免误触 focus
-                    // - 否则：聚焦输入框
-                    if showAttachmentPanel {
-                        withAnimation(.spring(response: 0.25, dampingFraction: 0.86)) {
-                            showAttachmentPanel = false
-                        }
-                    } else {
-                        HapticFeedback.light()
-                        isInputFocused = true
-                    }
+                    // 聚焦输入框
+                    HapticFeedback.light()
+                    // 移除 withAnimation，让系统键盘动画自然接管
+                    isInputFocused = true
                 }
             }
     }
@@ -705,7 +792,13 @@ struct HomeChatView: View {
                             ScheduleCardStackView(events: Binding(
                                 get: { appState.chatMessages[index].scheduleEvents ?? [] },
                                 set: { appState.chatMessages[index].scheduleEvents = $0 }
-                            ), isParentScrollDisabled: $isCardHorizontalPaging)
+                            ), isParentScrollDisabled: $isCardHorizontalPaging, onDeleteRequest: { event in
+                                self.eventToDelete = event
+                                self.messageIdToDeleteFrom = message.id
+                                withAnimation {
+                                    self.showDeleteConfirmation = true
+                                }
+                            })
                             .frame(maxWidth: .infinity)
                             .padding(.top, -10) // Slight adjustment to bring it closer to text
                             
@@ -781,11 +874,15 @@ struct HomeChatView: View {
             // 让遮罩和背景向上延伸的高度，和聊天内容遮罩的 maskLift 保持一致
             let maskLift: CGFloat = 10
             
-            // 判断是否处于输入状态（有文字、有图片、或焦点在输入框）
-            let isInputActive = !inputText.isEmpty || selectedImage != nil || isInputFocused
+            // 判断是否处于布局展开状态（有文字、有图片、或焦点在输入框、或附件面板打开）
+            // 只要满足这些条件，输入框就撑满全宽，ShippingBox按钮隐藏
+            let isLayoutExpanded = !inputText.isEmpty || selectedImage != nil || isInputFocused || showAttachmentPanel
             
-            // 计算输入框宽度: 可用宽度 - 按钮宽 - 按钮间距 (如果输入活跃则全宽)
-            let inputContainerWidth = isInputActive ? areaWidth : (areaWidth - buttonSize - spacing)
+            // 判断是否显示发送按钮：有内容，或者焦点在输入框时显示
+            let showSendButton = !inputText.isEmpty || selectedImage != nil || isInputFocused
+            
+            // 计算输入框宽度: 可用宽度 - 按钮宽 - 按钮间距 (如果布局展开则全宽)
+            let inputContainerWidth = isLayoutExpanded ? areaWidth : (areaWidth - buttonSize - spacing)
             
             let baseCircleSize: CGFloat = 92  // 基础圆形尺寸（调大球体）
             // 圆球尺寸由“分段过渡”驱动（静音稳定球 -> 目标尺寸 -> 过渡大稳定球 -> 进化成动态球）
@@ -809,13 +906,13 @@ struct HomeChatView: View {
             
             // 容器高度
             let inputHeight = max(48, currentInputSize.height)
-            let panelHeight: CGFloat = showAttachmentPanel ? 120 : 0
+            let panelHeight: CGFloat = showAttachmentPanel ? 250 : 0
             
             // 球本身高度为 circleSize，这里上下各预留 20pt，让动态球完全不贴边
             let recordingContainerHeight: CGFloat = circleSize + 40
             
             // 动态调整高度
-            let containerHeight: CGFloat = (recordingState == .shrinking ? recordingContainerHeight : inputHeight) + panelHeight
+            let containerHeight: CGFloat = (recordingState == .shrinking ? recordingContainerHeight : inputHeight) + (showAttachmentPanel ? 250 : 0)
             
             // 计算当前状态下的目标 Frame
             var targetWidth: CGFloat {
@@ -836,8 +933,8 @@ struct HomeChatView: View {
             
             var targetCornerRadius: CGFloat {
                 switch recordingState {
-                case .idle: return 24
-                case .morphing: return 24
+                case .idle: return 12
+                case .morphing: return 12
                 case .shrinking: return circleSize / 2
                 }
             }
@@ -883,7 +980,7 @@ struct HomeChatView: View {
                 audioPulseScale: audioPulseScale,
                 orbitRadius: orbitRadius,
                 smallCircleRadius: smallCircleRadius,
-                isInputActive: isInputActive
+                isInputActive: isLayoutExpanded
             )
 
             let inputOverlay: AnyView = makeInputOverlay(
@@ -891,10 +988,11 @@ struct HomeChatView: View {
                 spacing: spacing,
                 inputContainerWidth: inputContainerWidth,
                 buttonSize: buttonSize,
-                isInputActive: isInputActive
+                isLayoutExpanded: isLayoutExpanded,
+                showSendButton: showSendButton
             )
 
-            let attachmentPanel: AnyView? = showAttachmentPanel ? makeAttachmentPanel() : nil
+            let attachmentPanel: AnyView? = showAttachmentPanel ? makeAttachmentPanel(totalWidth: areaWidth) : nil
 
             let root: AnyView = AnyView(
                 VStack(spacing: 0) {
@@ -1053,7 +1151,8 @@ struct HomeChatView: View {
         spacing: CGFloat,
         inputContainerWidth: CGFloat,
         buttonSize: CGFloat,
-        isInputActive: Bool
+        isLayoutExpanded: Bool,
+        showSendButton: Bool
     ) -> AnyView {
         AnyView(
             ZStack {
@@ -1085,19 +1184,27 @@ struct HomeChatView: View {
                         HStack(alignment: .center, spacing: 10) {
                             if selectedImage == nil {
                                 Button(action: {
-                                    // 快速、干净的动画：0.2秒弹簧动画
-                                    withAnimation(.spring(response: 0.25, dampingFraction: 0.86)) {
-                                        if showAttachmentPanel {
+                                    if showAttachmentPanel {
+                                        // 仅收起面板，不激活键盘，回到初始状态
+                                        withAnimation(.spring(response: 0.3, dampingFraction: 1.0)) {
                                             showAttachmentPanel = false
-                                        } else {
-                                            isInputFocused = false
+                                        }
+                                        isInputFocused = false
+                                    } else {
+                                        // 模式切换：键盘 -> 面板
+                                        // 1. 收起键盘（无动画）
+                                        isInputFocused = false
+                                        // 2. 展开面板动画
+                                        withAnimation(.spring(response: 0.3, dampingFraction: 1.0)) {
                                             showAttachmentPanel = true
                                         }
                                     }
                                 }) {
                                     Image(systemName: showAttachmentPanel ? "xmark.circle" : "plus.circle")
-                                        .font(.system(size: 24, weight: .ultraLight))
+                                        .font(.system(size: 28, weight: .ultraLight))
                                         .foregroundColor(Color(hex: "333333"))
+                                        .frame(width: 28, height: 28)
+                                        .contentShape(Circle())
                                 }
                             }
 
@@ -1108,12 +1215,20 @@ struct HomeChatView: View {
                                 .frame(minHeight: 36)
                                 .padding(.vertical, 4)
                                 .highPriorityGesture(
-                                    (inputText.isEmpty && selectedImage == nil && !isInputFocused && !appState.isAgentTyping)
+                                    (inputText.isEmpty && selectedImage == nil && !isInputFocused && !appState.isAgentTyping && !showAttachmentPanel)
                                     ? voiceInputGesture
                                     : nil
                                 )
+                                .onChange(of: isInputFocused) { _, isFocused in
+                                    if isFocused {
+                                        // 键盘弹起时，联动收起面板
+                                        withAnimation(.spring(response: 0.3, dampingFraction: 1.0)) {
+                                            showAttachmentPanel = false
+                                        }
+                                    }
+                                }
 
-                            if isInputActive {
+                            if showSendButton {
                                 Button(action: sendMessage) {
                                     Image(systemName: "paperplane.fill")
                                         .font(.system(size: 15))
@@ -1139,7 +1254,7 @@ struct HomeChatView: View {
                     }
                     .contentShape(Rectangle())
 
-                    if !isInputActive {
+                    if !isLayoutExpanded {
                         Button(action: {
                             HapticFeedback.light()
                             showModuleContainer = true
@@ -1161,52 +1276,79 @@ struct HomeChatView: View {
         )
     }
 
-    private func makeAttachmentPanel() -> AnyView {
-        AnyView(
-            HStack(spacing: 40) {
-                Button {
-                    // 相机功能
-                } label: {
-                    VStack(spacing: 8) {
-                        Image(systemName: "camera.fill")
-                            .font(.system(size: 28))
-                            .foregroundColor(.gray)
-                            .frame(width: 60, height: 60)
-                            .background(Color.white)
-                            .cornerRadius(16)
-                            .shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 2)
+    private func makeAttachmentPanel(totalWidth: CGFloat) -> AnyView {
+        let spacing: CGFloat = 10
+        let buttonSize = (totalWidth - spacing * 2) / 3
+        
+        return AnyView(
+            VStack(spacing: spacing) {
+                HStack(spacing: spacing) {
+                    Button {
+                        // 拍照片功能
+                    } label: {
+                        VStack(spacing: 6) {
+                            Image(systemName: "camera")
+                                .font(.system(size: 26, weight: .light))
+                                .foregroundColor(Color(hex: "333333"))
+                            
+                            Text("拍照片")
+                                .font(.system(size: 12))
+                                .foregroundColor(Color(hex: "333333"))
+                        }
+                        .frame(width: buttonSize, height: buttonSize)
+                        .background(Color.white)
+                        .cornerRadius(16)
+                        .shadow(color: Color.black.opacity(0.03), radius: 4, x: 0, y: 2)
+                    }
 
-                        Text("相机")
-                            .font(.system(size: 12))
-                            .foregroundColor(.gray)
+                    Button {
+                        isPickerPresented = true
+                    } label: {
+                        VStack(spacing: 6) {
+                            Image(systemName: "photo")
+                                .font(.system(size: 26, weight: .light))
+                                .foregroundColor(Color(hex: "333333"))
+                            
+                            Text("传图片")
+                                .font(.system(size: 12))
+                                .foregroundColor(Color(hex: "333333"))
+                        }
+                        .frame(width: buttonSize, height: buttonSize)
+                        .background(Color.white)
+                        .cornerRadius(16)
+                        .shadow(color: Color.black.opacity(0.03), radius: 4, x: 0, y: 2)
+                    }
+                    
+                    Button {
+                        // 扫一扫功能
+                    } label: {
+                        VStack(spacing: 6) {
+                            Image(systemName: "qrcode.viewfinder")
+                                .font(.system(size: 26, weight: .light))
+                                .foregroundColor(Color(hex: "333333"))
+                            
+                            Text("扫一扫")
+                                .font(.system(size: 12))
+                                .foregroundColor(Color(hex: "333333"))
+                        }
+                        .frame(width: buttonSize, height: buttonSize)
+                        .background(Color.white)
+                        .cornerRadius(16)
+                        .shadow(color: Color.black.opacity(0.03), radius: 4, x: 0, y: 2)
                     }
                 }
-
-                Button {
-                    isPickerPresented = true
-                } label: {
-                    VStack(spacing: 8) {
-                        Image(systemName: "photo.fill")
-                            .font(.system(size: 28))
-                            .foregroundColor(.gray)
-                            .frame(width: 60, height: 60)
-                            .background(Color.white)
-                            .cornerRadius(16)
-                            .shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 2)
-
-                        Text("图片")
-                            .font(.system(size: 12))
-                            .foregroundColor(.gray)
-                    }
+                
+                // 第二行（目前为空，仅占位）
+                HStack(spacing: spacing) {
+                    Spacer()
                 }
-
-                Spacer()
+                .frame(height: buttonSize)
             }
-            .padding(.top, 20)
-            .padding(.horizontal, 20)
-            .frame(height: 120, alignment: .top)
+            .padding(.top, 8)
+            .padding(.horizontal, 0)
+            .frame(height: buttonSize * 2 + spacing + 20, alignment: .top) // 动态调整容器高度
             .background(Color.clear)
-            .transition(.move(edge: .bottom))
+            .transition(.move(edge: .bottom).combined(with: .opacity))
         )
     }
     
@@ -1235,7 +1377,9 @@ struct HomeChatView: View {
         }
         
         inputText = ""
-        withAnimation(.spring(response: 0.25, dampingFraction: 0.86)) {
+        // 发送后收起
+        isInputFocused = false
+        withAnimation(.spring(response: 0.3, dampingFraction: 1.0)) {
             selectedImage = nil
             showAttachmentPanel = false
         }
@@ -1943,6 +2087,107 @@ struct VisualEffectBlur: UIViewRepresentable {
     
     func updateUIView(_ uiView: UIVisualEffectView, context: Context) {
         uiView.effect = UIBlurEffect(style: blurStyle)
+    }
+}
+
+// MARK: - 删除确认弹窗
+struct DeleteConfirmationView: View {
+    let event: ScheduleEvent
+    let onCancel: () -> Void
+    let onConfirm: () -> Void
+    
+    var body: some View {
+        ZStack {
+            // 全屏灰色遮罩
+            Color.black.opacity(0.4)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    onCancel()
+                }
+            
+            // 弹窗主体
+            VStack(spacing: 0) {
+                // 标题 - 左对齐
+                Text("确认删除该日程吗？")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundColor(Color(hex: "333333"))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 24)
+                    .padding(.top, 24)
+                    .padding(.bottom, 20)
+                
+                // 内容
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(alignment: .top, spacing: 0) {
+                        Text("时间：")
+                            .font(.system(size: 15))
+                            .foregroundColor(Color(hex: "666666")) // 灰色标签
+                        Text(formatDate(event.startTime))
+                            .font(.system(size: 15))
+                            .foregroundColor(Color(hex: "333333")) // 黑色内容
+                    }
+                    
+                    HStack(alignment: .top, spacing: 0) {
+                        Text("名称：")
+                            .font(.system(size: 15))
+                            .foregroundColor(Color(hex: "666666"))
+                        Text(event.title)
+                            .font(.system(size: 15))
+                            .foregroundColor(Color(hex: "333333"))
+                            .lineLimit(2)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 24)
+                .padding(.bottom, 24)
+                
+                // 按钮区域
+                HStack(spacing: 15) {
+                    Button(action: onCancel) {
+                        Text("暂不")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(Color(hex: "333333"))
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 44)
+                            .background(Color.secondary.opacity(0.1), in: Capsule())
+                    }
+                    
+                    Button(action: onConfirm) {
+                        Text("删除")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(Color(hex: "FF3B30"))
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 44)
+                            .background(Color.secondary.opacity(0.1), in: Capsule())
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 24)
+            }
+            .frame(width: 300) // 固定宽度
+            .background {
+                ZStack {
+                    // 使用更亮的 Material
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(.regularMaterial)
+                    // 叠加白色层增加亮度（降低透明度增加灰度）
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(Color.white.opacity(0.5))
+                    // 添加灰色调提升灰度
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(Color.gray.opacity(0.1))
+                }
+            }
+            .shadow(color: Color.black.opacity(0.1), radius: 10, x: 0, y: 5)
+        }
+        .zIndex(2000) // 确保在最上层
+        .transition(.opacity)
+    }
+    
+    private func formatDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy/MM/dd HH:mm"
+        return formatter.string(from: date)
     }
 }
 

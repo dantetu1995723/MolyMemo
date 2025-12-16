@@ -109,8 +109,16 @@ struct ScheduleEvent: Identifiable, Equatable, Codable {
     var startTime: Date
     var endTime: Date
     var isSynced: Bool = false
+    var hasConflict: Bool = false
     
     // 用于显示的辅助属性
+    var fullDateString: String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "yyyy.MM.dd EEEE"
+        return formatter.string(from: startTime)
+    }
+
     var day: String {
         let formatter = DateFormatter()
         formatter.dateFormat = "d"
@@ -763,12 +771,13 @@ class AppState: ObservableObject {
         }
         
         // Event 1
-        let event1 = ScheduleEvent(
+        var event1 = ScheduleEvent(
             title: "定粤菜馆",
-            description: "提前预定和王总吃饭的餐馆",
+            description: "提前一周预定和王总吃饭的餐馆",
             startTime: createDate(day: 9, hour: 10, minute: 30),
             endTime: createDate(day: 9, hour: 11, minute: 0)
         )
+        event1.hasConflict = true // 示例冲突
         
         // Event 2
         let event2 = ScheduleEvent(
@@ -779,12 +788,13 @@ class AppState: ObservableObject {
         )
         
         // Event 3
-        let event3 = ScheduleEvent(
+        var event3 = ScheduleEvent(
             title: "团队周会",
             description: "同步本周工作进度和下周计划",
             startTime: createDate(day: 11, hour: 9, minute: 30),
             endTime: createDate(day: 11, hour: 11, minute: 0)
         )
+        event3.hasConflict = true
         
         // Event 4
         let event4 = ScheduleEvent(

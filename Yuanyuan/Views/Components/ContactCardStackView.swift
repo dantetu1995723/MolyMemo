@@ -129,20 +129,15 @@ struct ContactCardStackView: View {
 
 struct ContactCardView: View {
     @Binding var contact: ContactCard
+    @State private var showPhoneSheet: Bool = false
     
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Header: Name and English Name
+            // Header: Name
             HStack(alignment: .lastTextBaseline, spacing: 8) {
                 Text(contact.name)
-                    .font(.system(size: 24, weight: .bold))
-                    .foregroundColor(.black)
-                
-                if let englishName = contact.englishName {
-                    Text(englishName)
-                        .font(.system(size: 16))
-                        .foregroundColor(.gray)
-                }
+                    .font(.custom("SourceHanSerifSC-Bold", size: 24))
+                    .foregroundColor(Color(red: 0.2, green: 0.2, blue: 0.2))
                 
                 Spacer()
             }
@@ -166,40 +161,46 @@ struct ContactCardView: View {
                 Spacer().frame(height: 20)
             }
             
-            // Divider with small circle
-            Rectangle()
-                .fill(Color.gray.opacity(0.2))
-                .frame(height: 1)
-                .overlay(
-                    Circle()
-                        .stroke(Color.gray.opacity(0.2), lineWidth: 1)
-                        .background(Circle().fill(Color.white))
-                        .frame(width: 8, height: 8)
-                    , alignment: .trailing
-                )
-                .padding(.bottom, 20)
+            // Divider (参考日程卡片样式)
+            HStack(spacing: 6) {
+                Rectangle()
+                    .fill(Color(hex: "EEEEEE"))
+                    .frame(height: 1)
+                
+                // 右端空心小圆圈
+                Circle()
+                    .stroke(Color(hex: "E5E5E5"), lineWidth: 1)
+                    .background(Circle().fill(Color.white))
+                    .frame(width: 7, height: 7)
+            }
+            .padding(.bottom, 20)
             
             // Phone
             if let phone = contact.phone {
-                HStack(spacing: 12) {
-                    Image(systemName: "phone")
-                        .font(.system(size: 14))
-                        .foregroundColor(.blue)
-                        .frame(width: 20)
-                    
-                    Text(phone)
-                        .font(.system(size: 15))
-                        .foregroundColor(.gray)
+                Button(action: {
+                    showPhoneSheet = true
+                }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "phone")
+                            .font(.system(size: 14))
+                            .foregroundColor(.gray)
+                            .frame(width: 20)
+                        
+                        Text(phone)
+                            .font(.system(size: 15))
+                            .foregroundColor(.blue)
+                    }
                 }
+                .buttonStyle(PlainButtonStyle())
                 .padding(.bottom, 10)
             }
             
             // Email
             if let email = contact.email {
-                HStack(spacing: 12) {
+                HStack(spacing: 6) {
                     Image(systemName: "envelope")
                         .font(.system(size: 14))
-                        .foregroundColor(.blue)
+                        .foregroundColor(.gray)
                         .frame(width: 20)
                     
                     Text(email)
@@ -217,5 +218,79 @@ struct ContactCardView: View {
             RoundedRectangle(cornerRadius: 24)
                 .stroke(Color.gray.opacity(0.1), lineWidth: 1)
         )
+        .sheet(isPresented: $showPhoneSheet) {
+            if let phone = contact.phone {
+                PhoneActionSheet(phoneNumber: phone)
+                    .presentationDetents([.height(240)])
+            }
+        }
+    }
+}
+
+// MARK: - Phone Action Sheet
+struct PhoneActionSheet: View {
+    let phoneNumber: String
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        VStack(spacing: 32) {
+            // Phone Number
+            Text(phoneNumber)
+                .font(.system(size: 18, weight: .regular))
+                .foregroundColor(.blue)
+                .padding(.top, 24)
+            
+            // Action Buttons
+            HStack(spacing: 16) {
+                // Copy Button
+                Button(action: {
+                    UIPasteboard.general.string = phoneNumber
+                    dismiss()
+                }) {
+                    VStack(spacing: 4) {
+                        Image(systemName: "doc.on.doc")
+                            .font(.system(size: 24))
+                            .foregroundColor(Color(hex: "757575"))
+                        
+                        Text("复制")
+                            .font(.system(size: 14, weight: .regular))
+                            .foregroundColor(Color(hex: "757575"))
+                            .kerning(0.5)
+                    }
+                    .frame(width: 135, height: 135)
+                    .background(Color(hex: "F8F8F8"))
+                    .cornerRadius(12)
+                }
+                .buttonStyle(PlainButtonStyle())
+                
+                // Call Button
+                Button(action: {
+                    if let url = URL(string: "tel://\(phoneNumber.replacingOccurrences(of: " ", with: ""))") {
+                        UIApplication.shared.open(url)
+                    }
+                    dismiss()
+                }) {
+                    VStack(spacing: 4) {
+                        Image(systemName: "phone")
+                            .font(.system(size: 24))
+                            .foregroundColor(Color(hex: "757575"))
+                        
+                        Text("呼叫")
+                            .font(.system(size: 14, weight: .regular))
+                            .foregroundColor(Color(hex: "757575"))
+                            .kerning(0.5)
+                    }
+                    .frame(width: 135, height: 135)
+                    .background(Color(hex: "F8F8F8"))
+                    .cornerRadius(12)
+                }
+                .buttonStyle(PlainButtonStyle())
+            }
+            .padding(.horizontal, 24)
+            
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(hex: "FFFFFF"))
     }
 }
