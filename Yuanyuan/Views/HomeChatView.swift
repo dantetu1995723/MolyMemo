@@ -87,6 +87,8 @@ struct HomeChatView: View {
     @State private var dragOffset: CGFloat = 0
     @State private var inputFrame: CGRect = .zero
     @State private var pressStartTime: Date?
+    @State private var pressStartLocation: CGPoint?
+    @State private var pressToken: UUID = UUID()
     @State private var hasStartedRecording: Bool = false
     @State private var longPressTimer: Timer?
     
@@ -95,6 +97,8 @@ struct HomeChatView: View {
     private let recordMorphDuration: Double = 0.18
     /// 融合后“收缩成球”时长（越小越快）
     private let recordShrinkDuration: Double = 0.22
+    /// 长按确认阈值：超过该时长才开始“变球+录音”，避免短点触发动画
+    private let voicePressLongPressThreshold: Double = 0.12
     
     // MARK: - 静音 -> 说话（稳定球 -> 动态球）过渡参数
     // 更灵敏：降低触发阈值，同时保持滞回避免抖动
@@ -118,6 +122,7 @@ struct HomeChatView: View {
     private let backgroundGray = Color(hex: "F7F8FA")
     private let bubbleWhite = Color.white
     private let userBubbleColor = Color(hex: "222222") // 深黑色用户气泡
+    private let inputBorderColor = Color.black.opacity(0.12) // 输入框边框颜色
     
     var body: some View {
         GeometryReader { geometry in
@@ -411,6 +416,27 @@ struct HomeChatView: View {
     
     // MARK: - 语音输入逻辑
     
+    /// 手指按下时立刻启动“融合(morphing)”动画，提供 0 延迟视觉反馈。
+    /// 注意：这里只做 UI，不启动录音；真正录音在长按确认后开始。
+    private func beginVoicePressAnimationIfNeeded() {
+        // 已经在球态/融合态就不重复触发
+        guard recordingState == .idle else { return }
+        withAnimation(.easeInOut(duration: recordMorphDuration)) {
+            recordingState = .morphing
+            colorSpread = 1.2
+        }
+    }
+    
+    /// 长按确认后，立即推进到“球态(shrinking)”并开始波纹。
+    private func commitVoiceRecordingVisuals() {
+        // 允许从 idle/morphing 直接进入 shrinking；如果已 shrinking 则忽略
+        guard recordingState != .shrinking else { return }
+        withAnimation(.easeInOut(duration: recordShrinkDuration)) {
+            recordingState = .shrinking
+        }
+        startBlobAnimation()
+    }
+    
     private func startRecording() {
         // 重置状态
         recordingTranscript = ""
@@ -419,10 +445,7 @@ struct HomeChatView: View {
         isSpeakingLatched = false
         speakingOffTimer?.invalidate()
         speakingOffTimer = nil
-        
-        // 启动动画
-        runRecordingAnimation()
-        
+
         // 开始真实的语音识别
         speechRecognizer.startRecording { text in
             recordingTranscript = text
@@ -463,92 +486,88 @@ struct HomeChatView: View {
         dragOffset = 0
     }
     
-    private var voiceInputGesture: some Gesture {
-        DragGesture(minimumDistance: 0, coordinateSpace: .global)
-            .onChanged { value in
-                // 首次按下，启动长按计时器
-                if pressStartTime == nil {
-                    pressStartTime = Date()
-                    isCanceling = false
+    private func handleVoicePressBegan(globalLocation: CGPoint) {
+        // 只在“初始空态&未聚焦&无面板/无图片/非打字”时接管触摸（保持原有语义，避免与编辑/发送冲突）
+        guard inputText.isEmpty,
+              selectedImage == nil,
+              !isInputFocused,
+              !appState.isAgentTyping,
+              !showAttachmentPanel
+        else { return }
+        
+        // 首次按下
+        if pressStartTime == nil {
+            pressStartTime = Date()
+            pressStartLocation = globalLocation
+            pressToken = UUID()
+            isCanceling = false
+
+            // 超过阈值后仍在按住才开始“变球+录音”（避免短点误触时出现动画）
+            longPressTimer?.invalidate()
+            let token = pressToken
+            let timer = Timer(timeInterval: voicePressLongPressThreshold, repeats: false) { _ in
+                Task { @MainActor in
+                    guard self.pressStartTime != nil else { return } // 已松手
+                    guard self.pressToken == token else { return } // 已开始新的按压
+                    self.hasStartedRecording = true
+                    HapticFeedback.medium()
                     
-                    // 启动计时器：如果 200ms 后还在按着，则视为长按启动录音
-                    longPressTimer?.invalidate()
-                    longPressTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: false) { _ in
-                        Task { @MainActor in
-                            if self.pressStartTime != nil { // 确保还没松手
-                                self.hasStartedRecording = true
-                                HapticFeedback.medium()
-                                self.startRecording()
-                            }
-                        }
+                    // 长按确认后才开始“变球”动画：先进入 morphing，再在 morphing 完成后收缩成球
+                    self.beginVoicePressAnimationIfNeeded()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + self.recordMorphDuration) {
+                        guard self.pressStartTime != nil, self.pressToken == token, self.hasStartedRecording else { return }
+                        self.commitVoiceRecordingVisuals()
                     }
-                }
-                
-                // 如果已经在录音，处理拖动取消逻辑
-                if hasStartedRecording && speechRecognizer.isRecording {
-                    let translation = value.translation.height
-                    let previousCanceling = isCanceling
-                    dragOffset = translation
-                    
-                    // 向上滑动超过阈值进入取消状态
-                    let shouldCancel = translation < -80
-                    
-                    withAnimation(.easeOut(duration: 0.15)) {
-                        isCanceling = shouldCancel
-                    }
-                    
-                    // 进入/退出取消状态时触发反馈
-                    if shouldCancel != previousCanceling {
-                        HapticFeedback.selection()
-                    }
+                    self.startRecording()
                 }
             }
-            .onEnded { _ in
-                // 清理计时器
-                longPressTimer?.invalidate()
-                longPressTimer = nil
-                
-                let wasRecording = hasStartedRecording
-                
-                // 重置按下状态
-                pressStartTime = nil
-                hasStartedRecording = false
-                
-                if wasRecording {
-                    // 如果已经触发了录音，则结束录音
-                    endRecording()
-                } else {
-                    // 如果还没触发录音（即短按）：
-                    // 聚焦输入框
-                    HapticFeedback.light()
-                    // 移除 withAnimation，让系统键盘动画自然接管
-                    isInputFocused = true
-                }
-            }
+            longPressTimer = timer
+            RunLoop.main.add(timer, forMode: .common)
+        }
     }
     
-    private func runRecordingAnimation() {
-        // 1. 融合渐变：输入框背景变宽、变色，同时文字开始淡出
-        // 加快整体速度：0.3s -> 0.18s
-        withAnimation(.easeInOut(duration: recordMorphDuration)) {
-            recordingState = .morphing
-            colorSpread = 1.2 // 触发颜色扩散动画
-        }
+    private func handleVoicePressChanged(globalLocation: CGPoint) {
+        guard hasStartedRecording, speechRecognizer.isRecording else { return }
+        guard let start = pressStartLocation else { return }
         
-        // 2. 缩圆：融合结束后，从全宽收缩成圆形，颜色变深
-        DispatchQueue.main.asyncAfter(deadline: .now() + recordMorphDuration) {
-            // 不依赖 isRecording（真机有时会延迟/失败，导致卡在 morphing）
-            // 这里用手势启动标记来推进到“球态”，后续若录音失败会自动回滚
-            if self.hasStartedRecording {
-                // 收缩阶段加快：0.3s -> 0.22s
-                withAnimation(.easeInOut(duration: recordShrinkDuration)) {
-                    self.recordingState = .shrinking
-                }
-                // 启动波纹动画
-                self.startBlobAnimation()
-            }
+        let translationY = globalLocation.y - start.y
+        let previousCanceling = isCanceling
+        dragOffset = translationY
+        
+        let shouldCancel = translationY < -80
+        withAnimation(.easeOut(duration: 0.15)) {
+            isCanceling = shouldCancel
+        }
+        if shouldCancel != previousCanceling {
+            HapticFeedback.selection()
         }
     }
+    
+    private func handleVoicePressEnded() {
+        longPressTimer?.invalidate()
+        longPressTimer = nil
+        
+        let wasRecording = hasStartedRecording
+        
+        pressStartTime = nil
+        pressStartLocation = nil
+        hasStartedRecording = false
+        
+        if wasRecording {
+            endRecording()
+        } else {
+            // 短按：回滚融合动画，恢复输入框，再聚焦
+            if recordingState != .idle {
+                resetRecordingAnimation()
+            }
+            HapticFeedback.light()
+            isInputFocused = true
+        }
+    }
+    
+    // runRecordingAnimation 已被拆分为：
+    // - beginVoicePressAnimationIfNeeded(): 手指按下立刻进入 morphing
+    // - commitVoiceRecordingVisuals(): 长按确认后立刻进入 shrinking
 
     private func handleRecordingFailureReset() {
         // 录音引擎/会话启动失败时，避免 UI 停在 morphing/球态
@@ -945,8 +964,8 @@ struct HomeChatView: View {
             
             var targetCornerRadius: CGFloat {
                 switch recordingState {
-                case .idle: return 12
-                case .morphing: return 12
+                case .idle: return 24
+                case .morphing: return 24
                 case .shrinking: return circleSize / 2
                 }
             }
@@ -1024,6 +1043,8 @@ struct HomeChatView: View {
                             attachmentPanel
                         }
                     }
+                    // 让“输入栏整体上移”和“按钮旋转/淡入淡出”处于同一动画事务，避免观感不同步产生残影/领先
+                    .animation(.spring(response: 0.3, dampingFraction: 1.0), value: showAttachmentPanel)
                     .padding(.horizontal, horizontalMargin)
                     .padding(.bottom, bottomMargin)
                     .background(
@@ -1092,7 +1113,8 @@ struct HomeChatView: View {
             ZStack {
                 ZStack {
                     ZStack {
-                        Color.white
+                        // 输入框/右侧圆形按钮的底色与页面背景保持一致
+                        backgroundGray
                         activeColor
                             .mask(
                                 GeometryReader { proxy in
@@ -1159,6 +1181,27 @@ struct HomeChatView: View {
                 x: 0,
                 y: recordingState == .shrinking ? 5 : 0
             )
+            // 轻描边增强边界清晰度（仅输入态显示，避免影响录音球效果）
+            .overlay {
+                if recordingState != .shrinking {
+                    ZStack {
+                        // 描边必须与底层 mask 形状一致，否则会出现“底边不贴合/重影”的错位
+                        RoundedRectangle(cornerRadius: targetCornerRadius, style: .continuous)
+                            .strokeBorder(inputBorderColor, lineWidth: 1)
+                            .frame(width: targetWidth, height: targetHeight)
+                            .offset(x: currentInputOffset)
+                        
+                        // 右侧按钮（shippingbox）在初始态才存在
+                        if !isInputActive {
+                            Circle()
+                                .stroke(inputBorderColor, lineWidth: 1)
+                                .frame(width: buttonSize, height: buttonSize)
+                                .offset(x: buttonIdleOffset)
+                        }
+                    }
+                    .allowsHitTesting(false)
+                }
+            }
         )
     }
 
@@ -1172,7 +1215,9 @@ struct HomeChatView: View {
     ) -> AnyView {
         AnyView(
             ZStack {
-                HStack(spacing: spacing) {
+                // 关键：避免用 transition 移除右侧按钮导致父视图快照动画（会产生“残影”）
+                // 展开态把间距也收为 0，避免多出一截空隙影响对齐
+                HStack(spacing: isLayoutExpanded ? 0 : spacing) {
                     VStack(spacing: 0) {
                         if let image = selectedImage {
                             ZStack(alignment: .topTrailing) {
@@ -1203,23 +1248,23 @@ struct HomeChatView: View {
                                 Button(action: {
                                     if showAttachmentPanel {
                                         // 仅收起面板，不激活键盘，回到初始状态
-                                        withAnimation(.spring(response: 0.3, dampingFraction: 1.0)) {
-                                            showAttachmentPanel = false
-                                        }
+                                        showAttachmentPanel = false
                                         isInputFocused = false
                                     } else {
                                         // 模式切换：键盘 -> 面板
                                         // 1. 收起键盘（无动画）
                                         isInputFocused = false
                                         // 2. 展开面板动画
-                                        withAnimation(.spring(response: 0.3, dampingFraction: 1.0)) {
-                                            showAttachmentPanel = true
-                                        }
+                                        showAttachmentPanel = true
                                     }
                                 }) {
-                                    Image(systemName: showAttachmentPanel ? "xmark.circle" : "plus.circle")
+                                    // 用同一个符号做旋转，避免“旧按钮原地淡出”的残影
+                                    Image(systemName: "plus.circle")
                                         .font(.system(size: 28, weight: .ultraLight))
                                         .foregroundColor(Color(hex: "333333"))
+                                        .rotationEffect(.degrees(showAttachmentPanel ? 45 : 0))
+                                        // 与父容器上移使用同一套 spring 参数，确保同步
+                                        .animation(.spring(response: 0.3, dampingFraction: 1.0), value: showAttachmentPanel)
                                         .frame(width: 28, height: 28)
                                         .contentShape(Circle())
                                 }
@@ -1254,14 +1299,17 @@ struct HomeChatView: View {
                                    !isInputFocused,
                                    !appState.isAgentTyping,
                                    !showAttachmentPanel {
-                                    Color.clear
-                                        .contentShape(Rectangle())
-                                        .simultaneousGesture(
-                                            TapGesture().onEnded {
-                                                isInputFocused = true
-                                            }
-                                        )
-                                        .highPriorityGesture(voiceInputGesture)
+                                    VoicePressCatcherView(
+                                        onBegan: { loc in
+                                            handleVoicePressBegan(globalLocation: loc)
+                                        },
+                                        onChanged: { loc in
+                                            handleVoicePressChanged(globalLocation: loc)
+                                        },
+                                        onEnded: {
+                                            handleVoicePressEnded()
+                                        }
+                                    )
                                 }
                             }
                             .onChange(of: isInputFocused) { _, isFocused in
@@ -1301,20 +1349,24 @@ struct HomeChatView: View {
                     }
                     .contentShape(Rectangle())
 
-                    if !isLayoutExpanded {
-                        Button(action: {
-                            HapticFeedback.light()
-                            showModuleContainer = true
-                        }) {
-                            Image(systemName: "shippingbox")
-                                .font(.system(size: 22))
-                                .foregroundColor(Color(hex: "666666"))
-                                .frame(width: buttonSize, height: buttonSize)
-                                .contentShape(Circle())
-                        }
-                        .disabled(appState.isAgentTyping)
-                        .transition(.scale.combined(with: .opacity))
+                    // 右侧按钮不再“插入/移除”，改为布局 + 透明度动画，避免产生快照残影
+                    Button(action: {
+                        HapticFeedback.light()
+                        showModuleContainer = true
+                    }) {
+                        Image(systemName: "shippingbox")
+                            .font(.system(size: 22))
+                            .foregroundColor(Color(hex: "666666"))
+                            .frame(width: buttonSize, height: buttonSize)
+                            .contentShape(Circle())
                     }
+                    .disabled(appState.isAgentTyping || isLayoutExpanded)
+                    .allowsHitTesting(!isLayoutExpanded)
+                    .opacity(isLayoutExpanded ? 0 : 1)
+                    .scaleEffect(isLayoutExpanded ? 0.86 : 1)
+                    // 让它在展开态不占位，从而输入框真正撑满
+                    .frame(width: isLayoutExpanded ? 0 : buttonSize, height: buttonSize)
+                    .clipped()
                 }
                 .frame(width: areaWidth, alignment: .leading)
                 .opacity(recordingState == .idle ? 1 : 0)
@@ -1404,6 +1456,57 @@ struct HomeChatView: View {
         static var defaultValue: CGFloat = 64
         static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
             value = nextValue()
+        }
+    }
+
+    /// 用 UIKit 手势捕获“按下/移动/抬起”，避免 SwiftUI 手势在 UITextView/Tracking 模式下出现 1s 级延迟。
+    /// - 使用 UILongPress(minimumPressDuration=0) 来获得 touch-down 即回调。
+    private struct VoicePressCatcherView: UIViewRepresentable {
+        let onBegan: (CGPoint) -> Void
+        let onChanged: (CGPoint) -> Void
+        let onEnded: () -> Void
+        
+        func makeUIView(context: Context) -> UIView {
+            let v = UIView()
+            v.backgroundColor = .clear
+            
+            let press = UILongPressGestureRecognizer(
+                target: context.coordinator,
+                action: #selector(Coordinator.handlePress(_:))
+            )
+            press.minimumPressDuration = 0
+            press.cancelsTouchesInView = true
+            press.delaysTouchesBegan = false
+            press.delaysTouchesEnded = false
+            v.addGestureRecognizer(press)
+            
+            return v
+        }
+        
+        func updateUIView(_ uiView: UIView, context: Context) {}
+        
+        func makeCoordinator() -> Coordinator {
+            Coordinator(self)
+        }
+        
+        final class Coordinator: NSObject {
+            let parent: VoicePressCatcherView
+            init(_ parent: VoicePressCatcherView) { self.parent = parent }
+            
+            @objc func handlePress(_ gesture: UILongPressGestureRecognizer) {
+                // window 坐标系（与旧的 coordinateSpace: .global 对齐）
+                let loc = gesture.location(in: nil)
+                switch gesture.state {
+                case .began:
+                    parent.onBegan(loc)
+                case .changed:
+                    parent.onChanged(loc)
+                case .ended, .cancelled, .failed:
+                    parent.onEnded()
+                default:
+                    break
+                }
+            }
         }
     }
     
