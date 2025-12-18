@@ -12,10 +12,12 @@ class ChatInputViewModel: ObservableObject {
     
     // MARK: - Recording State
     @Published var isRecording: Bool = false
+    @Published var isAnimatingRecordingEntry: Bool = false
     @Published var isCanceling: Bool = false
     @Published var audioPower: CGFloat = 0.0
     @Published var recordingTranscript: String = ""
     @Published var inputFrame: CGRect = .zero
+    @Published var toolboxFrame: CGRect = .zero
     
     // MARK: - UI State
     @Published var showMenu: Bool = false
@@ -50,6 +52,8 @@ class ChatInputViewModel: ObservableObject {
     // MARK: - Methods
     
     func sendMessage() {
+        // AI 输入过程中：输入区除“中止”外全部禁用
+        guard !isAgentTyping else { return }
         guard hasContent else { return }
         
         let textToSend = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -66,6 +70,8 @@ class ChatInputViewModel: ObservableObject {
     
     /// 发送建议指令（不清空输入框，但图片会一起发送）
     func sendSuggestion(_ suggestion: String) {
+        // AI 输入过程中：输入区除“中止”外全部禁用
+        guard !isAgentTyping else { return }
         // 指令等同于用户发出去的文字：
         // - 指令 +（若存在）当前图片一起发出去
         // - 输入框里已打的字保留
@@ -83,6 +89,8 @@ class ChatInputViewModel: ObservableObject {
     }
     
     func handlePhotoSelection(_ item: PhotosPickerItem?) {
+        // AI 输入过程中：输入区除“中止”外全部禁用
+        guard !isAgentTyping else { return }
         guard let item = item else { return }
         Task {
             if let data = try? await item.loadTransferable(type: Data.self),
@@ -99,6 +107,8 @@ class ChatInputViewModel: ObservableObject {
     }
     
     func removeImage() {
+        // 允许移除图片也会改变 UI，但 AI 输入时 UI 已锁定且菜单/选择入口已禁用；
+        // 这里不再额外 guard，避免出现“状态卡死”无法清理的情况。
         withAnimation {
             selectedImage = nil
             selectedPhotoItem = nil
@@ -107,6 +117,8 @@ class ChatInputViewModel: ObservableObject {
     }
     
     func toggleMenu() {
+        // AI 输入过程中：输入区除“中止”外全部禁用
+        guard !isAgentTyping else { return }
         withAnimation(.spring(response: 0.3, dampingFraction: 1.0)) {
             showMenu.toggle()
             if showMenu {
@@ -131,12 +143,16 @@ class ChatInputViewModel: ObservableObject {
     // MARK: - Recording Logic
     
     func startRecording() {
-        // 简单模拟录音开始
-        withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
-            isRecording = true
-            isCanceling = false
-            recordingTranscript = "正在聆听..." // Placeholder
-        }
+        // AI 输入过程中：输入区除“中止”外全部禁用
+        guard !isAgentTyping else { return }
+        
+        // 记录当前位置
+        // 注意：不建议在 withAnimation 中修改 isRecording，
+        // 否则某些布局计算可能会在动画中途发生变化。
+        isAnimatingRecordingEntry = true
+        isRecording = true 
+        isCanceling = false
+        recordingTranscript = "正在聆听..."
         
         // 模拟声波跳动
         powerTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
@@ -149,20 +165,18 @@ class ChatInputViewModel: ObservableObject {
     func stopRecording() {
         withAnimation {
             isRecording = false
+            isAnimatingRecordingEntry = false
             powerTimer?.invalidate()
             powerTimer = nil
             audioPower = 0
         }
         
-        if !isCanceling {
-            // 模拟发送录音（这里转换为文字发送）
-            let mockText = "我上周说明天要和谁约饭来着？请你帮我查一下"
-            // 实际上应该发送音频或转换后的文字
-            // 这里为了演示，延迟一下模拟STT完成
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-                self?.onSend?(mockText, nil)
-            }
-        }
+        guard !isCanceling else { return }
+        
+        // 没有接收到声音 / 没有识别结果：不发送任何默认文字
+        let text = recordingTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, text != "正在聆听..." else { return }
+        onSend?(text, nil)
     }
     
     func cancelRecording() {

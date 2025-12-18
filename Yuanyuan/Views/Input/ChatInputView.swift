@@ -12,9 +12,11 @@ struct ChatInputView: View {
     @State private var pressStartTime: Date?
     
     var body: some View {
+        let isLocked = viewModel.isAgentTyping
+        
         VStack(spacing: 12) {
             // 1. Suggestions (Floating) - Only when NO image is selected
-            if viewModel.showSuggestions && viewModel.selectedImage == nil {
+            if viewModel.showSuggestions && viewModel.selectedImage == nil && !isLocked {
                 SuggestionBar(onSuggestionTap: { suggestion in
                     viewModel.sendSuggestion(suggestion)
                 })
@@ -28,11 +30,28 @@ struct ChatInputView: View {
                     inputContainer
                         .opacity(viewModel.isRecording ? 0 : 1)
                 }
-                .frame(minHeight: 44)
+                .frame(maxWidth: .infinity, minHeight: 44)
                 
-                // Right: Always Toolbox Button (Only when NOT typing and NO image)
-                if !viewModel.isRecording && viewModel.inputText.isEmpty && viewModel.selectedImage == nil {
+                // Right: Toolbox Button
+                if !isLocked && viewModel.inputText.isEmpty && viewModel.selectedImage == nil {
                     ToolboxButton(onTap: { viewModel.onBoxTap?() })
+                        .opacity(viewModel.isRecording ? 0 : 1)
+                        .background(
+                            GeometryReader { geo in
+                                Color.clear
+                                    .onAppear {
+                                        DispatchQueue.main.async {
+                                            viewModel.toolboxFrame = geo.frame(in: .global)
+                                        }
+                                    }
+                                    .onChange(of: geo.frame(in: .global)) { _, newFrame in
+                                        DispatchQueue.main.async {
+                                            viewModel.toolboxFrame = newFrame
+                                        }
+                                    }
+                            }
+                        )
+                        .disabled(isLocked || viewModel.isRecording)
                         .transition(.asymmetric(
                             insertion: .scale.combined(with: .opacity),
                             removal: .opacity
@@ -42,7 +61,7 @@ struct ChatInputView: View {
             .padding(.horizontal, 16)
             
             // 3. Action Menu
-            if viewModel.showMenu {
+            if viewModel.showMenu && !isLocked {
                 ActionMenu(viewModel: viewModel)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
@@ -53,6 +72,20 @@ struct ChatInputView: View {
         .animation(.spring(response: 0.3, dampingFraction: 1.0), value: viewModel.showSuggestions)
         .animation(.spring(response: 0.3, dampingFraction: 1.0), value: viewModel.selectedImage)
         .animation(.easeInOut(duration: 0.2), value: viewModel.isRecording)
+        .onChange(of: viewModel.isAgentTyping) { _, isTyping in
+            // AI 输入时：除“中止”外全部禁用，主动收起键盘/菜单/建议，并打断长按录音手势
+            guard isTyping else { return }
+            isPressing = false
+            pressStartTime = nil
+            if isFocused { isFocused = false }
+            if viewModel.isInputFocused { viewModel.isInputFocused = false }
+            if viewModel.showMenu {
+                withAnimation { viewModel.showMenu = false }
+            }
+            if viewModel.showSuggestions {
+                withAnimation { viewModel.showSuggestions = false }
+            }
+        }
         // Bind Focus State
         .onChange(of: isFocused) { _, focused in
             viewModel.isInputFocused = focused
@@ -70,16 +103,21 @@ struct ChatInputView: View {
     }
     
     // 输入框容器组件
+    @ViewBuilder
     private var inputContainer: some View {
+        let isLocked = viewModel.isAgentTyping
+        
         VStack(alignment: .leading, spacing: 0) {
             // 选中的图片展示区 (图中标注间距 12)
             if let image = viewModel.selectedImage {
                 VStack(alignment: .leading, spacing: 12) {
                     AttachmentPreview(image: image, onDelete: viewModel.removeImage)
+                        .allowsHitTesting(!isLocked)
+                        .opacity(isLocked ? 0.6 : 1)
                         .padding(.top, 12)
                     
                     // 建议栏
-                    if viewModel.showSuggestions {
+                    if viewModel.showSuggestions && !isLocked {
                         SuggestionBar(onSuggestionTap: { suggestion in
                             viewModel.sendSuggestion(suggestion)
                         })
@@ -105,12 +143,23 @@ struct ChatInputView: View {
                             .frame(width: 32, height: 32)
                             .rotationEffect(.degrees(viewModel.showMenu ? 45 : 0))
                     }
+                    .disabled(isLocked)
+                    .opacity(isLocked ? 0.4 : 1)
                     .padding(.leading, 8)
                     .padding(.bottom, 6)
                 } else {
                     // 有图片时，左侧留出间距 (图中标注 12)
                     Spacer().frame(width: 12)
                 }
+                
+                // 关键：当输入框未聚焦且为空时，我们用外层手势承接“长按录音”，
+                // 禁止 TextField 自己接收触摸，避免系统的文字长按放大镜（你看到的水滴玻璃球）。
+                let interceptTextFieldTouches =
+                    !isFocused &&
+                    viewModel.inputText.isEmpty &&
+                    viewModel.selectedImage == nil &&
+                    !viewModel.isRecording &&
+                    !isLocked
                 
                 TextField("发送消息或按住说话", text: $viewModel.inputText, axis: .vertical)
                     .font(.system(size: 16))
@@ -119,6 +168,9 @@ struct ChatInputView: View {
                     .frame(minHeight: 44)
                     .lineLimit(3, reservesSpace: false) // 限制最大3行，超过后滚动
                     .focused($isFocused)
+                    .allowsHitTesting(!interceptTextFieldTouches)
+                    .disabled(isLocked)
+                    .opacity(isLocked ? 0.6 : 1)
                 
                 // Inside right: Action Button (Stop OR Send)
                 if viewModel.isAgentTyping {
@@ -192,12 +244,15 @@ struct ChatInputView: View {
     // MARK: - Gesture Logic
     
     private func handleDragChanged(_ value: DragGesture.Value) {
+        // AI 正在输入时：整体锁定，禁止长按录音
+        guard !viewModel.isAgentTyping else { return }
+        
         // 排除按钮区域，避免干扰按钮点击
         let startX = value.startLocation.x
         // 加号按钮区域 (左侧约 44px)
         if startX < 44 { return }
-        // 发送按钮区域 (右侧约 44px)
-        if !viewModel.inputText.isEmpty && startX > (viewModel.inputFrame.width - 44) { return }
+        // 右侧按钮区域（Stop 或 Send）
+        if (viewModel.isAgentTyping || viewModel.hasContent) && startX > (viewModel.inputFrame.width - 44) { return }
         
         // 检测是否是新点击
         if !isPressing {
@@ -224,9 +279,16 @@ struct ChatInputView: View {
     }
     
     private func handleDragEnded(_ value: DragGesture.Value) {
+        // AI 正在输入时：整体锁定，结束手势即可
+        guard !viewModel.isAgentTyping else {
+            isPressing = false
+            pressStartTime = nil
+            return
+        }
+        
         // 排除按钮区域
         let startX = value.startLocation.x
-        if startX < 44 || (!viewModel.inputText.isEmpty && startX > (viewModel.inputFrame.width - 44)) {
+        if startX < 44 || ((viewModel.isAgentTyping || viewModel.hasContent) && startX > (viewModel.inputFrame.width - 44)) {
             isPressing = false
             pressStartTime = nil
             return
