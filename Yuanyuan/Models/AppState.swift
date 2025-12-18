@@ -378,6 +378,9 @@ class AppState: ObservableObject {
     @Published var screenshotCategory: ScreenshotCategory? = nil  // 截图预分类结果
     @Published var isLoadingOlderMessages: Bool = false  // 是否正在加载更早的消息
     
+    // 当前生成任务（用于中止）
+    var currentGenerationTask: Task<Void, Never>?
+    
     // 打字机效果控制
     @Published var isTyping: Bool = false
     private var typingTask: Task<Void, Never>?
@@ -414,6 +417,30 @@ class AppState: ObservableObject {
     func startStreaming(messageId: UUID) {
         objectWillChange.send()
         StreamingMessageManager.startStreaming(messageId: messageId, in: &chatMessages)
+    }
+    
+    /// 停止生成
+    func stopGeneration() {
+        print("🛑 用户手动中止生成")
+        
+        // 1. 取消任务
+        currentGenerationTask?.cancel()
+        currentGenerationTask = nil
+        
+        // 2. 更新状态
+        isAgentTyping = false
+        
+        // 3. 标记最后一条AI消息为被中断
+        if let lastIndex = chatMessages.lastIndex(where: { $0.role == .agent && $0.streamingState.isActive }) {
+            var message = chatMessages[lastIndex]
+            message.isInterrupted = true
+            message.streamingState = .completed // 标记为完成，结束 loading 状态
+            // 如果内容为空，给点提示
+            if message.content.isEmpty {
+                message.content = "..."
+            }
+            chatMessages[lastIndex] = message
+        }
     }
 
     /// 追加流式内容块
