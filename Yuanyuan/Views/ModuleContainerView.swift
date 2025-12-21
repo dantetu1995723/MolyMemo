@@ -9,10 +9,11 @@ enum ModuleType: String, CaseIterable {
     
     var icon: String {
         switch self {
+        // 工具箱底栏图标统一采用“线框/非填充”风格，和「日程」一致
         case .todo: return "calendar"
-        case .expense: return "dollarsign.circle.fill"
-        case .contact: return "person.2.fill"
-        case .meeting: return "mic.circle.fill"
+        case .expense: return "doc.text"
+        case .contact: return "person.2"
+        case .meeting: return "mic"
         }
     }
 }
@@ -20,6 +21,7 @@ enum ModuleType: String, CaseIterable {
 // 模块容器视图 - 包含底部导航栏和内容区域
 struct ModuleContainerView: View {
     @EnvironmentObject var appState: AppState
+    @Environment(\.modelContext) private var modelContext
     @State private var selectedModule: ModuleType = .todo
     @State private var showAddSheet = false
     @Namespace private var tabNamespace
@@ -40,11 +42,12 @@ struct ModuleContainerView: View {
                 Group {
                     switch selectedModule {
                     case .todo:
+                        // 保留原有日历日程界面
                         TodoListView(showAddSheet: $showAddSheet)
                     case .contact:
-                        ContactListView(showAddSheet: $showAddSheet)
+                        ContactCardLibraryView(showAddSheet: $showAddSheet)
                     case .expense:
-                        ExpenseListView(showAddSheet: $showAddSheet)
+                        InvoiceCardLibraryView(showAddSheet: $showAddSheet)
                     case .meeting:
                         MeetingRecordView(showAddSheet: $showAddSheet)
                     }
@@ -68,7 +71,7 @@ struct ModuleContainerView: View {
             addButton()
         }
         .padding(.horizontal, 6)
-        .padding(.vertical, 6)
+        .padding(.vertical, 4)
         .background(liquidGlassBarBackground())
         .clipShape(Capsule())
         .padding(.horizontal, 16)
@@ -114,10 +117,10 @@ struct ModuleContainerView: View {
                     .shadow(color: themeColor.opacity(0.3), radius: 4, x: 0, y: 2)
                 
                 Image(systemName: "plus")
-                    .font(.system(size: 20, weight: .semibold))
+                    .font(.system(size: 24, weight: .semibold))
                     .foregroundColor(.white)
             }
-            .frame(width: 44, height: 44)
+            .frame(width: 48, height: 48)
         }
         .buttonStyle(TabItemButtonStyle())
         .padding(.horizontal, 4)
@@ -135,17 +138,17 @@ struct ModuleContainerView: View {
         }) {
             VStack(spacing: 3) {
                 Image(systemName: module.icon)
-                    .font(.system(size: 18, weight: isSelected ? .semibold : .regular))
+                    .font(.system(size: 20, weight: isSelected ? .semibold : .regular))
                     .symbolRenderingMode(.hierarchical)
                 
                 Text(module.rawValue)
-                    .font(.system(size: 10, weight: isSelected ? .semibold : .medium))
+                    .font(.system(size: 11, weight: isSelected ? .semibold : .medium))
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
             }
             .foregroundColor(isSelected ? accentColor : .black.opacity(0.45))
             .frame(maxWidth: .infinity)
-            .frame(height: 48)
+            .frame(height: 52)
             .background(
                 Group {
                     if isSelected {
@@ -172,7 +175,7 @@ struct ModuleContainerView: View {
                         ]),
                         center: .center,
                         startRadius: 0,
-                        endRadius: 40
+                        endRadius: 70
                     )
                 )
             
@@ -189,8 +192,8 @@ struct ModuleContainerView: View {
                         endPoint: .bottom
                     )
                 )
-                .scaleEffect(0.92)
-                .offset(y: -2)
+                .scaleEffect(0.95)
+                .offset(y: -1)
             
             // 3. 底部阴影 - 水滴立体感
             Capsule()
@@ -219,11 +222,11 @@ struct ModuleContainerView: View {
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     ),
-                    lineWidth: 0.8
+                    lineWidth: 1.0
                 )
         }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 4)
+        .padding(.horizontal, 0)
+        .padding(.vertical, 0)
     }
     
     // MARK: - Liquid Glass 导航栏背景

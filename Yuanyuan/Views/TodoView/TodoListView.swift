@@ -258,28 +258,24 @@ struct TodoListView: View {
     
     // MARK: - 顶部导航栏
     private func calendarNavigationBar() -> some View {
-        HStack(spacing: 16) {
-            // 返回按钮
-            Button(action: { dismiss() }) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundColor(.black.opacity(0.7))
-            }
-            
-            Spacer()
-            
-            // 月份标题
+        ZStack {
+            // 标题永远在容器几何中心（不受左侧按钮宽度影响）
             Text(monthTitle)
                 .font(.system(size: 20, weight: .bold, design: .rounded))
                 .foregroundColor(.black.opacity(0.85))
+                // 预留两侧按钮区域，避免标题与返回按钮发生视觉重叠
+                .padding(.horizontal, 60)
+                .frame(maxWidth: .infinity, alignment: .center)
             
-            Spacer()
-            
-            // 添加按钮
-            Button(action: { showAddSheet = true }) {
-                Image(systemName: "plus")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundColor(.black.opacity(0.7))
+            HStack {
+                Button(action: { dismiss() }) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(.black.opacity(0.7))
+                        .frame(width: 44, height: 44, alignment: .center)
+                }
+                
+                Spacer()
             }
         }
         .padding(.horizontal, 20)
@@ -304,7 +300,7 @@ struct TodoListView: View {
                     .frame(maxWidth: .infinity)
             }
         }
-        .padding(.vertical, 8)
+        .frame(height: 52)
     }
     
     // MARK: - 今日行程标题
@@ -670,18 +666,16 @@ struct CalendarDayCellNew: View {
     private let selectionColor = Color(red: 0.95, green: 0.75, blue: 0.45)
     
     var body: some View {
-        VStack(spacing: 6) {
-            ZStack {
-                selectionBackground
-                
-                Text("\(Calendar.current.component(.day, from: date))")
-                    .font(.system(size: 16, weight: isSelected ? .bold : .medium))
-                    .foregroundColor(textColor)
-            }
-            .frame(height: 44)
+        ZStack {
+            selectionBackground
+            
+            Text("\(Calendar.current.component(.day, from: date))")
+                .font(.system(size: 16, weight: isSelected ? .bold : .medium))
+                .foregroundColor(textColor)
         }
         .frame(maxWidth: .infinity)
         .frame(height: 52)
+        .contentShape(Rectangle())
         .animation(.spring(response: 0.25, dampingFraction: 0.85), value: isSelected)
     }
     
@@ -1015,10 +1009,6 @@ struct EmptyScheduleView: View {
             Text("暂无日程安排")
                 .font(.system(size: 16, weight: .medium))
                 .foregroundColor(.black.opacity(0.4))
-            
-            Text("点击右上角 + 添加新日程")
-                .font(.system(size: 14))
-                .foregroundColor(.black.opacity(0.3))
         }
     }
 }
