@@ -2,6 +2,7 @@ import SwiftUI
 
 private struct VoiceWaveformView: View {
     let audioPower: CGFloat
+    var isCanceling: Bool = false
     
     private let barCount: Int = 20
     private let activeThreshold: CGFloat = 0.12
@@ -10,6 +11,10 @@ private struct VoiceWaveformView: View {
     private let minHeight: CGFloat = 5
     private let maxContainerHeight: CGFloat = 24
     private let activeAmplitude: CGFloat = 12
+    
+    private var barColor: Color {
+        isCanceling ? Color(hex: "FF453A") : Color(hex: "007AFF")
+    }
     
     var body: some View {
         if audioPower > activeThreshold {
@@ -29,7 +34,7 @@ private struct VoiceWaveformView: View {
             ForEach(0..<barCount, id: \.self) { _ in
                 // 静止时所有条等高
                 RoundedRectangle(cornerRadius: 0.75)
-                    .fill(Color(hex: "007AFF").opacity(0.7))
+                    .fill(barColor.opacity(0.7))
                     .frame(width: barWidth, height: minHeight)
             }
         }
@@ -41,7 +46,7 @@ private struct VoiceWaveformView: View {
             ForEach(0..<barCount, id: \.self) { i in
                 let height = activeHeight(index: i, time: time, power: audioPower, mid: mid)
                 RoundedRectangle(cornerRadius: 0.75)
-                    .fill(Color(hex: "007AFF").opacity(0.8))
+                    .fill(barColor.opacity(0.8))
                     .frame(width: barWidth, height: height)
             }
         }
@@ -78,15 +83,17 @@ struct VoiceRecordingOverlay: View {
     var body: some View {
         ZStack {
             // 1. 背景蒙版：独立图层，在录音开始时自然淡入
-            Color.black.opacity(backgroundOpacity)
+            Color.black.opacity(isCanceling ? 0.5 : backgroundOpacity)
                 .ignoresSafeArea()
+                .animation(.easeInOut(duration: 0.2), value: isCanceling)
             
             // 2. 粘滞流体球：负责全生命周期（融合、内缩、循环旋转）
-            // 不再根据 isAnimatingEntry 隐藏，确保像素始终在同一个 Canvas 中
             StickyBallAnimationView(
                 inputFrame: inputFrame,
                 toolboxFrame: toolboxFrame,
                 isAnimating: .constant(true),
+                isCanceling: isCanceling,
+                audioPower: audioPower,
                 onComplete: {
                     // 动画到达成球状态瞬间，显示文字框
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
@@ -113,7 +120,7 @@ struct VoiceRecordingOverlay: View {
                         // 右下角音浪
                         HStack {
                             Spacer()
-                            VoiceWaveformView(audioPower: audioPower)
+                            VoiceWaveformView(audioPower: audioPower, isCanceling: isCanceling)
                             .padding(.trailing, 24)
                             .padding(.bottom, 16)
                             .padding(.top, 8)
@@ -127,9 +134,9 @@ struct VoiceRecordingOverlay: View {
                     )
                     
                     // 提示文字
-                    Text(isCanceling ? "松开手指，取消发送" : "放开手指传送，向上滑动取消")
-                        .font(.system(size: 14))
-                        .foregroundColor(.white.opacity(0.9))
+                    Text(isCanceling ? "放开手指取消" : "放开手指传送，向上滑动取消")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(isCanceling ? Color(hex: "FF453A") : .white.opacity(0.9))
                 }
                 .padding(.bottom, 120)
                 .transition(.scale(scale: 0.9).combined(with: .opacity))
@@ -138,7 +145,7 @@ struct VoiceRecordingOverlay: View {
         .onAppear {
             // 融合开始时启动背景淡入，0.4s 后达到预定透明度，此时正好完成粘滞融合
             withAnimation(.easeInOut(duration: 0.4)) {
-                backgroundOpacity = 0.3
+                backgroundOpacity = 0.35
             }
         }
     }

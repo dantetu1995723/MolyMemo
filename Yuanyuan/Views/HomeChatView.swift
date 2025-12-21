@@ -37,6 +37,14 @@ struct HomeChatView: View {
     @State private var showDeleteConfirmation: Bool = false
     @State private var eventToDelete: ScheduleEvent? = nil
     @State private var messageIdToDeleteFrom: UUID? = nil
+
+    // 日程详情弹窗（点击卡片打开）
+    private struct ScheduleDetailSelection: Identifiable, Equatable {
+        let messageId: UUID
+        let eventId: UUID
+        var id: String { "\(messageId.uuidString)-\(eventId.uuidString)" }
+    }
+    @State private var scheduleDetailSelection: ScheduleDetailSelection? = nil
     
     // 主题色
     private let primaryGray = Color(hex: "333333")
@@ -55,6 +63,18 @@ struct HomeChatView: View {
             ZStack(alignment: .bottom) {
                 // 背景
                 backgroundView
+
+                // 全屏透明遮罩：仅在“日程卡片菜单选中/打开”时出现，用来可靠接管“点击空白取消选中”
+                // 这是新的方案：不再依赖全局 SpatialTapGesture（它会与长按抬手/tap 形成冲突）
+                if isScheduleMenuShowing, scheduleDetailSelection == nil {
+                    Color.black.opacity(0.001)
+                        .ignoresSafeArea()
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            NotificationCenter.default.post(name: .dismissScheduleMenu, object: nil)
+                        }
+                        .zIndex(900)
+                }
                 
                 // 聊天内容层
                 VStack(spacing: 0) {
@@ -146,10 +166,48 @@ struct HomeChatView: View {
                         isCanceling: $inputViewModel.isCanceling,
                         audioPower: inputViewModel.audioPower,
                         transcript: inputViewModel.recordingTranscript,
-                        namespace: inputNamespace,
-                        startFrame: inputViewModel.inputFrame
+                        inputFrame: inputViewModel.inputFrame,
+                        toolboxFrame: inputViewModel.toolboxFrame
                     )
                     .zIndex(102)
+                }
+            }
+            .sheet(item: $scheduleDetailSelection, onDismiss: {
+                scheduleDetailSelection = nil
+            }) { selection in
+                if
+                    let msgIndex = appState.chatMessages.firstIndex(where: { $0.id == selection.messageId }),
+                    let eventIndex = appState.chatMessages[msgIndex].scheduleEvents?.firstIndex(where: { $0.id == selection.eventId })
+                {
+                    ScheduleDetailSheet(
+                        event: Binding(
+                            get: {
+                                appState.chatMessages[msgIndex].scheduleEvents?[eventIndex]
+                                ?? ScheduleEvent(title: "", description: "", startTime: Date(), endTime: Date())
+                            },
+                            set: { appState.chatMessages[msgIndex].scheduleEvents?[eventIndex] = $0 }
+                        ),
+                        onDelete: {
+                            withAnimation {
+                                appState.chatMessages[msgIndex].scheduleEvents?.removeAll(where: { $0.id == selection.eventId })
+                            }
+                            appState.saveMessageToStorage(appState.chatMessages[msgIndex], modelContext: modelContext)
+                        },
+                        onSave: { updated in
+                            withAnimation {
+                                appState.chatMessages[msgIndex].scheduleEvents?[eventIndex] = updated
+                            }
+                            appState.saveMessageToStorage(appState.chatMessages[msgIndex], modelContext: modelContext)
+                        }
+                    )
+                } else {
+                    VStack {
+                        Text("日程不存在或已删除")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(Color(hex: "666666"))
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color(red: 0.97, green: 0.97, blue: 0.97))
                 }
             }
             // 接收日程卡片菜单状态
@@ -170,21 +228,6 @@ struct HomeChatView: View {
                 scheduleMenuOpenedAt = CACurrentMediaTime()
                 ignoreNextScheduleMenuTapClose = true
             }
-            // 全屏点击关闭
-            .contentShape(Rectangle())
-            .simultaneousGesture(
-                SpatialTapGesture(coordinateSpace: .global).onEnded { value in
-                    guard isScheduleMenuShowing else { return }
-                    if ignoreNextScheduleMenuTapClose {
-                        ignoreNextScheduleMenuTapClose = false
-                        return
-                    }
-                    if CACurrentMediaTime() - scheduleMenuOpenedAt < 0.35 { return }
-                    guard scheduleMenuFrame != .zero else { return }
-                    guard !scheduleMenuFrame.contains(value.location) else { return }
-                    NotificationCenter.default.post(name: .dismissScheduleMenu, object: nil)
-                }
-            )
             
             // 删除确认弹窗
             if showDeleteConfirmation, let event = eventToDelete {
@@ -361,6 +404,8 @@ struct HomeChatView: View {
                                 withAnimation {
                                     self.showDeleteConfirmation = true
                                 }
+                            }, onOpenDetail: { event in
+                                scheduleDetailSelection = ScheduleDetailSelection(messageId: message.id, eventId: event.id)
                             })
                             .frame(maxWidth: .infinity)
                             .padding(.top, -10) // Slight adjustment to bring it closer to text

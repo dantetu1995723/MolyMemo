@@ -34,12 +34,8 @@ class ChatInputViewModel: ObservableObject {
     var onStopGenerator: (() -> Void)?
     
     // MARK: - Internal
-    private var audioRecorder: AVAudioRecorder?
-    private var powerTimer: Timer?
-    
-    // MARK: - Demo waveform simulation (明确区分“收音/未收音”)
-    private var isSimulatingSpeech: Bool = false
-    private var simulatedStateUntil: Date = .distantPast
+    private let speechRecognizer = SpeechRecognizer()
+    private var cancellables = Set<AnyCancellable>()
     
     // MARK: - Computed Properties
     
@@ -54,6 +50,16 @@ class ChatInputViewModel: ObservableObject {
     }
     
     // MARK: - Methods
+    
+    init() {
+        // 用真实收音 level 驱动 UI（不做 demo 模拟）
+        speechRecognizer.$audioLevel
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] level in
+                self?.audioPower = CGFloat(level)
+            }
+            .store(in: &cancellables)
+    }
     
     func sendMessage() {
         // AI 输入过程中：输入区除“中止”外全部禁用
@@ -147,7 +153,7 @@ class ChatInputViewModel: ObservableObject {
     // MARK: - Recording Logic
     
     func startRecording() {
-        // AI 输入过程中：输入区除“中止”外全部禁用
+        // AI 输入过程中：输入区除"中止"外全部禁用
         guard !isAgentTyping else { return }
         
         // 记录当前位置
@@ -159,42 +165,22 @@ class ChatInputViewModel: ObservableObject {
         recordingTranscript = "正在聆听..."
         audioPower = 0.0 // 初始静止（未收音）
         
-        // Demo：用“段落式”的说话/静音切换，确保 UI 有明确的静止区间
-        isSimulatingSpeech = false
-        simulatedStateUntil = Date().addingTimeInterval(Double.random(in: 0.4...1.2))
+        // 请求权限（只会在未授权/未决定时弹窗）
+        speechRecognizer.requestAuthorization()
         
-        powerTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                guard let self = self else { return }
-                let now = Date()
-                
-                if now >= self.simulatedStateUntil {
-                    // 在“说话”和“静音”之间切换，并给下一段随机时长
-                    self.isSimulatingSpeech.toggle()
-                    if self.isSimulatingSpeech {
-                        self.simulatedStateUntil = now.addingTimeInterval(Double.random(in: 0.7...2.0))
-                    } else {
-                        self.simulatedStateUntil = now.addingTimeInterval(Double.random(in: 0.8...2.4))
-                    }
-                }
-                
-                if self.isSimulatingSpeech {
-                    // 说话：更大的振幅范围
-                    self.audioPower = CGFloat.random(in: 0.18...0.85)
-                } else {
-                    // 静音：彻底归零（对应“未收音/无有效声音”）
-                    self.audioPower = 0
-                }
-            }
+        // 开始真实收音 + 转写
+        speechRecognizer.startRecording { [weak self] text in
+            guard let self = self else { return }
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            self.recordingTranscript = trimmed.isEmpty ? "正在聆听..." : trimmed
         }
     }
     
     func stopRecording() {
+        speechRecognizer.stopRecording()
         withAnimation {
             isRecording = false
             isAnimatingRecordingEntry = false
-            powerTimer?.invalidate()
-            powerTimer = nil
             audioPower = 0
         }
         
