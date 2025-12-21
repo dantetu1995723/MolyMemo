@@ -5,20 +5,25 @@ struct StickyBallAnimationView: View {
     var toolboxFrame: CGRect
     @Binding var isAnimating: Bool
     var isCanceling: Bool = false
+    /// true：球 -> 输入框（逆向动画）
+    var isReversing: Bool = false
     var audioPower: CGFloat = 0.0  // 0 = 静音，>0 = 说话中
     var onComplete: () -> Void
+    var onReverseComplete: (() -> Void)? = nil
     
     @State private var startTime = Date()
     @State private var smoothPower: CGFloat = 0.0  // 平滑过渡的音频值
     
     // 动画时长常量
-    private let turnBlueDuration: Double = 0.1
-    private let mergeDuration: Double = 0.3
-    private let holdDuration: Double = 0.05
-    private let shrinkToBallDuration: Double = 0.5 // 稍微延长，配合曲线更丝滑
+    // 说明：这里同时影响“输入框->球”和“球->输入框”的速度
+    private let turnBlueDuration: Double = 0.08
+    private let mergeDuration: Double = 0.24
+    private let holdDuration: Double = 0.03
+    private let shrinkToBallDuration: Double = 0.36
     
     @State private var introFinished = false
     @State private var didTriggerComplete = false
+    @State private var didTriggerReverseComplete = false
     
     private var currentColor: Color {
         isCanceling ? Color(hex: "FF453A") : Color(hex: "007AFF")
@@ -27,7 +32,10 @@ struct StickyBallAnimationView: View {
     var body: some View {
         TimelineView(.animation) { timeline in
             Canvas { context, size in
-                let elapsed = timeline.date.timeIntervalSince(startTime)
+                let totalDuration = (turnBlueDuration + mergeDuration + holdDuration + shrinkToBallDuration)
+                let rawElapsed = timeline.date.timeIntervalSince(startTime)
+                // 逆向：把“时间”映射回正向的时间轴，这样可以复用同一套绘制逻辑
+                let elapsed = isReversing ? max(0, totalDuration - rawElapsed) : rawElapsed
                 
                 let safeInputFrame = inputFrame.width > 0 ? inputFrame : CGRect(x: 16, y: size.height - 100, width: size.width - 80, height: 44)
                 let safeToolboxFrame = toolboxFrame.width > 0 ? toolboxFrame : CGRect(x: size.width - 60, y: size.height - 100, width: 44, height: 44)
@@ -64,7 +72,7 @@ struct StickyBallAnimationView: View {
                                 drawFluidBallSystem(context: ctx, fullRect: fullRect, progress: curveProgress, screenSize: size)
                                 
                                 // 动画结束回调（仅触发一次，用于显示文字框）
-                                if rawProgress >= 1.0 && !didTriggerComplete {
+                                if !isReversing, rawProgress >= 1.0, !didTriggerComplete {
                                     DispatchQueue.main.async {
                                         if !didTriggerComplete {
                                             didTriggerComplete = true
@@ -73,6 +81,16 @@ struct StickyBallAnimationView: View {
                                     }
                                 }
                             }
+                        }
+                    }
+                }
+
+                // 逆向动画结束回调（仅触发一次，用于收起 overlay）
+                if isReversing, rawElapsed >= totalDuration, !didTriggerReverseComplete {
+                    DispatchQueue.main.async {
+                        if !didTriggerReverseComplete {
+                            didTriggerReverseComplete = true
+                            onReverseComplete?()
                         }
                     }
                 }
@@ -87,6 +105,12 @@ struct StickyBallAnimationView: View {
         .ignoresSafeArea()
         .onAppear {
             startTime = Date()
+        }
+        .onChange(of: isReversing) { _, _ in
+            // 切换方向时重置时间轴，保证从“当前态”顺滑开跑
+            startTime = Date()
+            didTriggerComplete = false
+            didTriggerReverseComplete = false
         }
     }
     

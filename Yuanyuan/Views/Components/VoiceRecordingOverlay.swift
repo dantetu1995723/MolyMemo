@@ -71,6 +71,10 @@ private struct VoiceWaveformView: View {
 struct VoiceRecordingOverlay: View {
     @Binding var isRecording: Bool
     @Binding var isCanceling: Bool
+    /// true：松手后的退场（球 -> 输入框）
+    var isExiting: Bool = false
+    /// 逆向动画结束后回调（用于外部把 overlay 彻底收起）
+    var onExitComplete: (() -> Void)? = nil
     var audioPower: CGFloat
     var transcript: String
     var inputFrame: CGRect
@@ -93,12 +97,16 @@ struct VoiceRecordingOverlay: View {
                 toolboxFrame: toolboxFrame,
                 isAnimating: .constant(true),
                 isCanceling: isCanceling,
+                isReversing: isExiting,
                 audioPower: audioPower,
                 onComplete: {
                     // 动画到达成球状态瞬间，显示文字框
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                         showMainUI = true
                     }
+                },
+                onReverseComplete: {
+                    onExitComplete?()
                 }
             )
             
@@ -144,8 +152,18 @@ struct VoiceRecordingOverlay: View {
         }
         .onAppear {
             // 融合开始时启动背景淡入，0.4s 后达到预定透明度，此时正好完成粘滞融合
-            withAnimation(.easeInOut(duration: 0.4)) {
+            withAnimation(.easeInOut(duration: 0.28)) {
                 backgroundOpacity = 0.35
+            }
+        }
+        .onChange(of: isExiting) { _, exiting in
+            guard exiting else { return }
+            // 退场时先收起主 UI，再淡出背景，避免“文字框悬空”
+            withAnimation(.easeInOut(duration: 0.12)) {
+                showMainUI = false
+            }
+            withAnimation(.easeOut(duration: 0.2)) {
+                backgroundOpacity = 0.0
             }
         }
     }

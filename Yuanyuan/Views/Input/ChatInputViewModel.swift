@@ -13,6 +13,7 @@ class ChatInputViewModel: ObservableObject {
     // MARK: - Recording State
     @Published var isRecording: Bool = false
     @Published var isAnimatingRecordingEntry: Bool = false
+    @Published var isAnimatingRecordingExit: Bool = false
     @Published var isCanceling: Bool = false
     @Published var audioPower: CGFloat = 0.0
     @Published var recordingTranscript: String = ""
@@ -160,6 +161,7 @@ class ChatInputViewModel: ObservableObject {
         // 注意：不建议在 withAnimation 中修改 isRecording，
         // 否则某些布局计算可能会在动画中途发生变化。
         isAnimatingRecordingEntry = true
+        isAnimatingRecordingExit = false
         isRecording = true 
         isCanceling = false
         recordingTranscript = "正在聆听..."
@@ -177,10 +179,14 @@ class ChatInputViewModel: ObservableObject {
     }
     
     func stopRecording() {
+        // 已经在退场过程中，避免重复触发（重复 stop 可能导致发送两次）
+        guard !isAnimatingRecordingExit else { return }
+        
         speechRecognizer.stopRecording()
-        withAnimation {
-            isRecording = false
-            isAnimatingRecordingEntry = false
+        
+        // 先走“球 -> 输入框”的逆向动画，结束后再真正收起 overlay
+        withAnimation(.easeInOut(duration: 0.16)) {
+            isAnimatingRecordingExit = true
             audioPower = 0
         }
         
@@ -190,6 +196,17 @@ class ChatInputViewModel: ObservableObject {
         let text = recordingTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, text != "正在聆听..." else { return }
         onSend?(text, nil)
+    }
+    
+    /// 由 overlay 的逆向动画结束回调触发：真正收起 overlay 并恢复输入框
+    func finishRecordingOverlayDismissal() {
+        withAnimation(.easeInOut(duration: 0.12)) {
+            isRecording = false
+            isAnimatingRecordingEntry = false
+            isAnimatingRecordingExit = false
+            isCanceling = false
+            audioPower = 0
+        }
     }
     
     func cancelRecording() {

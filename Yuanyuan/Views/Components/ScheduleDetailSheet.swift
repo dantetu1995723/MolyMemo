@@ -343,10 +343,14 @@ struct ScheduleDetailSheet: View {
             .padding(.horizontal, 20).padding(.bottom, 20)
             .simultaneousGesture(DragGesture(minimumDistance: 0).onChanged { handleDragChanged($0) }.onEnded { handleDragEnded($0) })
             
-            if isRecording {
+            if isRecording || isAnimatingRecordingExit {
                 VoiceRecordingOverlay(
                     isRecording: $isRecording,
                     isCanceling: $isCanceling,
+                    isExiting: isAnimatingRecordingExit,
+                    onExitComplete: {
+                        finishRecordingOverlayDismissal()
+                    },
                     audioPower: audioPower,
                     transcript: recordingTranscript,
                     inputFrame: buttonFrame,

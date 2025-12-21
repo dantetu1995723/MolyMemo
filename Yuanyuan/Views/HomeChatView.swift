@@ -159,11 +159,15 @@ struct HomeChatView: View {
                 ChatInputView(viewModel: inputViewModel, namespace: inputNamespace)
                     .zIndex(101)
                 
-                // 录音动画覆盖层
-                if inputViewModel.isRecording {
+                // 录音动画覆盖层（松手后保持一小段时间跑逆向动画）
+                if inputViewModel.isRecording || inputViewModel.isAnimatingRecordingExit {
                     VoiceRecordingOverlay(
                         isRecording: $inputViewModel.isRecording,
                         isCanceling: $inputViewModel.isCanceling,
+                        isExiting: inputViewModel.isAnimatingRecordingExit,
+                        onExitComplete: {
+                            inputViewModel.finishRecordingOverlayDismissal()
+                        },
                         audioPower: inputViewModel.audioPower,
                         transcript: inputViewModel.recordingTranscript,
                         inputFrame: inputViewModel.inputFrame,
