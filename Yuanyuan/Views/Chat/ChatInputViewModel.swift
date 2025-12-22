@@ -71,12 +71,15 @@ class ChatInputViewModel: ObservableObject {
         onSend?(textToSend, selectedImage)
         
         // Reset State
-        withAnimation {
-            inputText = ""
-            selectedImage = nil
-            selectedPhotoItem = nil
-            showSuggestions = false
-        }
+        // 注意：发送动作通常会触发键盘退场（失焦）以及外层布局变化。
+        // 这里不要用 withAnimation 包裹“清空输入/移除按钮”，避免出现按钮 transition
+        // 与键盘/布局动画不同步导致的“脱层、原地消失”观感。
+        inputText = ""
+        selectedImage = nil
+        selectedPhotoItem = nil
+        showSuggestions = false
+        // 发送后不自动聚焦：键盘收起，完全手动 focus
+        isInputFocused = false
     }
     
     /// 发送建议指令（不清空输入框，但图片会一起发送）
@@ -96,6 +99,8 @@ class ChatInputViewModel: ObservableObject {
             selectedPhotoItem = nil
             // 发完指令后，按钮不应继续存在（即使输入框里还有存量文字）
             showSuggestions = false
+            // 发送建议后也保持“手动 focus”策略
+            isInputFocused = false
         }
     }
     
@@ -196,6 +201,8 @@ class ChatInputViewModel: ObservableObject {
         let text = recordingTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, text != "正在聆听..." else { return }
         onSend?(text, nil)
+        // 录音发送后也不自动聚焦
+        isInputFocused = false
     }
     
     /// 由 overlay 的逆向动画结束回调触发：真正收起 overlay 并恢复输入框

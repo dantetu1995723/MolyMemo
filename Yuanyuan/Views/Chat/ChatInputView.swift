@@ -10,6 +10,8 @@ struct ChatInputView: View {
     // 手势状态
     @State private var isPressing = false
     @State private var pressStartTime: Date?
+    // 仅允许“用户触摸触发”的聚焦：用于拦截 SwiftUI/系统在状态切换时的自动 focus
+    @State private var lastUserInteractionAt: Date?
     
     var body: some View {
         let isLocked = viewModel.isAgentTyping
@@ -88,13 +90,29 @@ struct ChatInputView: View {
         }
         // Bind Focus State
         .onChange(of: isFocused) { _, focused in
+            // 全手动 focus：如果没有“最近的用户触摸”，则拒绝自动聚焦
+            if focused {
+                let now = Date()
+                let isUserInitiated = lastUserInteractionAt.map { now.timeIntervalSince($0) < 0.35 } ?? false
+                if !isUserInitiated {
+                    // 用 async 避免在同一轮更新里和 SwiftUI 争抢焦点产生抖动
+                    DispatchQueue.main.async {
+                        self.isFocused = false
+                        self.viewModel.isInputFocused = false
+                    }
+                    return
+                }
+            }
             viewModel.isInputFocused = focused
             if focused {
                 withAnimation { viewModel.showMenu = false }
             }
         }
+        // 只允许“程序控制失焦”；聚焦必须由用户触发（见上方拦截逻辑）
         .onChange(of: viewModel.isInputFocused) { _, focused in
-            isFocused = focused
+            if !focused, isFocused {
+                isFocused = false
+            }
         }
         // Handle Photo Selection
         .onChange(of: viewModel.selectedPhotoItem) { _, newItem in
@@ -190,7 +208,6 @@ struct ChatInputView: View {
                     }
                     .padding(.trailing, 8)
                     .padding(.bottom, 6)
-                    .transition(.scale.combined(with: .opacity))
                 } else if !viewModel.inputText.isEmpty || viewModel.selectedImage != nil {
                     Button(action: viewModel.sendMessage) {
                         Image(systemName: "paperplane.fill")
@@ -201,7 +218,6 @@ struct ChatInputView: View {
                     }
                     .padding(.trailing, 12)
                     .padding(.bottom, 8)
-                    .transition(.scale.combined(with: .opacity))
                 }
             }
         }
@@ -252,7 +268,14 @@ struct ChatInputView: View {
         // 加号按钮区域 (左侧约 44px)
         if startX < 44 { return }
         // 右侧按钮区域（Stop 或 Send）
-        if (viewModel.isAgentTyping || viewModel.hasContent) && startX > (viewModel.inputFrame.width - 44) { return }
+        // 这里同样不要用 hasContent，避免发送后状态变化导致误判
+        let inputWidth = viewModel.inputFrame.width
+        if inputWidth > 0, startX > (inputWidth - 44) { return }
+        
+        // 记录一次用户触摸（用于允许随后的聚焦）
+        if !isPressing {
+            lastUserInteractionAt = Date()
+        }
         
         // 检测是否是新点击
         if !isPressing {
@@ -288,7 +311,12 @@ struct ChatInputView: View {
         
         // 排除按钮区域
         let startX = value.startLocation.x
-        if startX < 44 || ((viewModel.isAgentTyping || viewModel.hasContent) && startX > (viewModel.inputFrame.width - 44)) {
+        // 注意：这里不要用 hasContent 来判断右侧按钮区域。
+        // 因为“发送”会立刻清空 inputText，导致 hasContent 在手势 ended 时变为 false，
+        // 从而误把“点发送按钮”当成“点空白区域”，进而把输入框又 focus 回来。
+        let inputWidth = viewModel.inputFrame.width
+        let isInRightButtonArea = (inputWidth > 0) ? (startX > (inputWidth - 44)) : false
+        if startX < 44 || isInRightButtonArea {
             isPressing = false
             pressStartTime = nil
             return
@@ -306,6 +334,7 @@ struct ChatInputView: View {
         } else {
             // 如果只是轻点中间区域，且没有聚焦，则聚焦输入框
             if !isFocused && viewModel.inputText.isEmpty && viewModel.selectedImage == nil {
+                lastUserInteractionAt = Date()
                 isFocused = true
             }
         }
