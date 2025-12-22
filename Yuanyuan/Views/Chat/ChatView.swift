@@ -10,7 +10,7 @@ private let agentAvatarSize: CGFloat = 30
 /// 底部输入区域的基础高度（不含安全区），用于计算聊天内容可视区域
 private let bottomInputBaseHeight: CGFloat = 64
 
-struct HomeChatView: View {
+struct ChatView: View {
     @EnvironmentObject var appState: AppState
     @Environment(\.modelContext) private var modelContext
     @Query private var allContacts: [Contact]
@@ -1372,6 +1372,6 @@ struct DeleteConfirmationView: View {
 }
 
 #Preview {
-    HomeChatView(showModuleContainer: .constant(false))
+    ChatView(showModuleContainer: .constant(false))
         .environmentObject(AppState())
 }

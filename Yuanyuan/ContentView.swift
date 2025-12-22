@@ -10,17 +10,13 @@ struct ContentView: View {
     var body: some View {
         NavigationStack {
             // 直接进入对话界面（首次引导在对话中完成）
-            HomeChatView(showModuleContainer: $showModuleContainer)
+            ChatView(showModuleContainer: $showModuleContainer)
                 .environmentObject(appState)
                 .statusBar(hidden: false)
                 .navigationDestination(isPresented: $showModuleContainer) {
                     ModuleContainerView()
                         .environmentObject(appState)
                 }
-        }
-        .sheet(isPresented: $appState.showChatRoom) {
-            ChatRoomPage(initialMode: appState.currentMode)
-                .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $appState.showSettings) {
             SettingsView()
