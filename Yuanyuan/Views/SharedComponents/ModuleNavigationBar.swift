@@ -7,6 +7,7 @@ struct ModuleNavigationBar: View {
     let onBack: () -> Void
     var trailingIcon: String?
     var trailingAction: (() -> Void)?
+    var customTrailing: AnyView?
     
     private let buttonSize: CGFloat = 34
     
@@ -15,13 +16,15 @@ struct ModuleNavigationBar: View {
         themeColor: Color,
         onBack: @escaping () -> Void,
         trailingIcon: String? = nil,
-        trailingAction: (() -> Void)? = nil
+        trailingAction: (() -> Void)? = nil,
+        customTrailing: AnyView? = nil
     ) {
         self.title = title
         self.themeColor = themeColor
         self.onBack = onBack
         self.trailingIcon = trailingIcon
         self.trailingAction = trailingAction
+        self.customTrailing = customTrailing
     }
     
     var body: some View {
@@ -37,7 +40,9 @@ struct ModuleNavigationBar: View {
             
             Spacer(minLength: 8)
             
-            if let icon = trailingIcon,
+            if let custom = customTrailing {
+                custom
+            } else if let icon = trailingIcon,
                let action = trailingAction {
                 navButton(icon: icon, action: action)
             } else {

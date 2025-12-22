@@ -7,6 +7,12 @@ struct InvoiceDetailSheet: View {
     @State private var editedInvoice: InvoiceCard
     @State private var showDeleteMenu = false
     
+    // 颜色定义
+    private let bgColor = Color(red: 0.97, green: 0.97, blue: 0.97)
+    private let primaryTextColor = Color(hex: "333333")
+    private let secondaryTextColor = Color(hex: "999999")
+    private let iconColor = Color(hex: "CCCCCC")
+    
     // 预定义费用类型
     private let expenseTypes = ["餐饮", "交通", "住宿", "办公", "娱乐", "招待费", "其他"]
     // 预定义报销集
@@ -26,13 +32,13 @@ struct InvoiceDetailSheet: View {
             // Header
             headerView
             
-            ScrollView {
+            ScrollView(showsIndicators: false) {
                 VStack(spacing: 24) {
                     // Amount Section
                     VStack(spacing: 8) {
                         Text("¥ \(String(format: "%.0f", editedInvoice.amount))")
                             .font(.system(size: 40, weight: .medium))
-                            .foregroundColor(Color(hex: "333333"))
+                            .foregroundColor(primaryTextColor)
                     }
                     .padding(.top, 10)
                     
@@ -55,7 +61,7 @@ struct InvoiceDetailSheet: View {
                     HStack(alignment: .top, spacing: 12) {
                         Image(systemName: "doc.text")
                             .font(.system(size: 18))
-                            .foregroundColor(Color(hex: "CCCCCC"))
+                            .foregroundColor(iconColor)
                             .frame(width: 24)
                         
                         TextField("添加描述信息", text: Binding(
@@ -63,16 +69,18 @@ struct InvoiceDetailSheet: View {
                             set: { editedInvoice.notes = $0.isEmpty ? nil : $0 }
                         ), axis: .vertical)
                         .font(.system(size: 16))
-                        .foregroundColor(Color(hex: "333333"))
+                        .foregroundColor(primaryTextColor)
                         .lineSpacing(6)
                     }
                     .padding(.horizontal, 20)
                     .padding(.top, 4)
+                    
+                    Spacer(minLength: 40)
                 }
                 .padding(.bottom, 40)
             }
         }
-        .background(Color.white)
+        .background(bgColor)
         .onDisappear {
             // 自动保存编辑的内容
             invoice = editedInvoice
@@ -85,60 +93,79 @@ struct InvoiceDetailSheet: View {
                 Button(action: { dismiss() }) {
                     Image(systemName: "xmark")
                         .font(.system(size: 18, weight: .medium))
-                        .foregroundColor(Color(hex: "999999"))
+                        .foregroundColor(secondaryTextColor)
                         .frame(width: 44, height: 44)
-                        .background(Circle().fill(Color.secondary.opacity(0.1)))
+                        .background(Circle().fill(Color.secondary.opacity(0.15)))
                 }
                 Spacer()
                 
                 Button(action: {
-                    withAnimation(.spring()) {
-                        showDeleteMenu.toggle()
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                        showDeleteMenu = true
                     }
                 }) {
                     Image(systemName: "ellipsis")
                         .font(.system(size: 18, weight: .medium))
-                        .foregroundColor(Color(hex: "333333"))
+                        .foregroundColor(primaryTextColor)
                         .frame(width: 44, height: 44)
                         .background(Circle().fill(Color.white).shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 2))
-                }
-                .overlay(alignment: .topTrailing) {
-                    if showDeleteMenu {
-                        VStack {
-                            Button(action: {
-                                onDelete?()
-                                dismiss()
-                            }) {
-                                HStack {
-                                    Image(systemName: "trash")
-                                    Text("删除记录")
-                                }
-                                .foregroundColor(.red)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 12)
-                                .background(Color.white)
-                                .cornerRadius(12)
-                                .shadow(color: Color.black.opacity(0.1), radius: 10)
-                            }
-                        }
-                        .offset(y: 50)
-                    }
                 }
             }
             
             Text("发票记录")
                 .font(.system(size: 17, weight: .bold))
-                .foregroundColor(Color(hex: "333333"))
+                .foregroundColor(primaryTextColor)
+            
+            if showDeleteMenu {
+                InvoiceDeletePillButton(
+                    onDelete: {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                            showDeleteMenu = false
+                        }
+                        HapticFeedback.medium()
+                        onDelete?()
+                        dismiss()
+                    }
+                )
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .padding(.trailing, 44 + 10)
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .zIndex(10)
+            }
         }
         .padding(.horizontal, 20)
         .padding(.top, 20)
-        .padding(.bottom, 10)
+        .padding(.bottom, 20)
+        .zIndex(100)
+        .overlay {
+            if showDeleteMenu {
+                Color.black.opacity(0.001)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .onTapGesture { withAnimation { showDeleteMenu = false } }
+            }
+        }
     }
     
     private func formatDate(_ date: Date) -> String {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd HH:mm"
         return f.string(from: date)
+    }
+}
+
+struct InvoiceDeletePillButton: View {
+    var onDelete: () -> Void
+    var body: some View {
+        Button(action: onDelete) {
+            HStack(spacing: 8) {
+                Image(systemName: "trash").font(.system(size: 14, weight: .medium)).foregroundColor(Color(hex: "FF3B30"))
+                Text("删除记录").foregroundColor(Color(hex: "FF3B30")).font(.system(size: 15, weight: .medium))
+                Spacer(minLength: 0)
+            }
+            .padding(.leading, 20).padding(.trailing, 16).frame(width: 200, height: 52)
+            .background(Capsule().fill(Color.white).shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 4))
+            .contentShape(Capsule())
+        }.buttonStyle(.plain)
     }
 }
 
@@ -149,11 +176,14 @@ struct InfoRowView: View {
     let value: String
     
     var body: some View {
-        HStack {
+        HStack(alignment: .top) {
             Text(title)
                 .font(.system(size: 17))
                 .foregroundColor(Color(hex: "666666"))
+                .frame(width: 100, alignment: .leading)
+            
             Spacer()
+            
             Text(value)
                 .font(.system(size: 17))
                 .foregroundColor(Color(hex: "333333"))
@@ -174,7 +204,10 @@ struct PickerRowView: View {
             Text(title)
                 .font(.system(size: 17))
                 .foregroundColor(Color(hex: "666666"))
+                .frame(width: 100, alignment: .leading)
+            
             Spacer()
+            
             Menu {
                 ForEach(options, id: \.self) { option in
                     Button(option) {
@@ -186,6 +219,8 @@ struct PickerRowView: View {
                     Text(selection)
                         .font(.system(size: 17))
                         .foregroundColor(Color(hex: "333333"))
+                        .lineLimit(1)
+                    
                     Image(systemName: "chevron.up.chevron.down")
                         .font(.system(size: 12))
                         .foregroundColor(Color(hex: "CCCCCC"))

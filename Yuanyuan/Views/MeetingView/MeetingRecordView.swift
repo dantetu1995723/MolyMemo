@@ -99,8 +99,6 @@ struct MeetingRecordView: View {
             
             ModuleSheetContainer {
                 VStack(spacing: 0) {
-                    Color.clear.frame(height: 16)
-                    
                     // 主内容区域
                     if showContent {
                         ScrollView {
@@ -154,9 +152,16 @@ struct MeetingRecordView: View {
                             .padding(.bottom, 120)
                         }
                     }
-                    
-                    // 浮动录音按钮（胶囊形状）
-                    CapsuleRecordingButton(
+                }
+            }
+        }
+        .safeAreaInset(edge: .top) {
+            ModuleNavigationBar(
+                title: "会议纪要",
+                themeColor: themeColor,
+                onBack: { dismiss() },
+                customTrailing: AnyView(
+                    NavRecordingButton(
                         isRecording: recordingManager.isRecording,
                         isPaused: recordingManager.isPaused,
                         recordingDuration: recordingManager.recordingDuration,
@@ -174,16 +179,13 @@ struct MeetingRecordView: View {
                         },
                         onStopRecording: {
                             recordingManager.stopRecording(modelContext: modelContext)
-                            // 刷新会议列表
                             loadRecordingsFromMeetings()
                         }
                     )
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 24)
-                }
-            }
+                )
+            )
         }
-        .navigationBarHidden(true)
+        .toolbar(.hidden, for: .navigationBar)
         .alert("重命名会议", isPresented: Binding(
             get: { renamingRecordingId != nil },
             set: { if !$0 { renamingRecordingId = nil } }
@@ -208,15 +210,22 @@ struct MeetingRecordView: View {
             Text("为这个会议录音设置一个新标题（最多50字）")
         }
         .onAppear {
-            setupAudio()
+            // 立即显示内容，不要延迟
+            showHeader = true
+            showContent = true
             
             // 设置 ModelContext 提供器
             recordingManager.modelContextProvider = { [modelContext] in
                 return modelContext
             }
             
-            // 先加载已有的录音
+            // 先加载已有的录音（轻量操作）
             loadRecordingsFromMeetings()
+            
+            // 音频会话配置延迟到后台执行，避免阻塞UI
+            DispatchQueue.global(qos: .userInitiated).async {
+                setupAudio()
+            }
             
             // 延迟恢复孤立录音（避免和App终止时的保存操作冲突）
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
@@ -230,14 +239,6 @@ struct MeetingRecordView: View {
             // 如果LiveRecordingManager正在录音，确保状态同步
             if recordingManager.isRecording {
                 print("✅ 检测到录音正在进行中，状态已同步")
-            }
-            
-        withAnimation(.spring(response: 0.5, dampingFraction: 0.75)) {
-                showHeader = true
-            }
-            
-            withAnimation(.spring(response: 0.6, dampingFraction: 0.75).delay(0.2)) {
-                showContent = true
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("StopRecordingFromWidget"))) { _ in
@@ -621,8 +622,8 @@ struct EmptyMeetingView: View {
     }
 }
 
-// 胶囊录音按钮 - 轻盈高亮白色
-struct CapsuleRecordingButton: View {
+// 导航栏录音按钮 - 紧凑型
+struct NavRecordingButton: View {
     let isRecording: Bool
     let isPaused: Bool
     let recordingDuration: TimeInterval
@@ -634,8 +635,27 @@ struct CapsuleRecordingButton: View {
     @State private var pulseScale: CGFloat = 1.0
     
     var body: some View {
-        HStack(spacing: 12) {
-            // 主录音按钮（胶囊形状）
+        HStack(spacing: 8) {
+            // 时长显示 (仅在录音时)
+            if isRecording {
+                Text(formatDuration(recordingDuration))
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundColor(isPaused ? .black.opacity(0.5) : .red)
+                    .monospacedDigit()
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        Capsule()
+                            .fill(.ultraThinMaterial)
+                            .overlay(
+                                Capsule()
+                                    .strokeBorder(Color.white.opacity(0.4), lineWidth: 0.5)
+                            )
+                    )
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+            }
+            
+            // 主按钮
             Button(action: {
                 if !isRecording {
                     onStartRecording()
@@ -645,157 +665,69 @@ struct CapsuleRecordingButton: View {
                     onPauseRecording()
                 }
             }) {
-                HStack(spacing: 12) {
-                    // 录音图标
-                    ZStack {
-                        if isRecording && !isPaused {
-                            Circle()
-                                .fill(Color.red.opacity(0.2))
-                                .frame(width: 28, height: 28)
-                                .scaleEffect(pulseScale)
-                        }
-                        
-                        Image(systemName: isRecording ? (isPaused ? "play.fill" : "waveform") : "mic.fill")
-                            .font(.system(size: 16, weight: .bold))
-                            .foregroundColor(isRecording && !isPaused ? .red : .black.opacity(0.7))
+                ZStack {
+                    if isRecording && !isPaused {
+                        Circle()
+                            .fill(Color.red.opacity(0.2))
+                            .frame(width: 34, height: 34)
+                            .scaleEffect(pulseScale)
                     }
-                    .frame(width: 28, height: 28)
                     
-                    // 录音时长或文字
-                    if isRecording {
-                        Text(formatDuration(recordingDuration))
-                            .font(.system(size: 16, weight: .bold, design: .rounded))
-                            .foregroundColor(isRecording && !isPaused ? .red : .black.opacity(0.7))
-                            .monospacedDigit()
-                    } else {
-                        Text("开始录音")
-                            .font(.system(size: 16, weight: .bold, design: .rounded))
-                            .foregroundColor(.black.opacity(0.7))
-                    }
+                    Image(systemName: isRecording ? (isPaused ? "play.fill" : "pause.fill") : "mic.fill")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(isRecording && !isPaused ? .red : .black.opacity(0.7))
+                        .frame(width: 34, height: 34)
+                        .background(
+                            Circle()
+                                .fill(.ultraThinMaterial)
+                                .overlay(
+                                    Circle()
+                                        .strokeBorder(Color.white.opacity(0.45), lineWidth: 0.6)
+                                )
+                                .shadow(color: Color.black.opacity(0.06), radius: 6, x: 0, y: 2)
+                        )
                 }
-                .padding(.horizontal, isRecording ? 22 : 26)
-                .padding(.vertical, 16)
-                .background(
-                    ZStack {
-                        // 主体液态玻璃
-                        Capsule()
-                            .fill(
-                                LinearGradient(
-                                    gradient: Gradient(stops: [
-                                        .init(color: Color.white.opacity(0.95), location: 0.0),
-                                        .init(color: Color.white.opacity(0.82), location: 0.5),
-                                        .init(color: Color.white.opacity(0.88), location: 1.0)
-                                    ]),
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                        
-                        // 高光层
-                        Capsule()
-                            .fill(
-                                LinearGradient(
-                                    gradient: Gradient(stops: [
-                                        .init(color: Color.white.opacity(0.7), location: 0.0),
-                                        .init(color: Color.white.opacity(0.3), location: 0.3),
-                                        .init(color: Color.clear, location: 0.6)
-                                    ]),
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
-                            )
-                        
-                        // 晶体边框
-                        Capsule()
-                            .strokeBorder(
-                                LinearGradient(
-                                    gradient: Gradient(stops: [
-                                        .init(color: Color.white.opacity(1.0), location: 0.0),
-                                        .init(color: Color.white.opacity(0.5), location: 0.5),
-                                        .init(color: Color.white.opacity(0.8), location: 1.0)
-                                    ]),
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                ),
-                                lineWidth: 2.0
-                            )
-                    }
-                )
-                .shadow(color: Color.white.opacity(0.9), radius: 10, x: 0, y: -4)
-                .shadow(color: Color.white.opacity(0.5), radius: 5, x: -2, y: -2)
-                .shadow(color: Color.black.opacity(0.08), radius: 12, x: 0, y: 6)
-                .scaleEffect(isRecording && !isPaused ? 1.02 : 1.0)
-                .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isRecording)
             }
-            .buttonStyle(ScaleButtonStyle())
+            .buttonStyle(.plain)
             
-            // 停止按钮（录音中显示）
+            // 停止按钮
             if isRecording {
                 Button(action: onStopRecording) {
                     Image(systemName: "stop.fill")
-                        .font(.system(size: 16, weight: .bold))
+                        .font(.system(size: 12, weight: .bold))
                         .foregroundColor(.red)
-                        .frame(width: 52, height: 52)
+                        .frame(width: 34, height: 34)
                         .background(
-                            ZStack {
-                                Circle()
-                                    .fill(
-                                        LinearGradient(
-                                            gradient: Gradient(stops: [
-                                                .init(color: Color.white.opacity(0.95), location: 0.0),
-                                                .init(color: Color.white.opacity(0.82), location: 0.5),
-                                                .init(color: Color.white.opacity(0.88), location: 1.0)
-                                            ]),
-                                            startPoint: .topLeading,
-                                            endPoint: .bottomTrailing
-                                        )
-                                    )
-                                
-                                Circle()
-                                    .fill(
-                                        LinearGradient(
-                                            gradient: Gradient(stops: [
-                                                .init(color: Color.white.opacity(0.7), location: 0.0),
-                                                .init(color: Color.white.opacity(0.3), location: 0.3),
-                                                .init(color: Color.clear, location: 0.6)
-                                            ]),
-                                            startPoint: .topLeading,
-                                            endPoint: .bottomTrailing
-                                        )
-                                    )
-                                
-                                Circle()
-                                    .strokeBorder(
-                                        LinearGradient(
-                                            gradient: Gradient(stops: [
-                                                .init(color: Color.white.opacity(1.0), location: 0.0),
-                                                .init(color: Color.white.opacity(0.5), location: 0.5),
-                                                .init(color: Color.white.opacity(0.8), location: 1.0)
-                                            ]),
-                                            startPoint: .topLeading,
-                                            endPoint: .bottomTrailing
-                                        ),
-                                        lineWidth: 2.0
-                                    )
-                            }
+                            Circle()
+                                .fill(.ultraThinMaterial)
+                                .overlay(
+                                    Circle()
+                                        .strokeBorder(Color.white.opacity(0.45), lineWidth: 0.6)
+                                )
+                                .shadow(color: Color.black.opacity(0.06), radius: 6, x: 0, y: 2)
                         )
-                        .shadow(color: Color.white.opacity(0.8), radius: 8, x: 0, y: -3)
-                        .shadow(color: Color.red.opacity(0.15), radius: 10, x: 0, y: 4)
                 }
-                .buttonStyle(ScaleButtonStyle())
+                .buttonStyle(.plain)
                 .transition(.scale.combined(with: .opacity))
             }
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isRecording)
-        .onChange(of: isRecording, initial: false) { _, newValue in
+        .onChange(of: isRecording, initial: true) { _, newValue in
             if newValue && !isPaused {
                 withAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true)) {
-                    pulseScale = 1.3
+                    pulseScale = 1.2
                 }
             } else {
-                withAnimation {
-                    pulseScale = 1.0
+                pulseScale = 1.0
+            }
+        }
+        .onChange(of: isPaused) { _, newValue in
+            if isRecording && !newValue {
+                withAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true)) {
+                    pulseScale = 1.2
                 }
+            } else {
+                pulseScale = 1.0
             }
         }
     }
