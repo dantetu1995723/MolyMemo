@@ -368,8 +368,8 @@ struct HomeChatView: View {
             Spacer()
             
             // 中间标题
-            Text("圆圆")
-                .font(.system(size: 17, weight: .medium))
+            Text("MolyMemo")
+                .font(.custom("SourceHanSerifSC-Bold", size: 17))
                 .foregroundColor(primaryGray)
             
             Spacer()

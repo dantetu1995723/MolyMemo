@@ -15,6 +15,7 @@ struct ContactCardStackView: View {
     @State private var dragOffset: CGSize = .zero
     @State private var showMenu: Bool = false
     @State private var lastMenuOpenedAt: CFTimeInterval = 0
+    @State private var isPressingCurrentCard: Bool = false
     
     // Constants
     private let cardHeight: CGFloat = 220 // Adjusted height for contact card
@@ -41,11 +42,21 @@ struct ContactCardStackView: View {
                         if relativeIndex < 4 || relativeIndex == contacts.count - 1 {
                             ContactCardView(contact: $contacts[index])
                                 .frame(width: cardWidth, height: cardHeight)
-                                .scaleEffect(getScale(relativeIndex) * (index == currentIndex && showMenu ? 1.05 : 1.0))
+                                .scaleEffect(
+                                    getScale(relativeIndex)
+                                    * (index == currentIndex
+                                       ? (showMenu ? 1.05 : (isPressingCurrentCard ? 0.985 : 1.0))
+                                       : 1.0)
+                                )
                                 .rotationEffect(.degrees(getRotation(relativeIndex)))
                                 .offset(x: getOffsetX(relativeIndex), y: 0)
                                 .zIndex(getZIndex(relativeIndex))
-                                .shadow(color: Color.black.opacity(0.1), radius: 10, x: 0, y: 5)
+                                .shadow(color: Color.black.opacity(showMenu && index == currentIndex ? 0.14 : 0.10),
+                                        radius: showMenu && index == currentIndex ? 14 : 10,
+                                        x: 0,
+                                        y: showMenu && index == currentIndex ? 8 : 5)
+                                .animation(.spring(response: 0.28, dampingFraction: 0.78), value: isPressingCurrentCard)
+                                .animation(.spring(response: 0.35, dampingFraction: 0.72), value: showMenu)
                                 .contentShape(Rectangle())
                                 // 短按：未选中时打开详情；选中（菜单打开）时再次短按取消选中
                                 .onTapGesture {
@@ -59,15 +70,24 @@ struct ContactCardStackView: View {
                                     onOpenDetail?(contacts[index])
                                 }
                                 // 长按：打开胶囊菜单（与日程一致）
-                                .onLongPressGesture(minimumDuration: 0.12, maximumDistance: 20) {
-                                    guard index == currentIndex else { return }
-                                    guard !showMenu else { return }
-                                    lastMenuOpenedAt = CACurrentMediaTime()
-                                    HapticFeedback.medium()
-                                    withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
-                                        showMenu = true
+                                .onLongPressGesture(
+                                    minimumDuration: 0.12,
+                                    maximumDistance: 20,
+                                    perform: {
+                                        guard index == currentIndex else { return }
+                                        guard !showMenu else { return }
+                                        lastMenuOpenedAt = CACurrentMediaTime()
+                                        HapticFeedback.selection()
+                                        withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                                            showMenu = true
+                                        }
+                                    },
+                                    onPressingChanged: { pressing in
+                                        guard index == currentIndex else { return }
+                                        if showMenu { return }
+                                        isPressingCurrentCard = pressing
                                     }
-                                }
+                                )
                                 // 胶囊菜单（规格/位置与日程一致：左上角、半透明、offset -60）
                                 .overlay(alignment: .topLeading) {
                                     if showMenu && index == currentIndex {
@@ -159,6 +179,7 @@ struct ContactCardStackView: View {
         // 点击聊天空白处统一取消选中
         .onReceive(NotificationCenter.default.publisher(for: .dismissScheduleMenu)) { _ in
             if showMenu { withAnimation { showMenu = false } }
+            isPressingCurrentCard = false
         }
     }
     

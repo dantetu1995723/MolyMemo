@@ -33,8 +33,8 @@ struct HomeHeaderView: View {
                 // 标题和设置按钮
                 ZStack {
                     // 标题 - 简洁灰白风格 - 居中
-                    Text("圆圆")
-                        .font(.system(size: 32, weight: .black, design: .rounded))
+                    Text("MolyMemo")
+                        .font(.custom("SourceHanSerifSC-Bold", size: 32))
                         .italic()
                         .foregroundColor(Color.white)
                         .shadow(color: Color.black, radius: 0, x: -2, y: -2)

@@ -29,6 +29,18 @@ class SmartModelRouter {
         onError: @escaping (Error) -> Void
     ) async {
         
+        // 全量调试阶段：只要启用后端，就始终走后端；配置缺失则直接报错，不回退到内置模型
+        if BackendChatConfig.isEnabled {
+            print("🌐 使用自有后端聊天接口（已启用，禁止回退）")
+            await BackendChatService.sendMessageStream(
+                messages: messages,
+                mode: mode,
+                onComplete: onComplete,
+                onError: onError
+            )
+            return
+        }
+        
         // 判断是否需要使用多模态模型
         let hasImages = containsImages(in: messages)
         

@@ -9,6 +9,7 @@ struct SettingsView: View {
     @State private var alertMessage = ""
     @State private var showCompanySettings = false
     @State private var showFeishuSettings = false
+    @State private var showBackendSettings = false
     
     // 主题色 - 统一灰色
     private let themeColor = Color(white: 0.55)
@@ -48,6 +49,9 @@ struct SettingsView: View {
                             // 飞书日历设置按钮
                             FeishuSettingsButton(showFeishuSettings: $showFeishuSettings, themeColor: themeColor)
                             
+                            // 聊天后端设置按钮
+                            BackendSettingsButton(showBackendSettings: $showBackendSettings, themeColor: themeColor)
+                            
                             // 快捷指令按钮
                             ShortcutActionButton(themeColor: themeColor)
                             
@@ -73,6 +77,47 @@ struct SettingsView: View {
                 .environmentObject(appState)
                 .presentationDragIndicator(.visible)
         }
+        .sheet(isPresented: $showBackendSettings) {
+            BackendSettingsView()
+                .presentationDragIndicator(.visible)
+        }
+    }
+}
+
+// 聊天后端设置按钮
+struct BackendSettingsButton: View {
+    @Binding var showBackendSettings: Bool
+    let themeColor: Color
+    
+    var body: some View {
+        Button(action: {
+            HapticFeedback.medium()
+            showBackendSettings = true
+        }) {
+            LiquidGlassCard {
+                HStack(spacing: 12) {
+                    Image(systemName: "server.rack")
+                        .font(.system(size: 22, weight: .bold))
+                        .foregroundColor(themeColor)
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("聊天后端")
+                            .font(.system(size: 17, weight: .bold, design: .rounded))
+                            .foregroundColor(.black.opacity(0.85))
+                        Text("配置后端接口（Apifox）")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(.black.opacity(0.5))
+                    }
+                    
+                    Spacer()
+                    
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.black.opacity(0.4))
+                }
+            }
+        }
+        .buttonStyle(ScaleButtonStyle())
     }
 }
 

@@ -727,7 +727,7 @@ struct ChatRoomTopBar: View {
             
             Spacer()
 
-            // 圆圆标题 - 霓虹渐变，AI输入时显示Typing...
+            // 聊天室标题 - 霓虹渐变，AI输入时显示动态点点
             ChatRoomTypingTitle()
 
             Spacer()
@@ -795,7 +795,7 @@ struct ChatRoomTypingTitle: View {
 
     var body: some View {
         Text(displayText)
-            .font(.system(size: 18, weight: .black, design: .rounded))
+            .font(.custom("SourceHanSerifSC-Bold", size: 18))
             .italic()
             .foregroundColor(Color.white)
             .shadow(color: Color.black, radius: 0, x: -1, y: -1)
@@ -811,11 +811,8 @@ struct ChatRoomTypingTitle: View {
     }
 
     private var displayText: String {
-        if appState.isAgentTyping {
-            return "Typing" + String(repeating: ".", count: dotCount)
-        } else {
-            return "圆圆"
-        }
+        let base = "MolyMemo"
+        return base + (appState.isAgentTyping ? String(repeating: ".", count: dotCount) : "")
     }
 
     private func startDotAnimation() {

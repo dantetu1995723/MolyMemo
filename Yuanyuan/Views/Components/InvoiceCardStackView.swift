@@ -11,6 +11,7 @@ struct InvoiceCardStackView: View {
 
     @State private var menuInvoiceId: UUID? = nil
     @State private var lastMenuOpenedAt: CFTimeInterval = 0
+    @State private var pressingInvoiceId: UUID? = nil
     
     // Constants
     private let cardWidth: CGFloat = 300
@@ -32,7 +33,13 @@ struct InvoiceCardStackView: View {
                         let invoice = invoices[index]
                         InvoiceCardView(invoice: invoice)
                             .frame(width: cardWidth, height: cardHeight)
-                            .shadow(color: Color.black.opacity(0.1), radius: 10, x: 0, y: 5)
+                            .scaleEffect(menuInvoiceId == invoice.id ? 1.03 : (pressingInvoiceId == invoice.id ? 0.985 : 1.0))
+                            .shadow(color: Color.black.opacity(menuInvoiceId == invoice.id ? 0.14 : 0.10),
+                                    radius: menuInvoiceId == invoice.id ? 14 : 10,
+                                    x: 0,
+                                    y: menuInvoiceId == invoice.id ? 8 : 5)
+                            .animation(.spring(response: 0.28, dampingFraction: 0.78), value: pressingInvoiceId)
+                            .animation(.spring(response: 0.35, dampingFraction: 0.72), value: menuInvoiceId)
                             .contentShape(Rectangle())
                             // 短按：未选中时打开详情；选中（菜单打开）时再次短按取消选中
                             .onTapGesture {
@@ -44,14 +51,22 @@ struct InvoiceCardStackView: View {
                                 onOpenDetail?(invoice)
                             }
                             // 长按：打开胶囊菜单（与日程一致）
-                            .onLongPressGesture(minimumDuration: 0.12, maximumDistance: 20) {
-                                guard menuInvoiceId == nil else { return }
-                                lastMenuOpenedAt = CACurrentMediaTime()
-                                HapticFeedback.medium()
-                                withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
-                                    menuInvoiceId = invoice.id
+                            .onLongPressGesture(
+                                minimumDuration: 0.12,
+                                maximumDistance: 20,
+                                perform: {
+                                    guard menuInvoiceId == nil else { return }
+                                    lastMenuOpenedAt = CACurrentMediaTime()
+                                    HapticFeedback.selection()
+                                    withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                                        menuInvoiceId = invoice.id
+                                    }
+                                },
+                                onPressingChanged: { pressing in
+                                    if menuInvoiceId != nil { return }
+                                    pressingInvoiceId = pressing ? invoice.id : nil
                                 }
-                            }
+                            )
                             // 胶囊菜单：左上角上方（不改变卡片 UI）
                             .overlay(alignment: .topLeading) {
                                 if menuInvoiceId == invoice.id {
@@ -103,6 +118,7 @@ struct InvoiceCardStackView: View {
             if menuInvoiceId != nil {
                 withAnimation { menuInvoiceId = nil }
             }
+            pressingInvoiceId = nil
         }
     }
 }
