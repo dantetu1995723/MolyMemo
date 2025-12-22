@@ -13,6 +13,7 @@ private let bottomInputBaseHeight: CGFloat = 64
 struct HomeChatView: View {
     @EnvironmentObject var appState: AppState
     @Environment(\.modelContext) private var modelContext
+    @Query private var allContacts: [Contact]
     @Binding var showModuleContainer: Bool
     
     // MARK: - Input ViewModel
@@ -24,14 +25,6 @@ struct HomeChatView: View {
     @State private var contentHeight: CGFloat = 0
     /// 卡片横向翻页时，临时禁用外层聊天上下滚动，避免手势冲突
     @State private var isCardHorizontalPaging: Bool = false
-    /// 日程卡片菜单是否显示，用于显示全屏背景层
-    @State private var isScheduleMenuShowing: Bool = false
-    /// 胶囊菜单（含下拉）在全屏坐标系下的 frame，用于判断点击是否落在菜单内
-    @State private var scheduleMenuFrame: CGRect = .zero
-    /// 防抖：菜单刚打开时，忽略一次“抬手点击”导致的立刻关闭
-    @State private var scheduleMenuOpenedAt: CFTimeInterval = 0
-    /// 可靠防抖：菜单刚打开后的“抬手那一下”可能被识别成 tap，这里直接忽略一次
-    @State private var ignoreNextScheduleMenuTapClose: Bool = false
     
     // 删除确认弹窗状态
     @State private var showDeleteConfirmation: Bool = false
@@ -45,6 +38,17 @@ struct HomeChatView: View {
         var id: String { "\(messageId.uuidString)-\(eventId.uuidString)" }
     }
     @State private var scheduleDetailSelection: ScheduleDetailSelection? = nil
+
+    // 人脉详情（从 ContactCard 转换/创建 SwiftData Contact 后打开 ContactDetailView）
+    @State private var selectedContact: Contact? = nil
+
+    // 发票/报销详情（点击卡片打开）
+    private struct InvoiceDetailSelection: Identifiable, Equatable {
+        let messageId: UUID
+        let invoiceId: UUID
+        var id: String { "\(messageId.uuidString)-\(invoiceId.uuidString)" }
+    }
+    @State private var invoiceDetailSelection: InvoiceDetailSelection? = nil
     
     // 主题色
     private let primaryGray = Color(hex: "333333")
@@ -52,6 +56,32 @@ struct HomeChatView: View {
     private let backgroundGray = Color(hex: "F7F8FA")
     private let bubbleWhite = Color.white
     private let userBubbleColor = Color(hex: "222222") // 深黑色用户气泡
+
+    // MARK: - Helpers (Chat Card -> SwiftData Model)
+    private func findOrCreateContact(from card: ContactCard) -> Contact {
+        // 先尝试根据 id 查找（如果之前创建时同步了 id，可命中）
+        if let existing = allContacts.first(where: { $0.id == card.id }) {
+            return existing
+        }
+        // 再尝试根据名字 + 电话查找
+        if let phone = card.phone, !phone.isEmpty,
+           let existing = allContacts.first(where: { $0.name == card.name && $0.phoneNumber == phone }) {
+            return existing
+        }
+        // 创建新的 SwiftData Contact（保持 UI 不变，只是为了复用现有详情页）
+        let newContact = Contact(
+            name: card.name,
+            phoneNumber: card.phone,
+            company: card.company,
+            identity: card.title,
+            avatarData: card.avatarData
+        )
+        // 关键：让 id 跟卡片 id 对齐，后续能稳定复用同一联系人
+        newContact.id = card.id
+        modelContext.insert(newContact)
+        try? modelContext.save()
+        return newContact
+    }
     
     var body: some View {
         GeometryReader { geometry in
@@ -63,18 +93,6 @@ struct HomeChatView: View {
             ZStack(alignment: .bottom) {
                 // 背景
                 backgroundView
-
-                // 全屏透明遮罩：仅在“日程卡片菜单选中/打开”时出现，用来可靠接管“点击空白取消选中”
-                // 这是新的方案：不再依赖全局 SpatialTapGesture（它会与长按抬手/tap 形成冲突）
-                if isScheduleMenuShowing, scheduleDetailSelection == nil {
-                    Color.black.opacity(0.001)
-                        .ignoresSafeArea()
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            NotificationCenter.default.post(name: .dismissScheduleMenu, object: nil)
-                        }
-                        .zIndex(900)
-                }
                 
                 // 聊天内容层
                 VStack(spacing: 0) {
@@ -124,6 +142,8 @@ struct HomeChatView: View {
                                     inputViewModel.showMenu = false
                                 }
                             }
+                            // 点击聊天空白处同时取消日程卡片选中（关闭胶囊菜单）
+                            NotificationCenter.default.post(name: .dismissScheduleMenu, object: nil)
                         }
                         .onChange(of: appState.chatMessages.count) { _, _ in
                             scrollToBottom(proxy: proxy)
@@ -214,23 +234,42 @@ struct HomeChatView: View {
                     .background(Color(red: 0.97, green: 0.97, blue: 0.97))
                 }
             }
-            // 接收日程卡片菜单状态
-            .onPreferenceChange(ScheduleMenuStateKey.self) { newValue in
-                isScheduleMenuShowing = newValue
-                if !newValue {
-                    scheduleMenuFrame = .zero
-                    ignoreNextScheduleMenuTapClose = false
+            .sheet(item: $invoiceDetailSelection, onDismiss: {
+                invoiceDetailSelection = nil
+            }) { selection in
+                if
+                    let msgIndex = appState.chatMessages.firstIndex(where: { $0.id == selection.messageId }),
+                    let invoiceIndex = appState.chatMessages[msgIndex].invoices?.firstIndex(where: { $0.id == selection.invoiceId })
+                {
+                    InvoiceDetailSheet(
+                        invoice: Binding(
+                            get: {
+                                appState.chatMessages[msgIndex].invoices?[invoiceIndex]
+                                ?? InvoiceCard(invoiceNumber: "", merchantName: "", amount: 0, date: Date(), type: "", notes: nil)
+                            },
+                            set: { appState.chatMessages[msgIndex].invoices?[invoiceIndex] = $0 }
+                        ),
+                        onDelete: {
+                            withAnimation {
+                                appState.chatMessages[msgIndex].invoices?.removeAll(where: { $0.id == selection.invoiceId })
+                            }
+                            appState.saveMessageToStorage(appState.chatMessages[msgIndex], modelContext: modelContext)
+                        }
+                    )
                 } else {
-                    scheduleMenuOpenedAt = CACurrentMediaTime()
+                    VStack {
+                        Text("记录不存在或已删除")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(Color(hex: "666666"))
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color.white)
                 }
             }
-            .onPreferenceChange(ScheduleMenuFrameKey.self) { newFrame in
-                scheduleMenuFrame = newFrame
-            }
-            // 菜单打开防抖
-            .onReceive(NotificationCenter.default.publisher(for: .scheduleMenuDidOpen)) { _ in
-                scheduleMenuOpenedAt = CACurrentMediaTime()
-                ignoreNextScheduleMenuTapClose = true
+            .sheet(item: $selectedContact) { contact in
+                ContactDetailView(contact: contact)
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
             }
             
             // 删除确认弹窗
@@ -432,7 +471,15 @@ struct HomeChatView: View {
                             ContactCardStackView(contacts: Binding(
                                 get: { appState.chatMessages[index].contacts ?? [] },
                                 set: { appState.chatMessages[index].contacts = $0 }
-                            ), isParentScrollDisabled: $isCardHorizontalPaging)
+                            ), isParentScrollDisabled: $isCardHorizontalPaging,
+                            onOpenDetail: { card in
+                                selectedContact = findOrCreateContact(from: card)
+                            }, onDeleteRequest: { card in
+                                withAnimation {
+                                    appState.chatMessages[index].contacts?.removeAll(where: { $0.id == card.id })
+                                    appState.saveMessageToStorage(appState.chatMessages[index], modelContext: modelContext)
+                                }
+                            })
                             .frame(maxWidth: .infinity)
                             .padding(.top, -10)
                             
@@ -451,7 +498,14 @@ struct HomeChatView: View {
                             InvoiceCardStackView(invoices: Binding(
                                 get: { appState.chatMessages[index].invoices ?? [] },
                                 set: { appState.chatMessages[index].invoices = $0 }
-                            ))
+                            ), onOpenDetail: { invoice in
+                                invoiceDetailSelection = InvoiceDetailSelection(messageId: message.id, invoiceId: invoice.id)
+                            }, onDeleteRequest: { invoice in
+                                withAnimation {
+                                    appState.chatMessages[index].invoices?.removeAll(where: { $0.id == invoice.id })
+                                    appState.saveMessageToStorage(appState.chatMessages[index], modelContext: modelContext)
+                                }
+                            })
                             .frame(maxWidth: .infinity)
                             .padding(.top, -10)
                             

@@ -3,28 +3,6 @@ import Combine
 
 extension NSNotification.Name {
     static let dismissScheduleMenu = NSNotification.Name("DismissScheduleMenu")
-    static let scheduleMenuDidOpen = NSNotification.Name("ScheduleMenuDidOpen")
-}
-
-// MARK: - PreferenceKey for menu state
-struct ScheduleMenuStateKey: PreferenceKey {
-    static var defaultValue: Bool = false
-    static func reduce(value: inout Bool, nextValue: () -> Bool) {
-        value = value || nextValue()
-    }
-}
-
-// MARK: - PreferenceKey for menu frame (global)
-/// 用于把胶囊菜单（含下拉）在屏幕坐标系中的 frame 传递到父视图
-struct ScheduleMenuFrameKey: PreferenceKey {
-    static var defaultValue: CGRect = .zero
-    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
-        let next = nextValue()
-        // 优先保留非零 frame（避免被其它子树的默认值冲掉）
-        if next != .zero {
-            value = next
-        }
-    }
 }
 
 struct ScheduleCardStackView: View {
@@ -32,42 +10,24 @@ struct ScheduleCardStackView: View {
     /// 横向翻页时，用于通知外层 ScrollView 临时禁用上下滚动，避免手势冲突
     @Binding var isParentScrollDisabled: Bool
     
-    // New callback property
     var onDeleteRequest: ((ScheduleEvent) -> Void)? = nil
-    /// 单击卡片（短按）打开详情
+    /// 单击卡片或点击编辑按钮打开详情
     var onOpenDetail: ((ScheduleEvent) -> Void)? = nil
     
     @State private var currentIndex: Int = 0
-    @State private var dragOffset: CGSize = .zero
+    @State private var dragOffset: CGFloat = 0
     @State private var showMenu: Bool = false
-    @State private var isPressed: Bool = false
-    /// 长按刚触发菜单后的“保护窗”，避免抬手/关闭动作导致误触发打开详情
     @State private var lastMenuOpenedAt: CFTimeInterval = 0
-
-    // MARK: - Unified gesture state (单一手势判定：短按=详情，长按=菜单，横滑=翻页)
-    @State private var pressBeganAt: CFTimeInterval? = nil
-    @State private var pressStartLocation: CGPoint = .zero
-    @State private var hasTriggeredLongPress: Bool = false
-    @State private var isSwipeIntent: Bool = false
-    @State private var longPressWorkItem: DispatchWorkItem? = nil
-
-    // 手势参数（可统一调教）
-    private let longPressThreshold: CFTimeInterval = 0.22
-    private let tapMoveTolerance: CGFloat = 10
-    private let swipeIntentRatio: CGFloat = 1.15
-    private let swipeIntentMinTranslation: CGFloat = 6
     
     // Constants
-    private let cardHeight: CGFloat = 300 // Match width for square aspect ratio
+    private let cardHeight: CGFloat = 300
     private let cardWidth: CGFloat = 300
-    private let pageSwipeDistanceThreshold: CGFloat = 70
-    private let pageSwipeVelocityThreshold: CGFloat = 800
+    private let pageSwipeThreshold: CGFloat = 50
     
     var body: some View {
         VStack(spacing: 8) {
-            // Card Stack
+            // 卡片堆叠区域
             ZStack {
-                
                 if events.isEmpty {
                     Text("无日程")
                         .foregroundColor(.gray)
@@ -76,171 +36,54 @@ struct ScheduleCardStackView: View {
                         .cornerRadius(24)
                 } else {
                     ForEach(0..<events.count, id: \.self) { index in
-                        // Calculate relative index for cyclic view
                         let relativeIndex = getRelativeIndex(index)
                         
-                        // Only show relevant cards for performance
-                        // Show current, next few, and the one that might be swiping out/in
                         if relativeIndex < 4 || relativeIndex == events.count - 1 {
-                            ScheduleCardView(event: $events[index])
-                                .frame(width: cardWidth, height: cardHeight)
-                                .scaleEffect(getScale(relativeIndex) * ((index == currentIndex && showMenu) ? 1.05 : 1.0))
-                                .rotationEffect(.degrees(getRotation(relativeIndex)))
-                                .offset(x: getOffsetX(relativeIndex), y: 0) // Only horizontal offset for stack look
-                                .zIndex(getZIndex(relativeIndex))
-                                .shadow(color: Color.black.opacity(0.08), radius: 12, x: 0, y: 6)
-                                .animation(.spring(response: 0.3, dampingFraction: 0.7), value: showMenu)
-                                // 只在「横向意图」时才会开始识别，从根上避免竖滑被卡片 DragGesture 抢走
-                                .overlay(
-                                    index == currentIndex
-                                    ? HorizontalPanGestureInstaller(
-                                        directionRatio: 1.15,
-                                        onChanged: { dx in
-                                            isParentScrollDisabled = true
-                                            dragOffset = CGSize(width: dx, height: 0)
-                                            if showMenu { withAnimation { showMenu = false } }
-                                        },
-                                        onEnded: { dx, vx in
-                                            defer {
-                                                isParentScrollDisabled = false
-                                                withAnimation(.spring()) {
-                                                    dragOffset = .zero
-                                                }
-                                            }
-                                            guard !events.isEmpty else { return }
-                                            withAnimation(.spring()) {
-                                                // 翻页方向与底部圆点方向保持一致：向右 = 下一个点；向左 = 上一个点
-                                                if dx > pageSwipeDistanceThreshold || vx > pageSwipeVelocityThreshold {
-                                                    currentIndex = (currentIndex + 1) % events.count
-                                                } else if dx < -pageSwipeDistanceThreshold || vx < -pageSwipeVelocityThreshold {
-                                                    currentIndex = (currentIndex - 1 + events.count) % events.count
-                                                }
-                                            }
-                                        }
-                                    )
-                                    : nil
-                                )
-                                .contentShape(Rectangle())
-                                // 统一手势：避免 SwiftUI 手势竞技场（tap vs longPress）反复冲突
-                                .highPriorityGesture(
-                                    DragGesture(minimumDistance: 0, coordinateSpace: .local)
-                                        .onChanged { value in
-                                            guard index == currentIndex else { return }
-                                            guard !events.isEmpty else { return }
-                                            guard !showMenu else { return } // 选中后禁用卡片点击
-
-                                            // 初次按下
-                                            if pressBeganAt == nil {
-                                                pressBeganAt = CACurrentMediaTime()
-                                                pressStartLocation = value.startLocation
-                                                hasTriggeredLongPress = false
-                                                isSwipeIntent = false
-
-                                                longPressWorkItem?.cancel()
-                                                let work = DispatchWorkItem {
-                                                    // 仍在按住且未判定为滑动，才触发长按菜单
-                                                    guard pressBeganAt != nil else { return }
-                                                    guard !isSwipeIntent else { return }
-                                                    guard !hasTriggeredLongPress else { return }
-                                                    hasTriggeredLongPress = true
-                                                    lastMenuOpenedAt = CACurrentMediaTime()
-                                                    let generator = UIImpactFeedbackGenerator(style: .medium)
-                                                    generator.impactOccurred()
-                                                    withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
-                                                        showMenu = true
-                                                    }
-                                                    NotificationCenter.default.post(name: .scheduleMenuDidOpen, object: nil)
-                                                }
-                                                longPressWorkItem = work
-                                                DispatchQueue.main.asyncAfter(deadline: .now() + longPressThreshold, execute: work)
-                                            }
-
-                                            // 滑动意图判定：一旦认为是横滑，就取消“短按/长按”判定
-                                            let dx = value.translation.width
-                                            let dy = value.translation.height
-                                            if abs(dx) > swipeIntentMinTranslation || abs(dy) > swipeIntentMinTranslation {
-                                                if abs(dx) > abs(dy) * swipeIntentRatio {
-                                                    isSwipeIntent = true
-                                                    longPressWorkItem?.cancel()
-                                                } else if abs(dy) > abs(dx) {
-                                                    // 竖向滚动意图：取消长按，避免误出菜单
-                                                    longPressWorkItem?.cancel()
-                                                }
-                                            }
-                                        }
-                                        .onEnded { value in
-                                            guard index == currentIndex else { return }
-                                            defer {
-                                                longPressWorkItem?.cancel()
-                                                longPressWorkItem = nil
-                                                pressBeganAt = nil
-                                                hasTriggeredLongPress = false
-                                                isSwipeIntent = false
-                                            }
-
-                                            // 已触发长按菜单，结束时不做任何事
-                                            if showMenu { return }
-                                            if isSwipeIntent { return }
-
-                                            let dx = value.translation.width
-                                            let dy = value.translation.height
-                                            let moved = hypot(dx, dy)
-                                            if moved > tapMoveTolerance { return }
-
-                                            // 结束时间小于长按阈值 => 视为短按打开详情
-                                            if CACurrentMediaTime() - lastMenuOpenedAt < 0.18 { return } // 额外保护：避免菜单刚关闭立刻开详情
-                                            guard events.indices.contains(index) else { return }
-                                            onOpenDetail?(events[index])
-                                        }
-                                )
-                                // 胶囊菜单展示：由统一手势驱动 showMenu
-                                .overlay(alignment: .topLeading) {
-                                    if showMenu && index == currentIndex {
-                                        CapsuleMenuView(
-                                            onEdit: {
-                                                withAnimation { showMenu = false }
-                                            },
-                                            onRescan: {
-                                                withAnimation { showMenu = false }
-                                            },
-                                            onDelete: {
-                                                withAnimation {
-                                                    showMenu = false
-                                                    if events.indices.contains(index) {
-                                                        if let onDeleteRequest = onDeleteRequest {
-                                                            onDeleteRequest(events[index])
-                                                        } else {
-                                                            events.remove(at: index)
-                                                            if events.isEmpty {
-                                                                currentIndex = 0
-                                                            } else {
-                                                                currentIndex = currentIndex % events.count
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            },
-                                            onDismiss: {
-                                                withAnimation { showMenu = false }
-                                            }
-                                        )
-                                        .background(
-                                            GeometryReader { geo in
-                                                Color.clear
-                                                    .preference(key: ScheduleMenuFrameKey.self, value: geo.frame(in: .global))
-                                            }
-                                        )
-                                        .offset(y: -60)
-                                        .transition(.opacity)
-                                        .zIndex(1000)
-                                    }
-                                }
-                                .allowsHitTesting(index == currentIndex)
+                            cardView(for: index, relativeIndex: relativeIndex)
                         }
                     }
                 }
             }
-            .frame(height: cardHeight + 20) // Give some space for rotation/offset
+            .frame(width: cardWidth, height: cardHeight)
+            .frame(height: cardHeight + 20)
+            // 横滑翻页：用 DragGesture(minimumDistance: 20) 让竖滑先给 ScrollView
+            // 关键：必须用 simultaneousGesture，不能用 gesture，否则会阻塞子视图的 onLongPressGesture（体感像“要等很久”）
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 20)
+                    .onChanged { value in
+                        // 只处理横向意图
+                        let dx = value.translation.width
+                        let dy = value.translation.height
+                        guard abs(dx) > abs(dy) else { return }
+                        
+                        isParentScrollDisabled = true
+                        dragOffset = dx
+                        if showMenu { withAnimation { showMenu = false } }
+                    }
+                    .onEnded { value in
+                        defer {
+                            isParentScrollDisabled = false
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                dragOffset = 0
+                            }
+                        }
+                        
+                        let dx = value.translation.width
+                        let dy = value.translation.height
+                        guard abs(dx) > abs(dy) else { return }
+                        guard !events.isEmpty else { return }
+                        
+                        let velocity = value.predictedEndTranslation.width - dx
+                        
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                            if dx > pageSwipeThreshold || velocity > 200 {
+                                currentIndex = (currentIndex - 1 + events.count) % events.count
+                            } else if dx < -pageSwipeThreshold || velocity < -200 {
+                                currentIndex = (currentIndex + 1) % events.count
+                            }
+                        }
+                    }
+            )
             .padding(.horizontal)
             
             // Pagination Dots
@@ -255,108 +98,226 @@ struct ScheduleCardStackView: View {
                 .padding(.top, 4)
             }
         }
-        // 将菜单状态传递到父视图，用于在 HomeChatView 中添加全屏背景层
-        .preference(key: ScheduleMenuStateKey.self, value: showMenu)
-        .onReceive(NotificationCenter.default.publisher(for: .scheduleMenuDidOpen)) { _ in
-            lastMenuOpenedAt = CACurrentMediaTime()
-        }
         .onReceive(NotificationCenter.default.publisher(for: .dismissScheduleMenu)) { _ in
-            withAnimation {
-                showMenu = false
-                isPressed = false
+            if showMenu {
+                withAnimation { showMenu = false }
             }
         }
+    }
+    
+    // MARK: - 单张卡片视图（含手势）
+    @ViewBuilder
+    private func cardView(for index: Int, relativeIndex: Int) -> some View {
+        ScheduleCardView(event: $events[index])
+            .frame(width: cardWidth, height: cardHeight)
+            .scaleEffect(getScale(relativeIndex) * (index == currentIndex && showMenu ? 1.05 : 1.0))
+            .rotationEffect(.degrees(getRotation(relativeIndex)))
+            .offset(x: getOffsetX(relativeIndex), y: 0)
+            .zIndex(getZIndex(relativeIndex))
+            .shadow(color: Color.black.opacity(0.08), radius: 12, x: 0, y: 6)
+            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: showMenu)
+            .contentShape(Rectangle())
+            // 短按：未选中时打开详情；选中（菜单打开）时再次短按取消选中
+            .onTapGesture {
+                guard index == currentIndex else { return }
+                if showMenu {
+                    withAnimation { showMenu = false }
+                    return
+                }
+                // 菜单刚关闭时不触发详情，避免误触
+                guard CACurrentMediaTime() - lastMenuOpenedAt > 0.18 else { return }
+                onOpenDetail?(events[index])
+            }
+             // 长按：打开胶囊菜单（更快；适当放宽可移动距离，避免“手抖”导致长按反复失败体感变慢）
+             .onLongPressGesture(minimumDuration: 0.12, maximumDistance: 20) {
+                guard index == currentIndex else { return }
+                guard !showMenu else { return }
+                lastMenuOpenedAt = CACurrentMediaTime()
+                HapticFeedback.medium()
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                    showMenu = true
+                }
+            }
+            // 胶囊菜单
+            .overlay(alignment: .topLeading) {
+                if showMenu && index == currentIndex {
+                    CardCapsuleMenuView(
+                        onEdit: {
+                            let event = events[index]
+                            withAnimation { showMenu = false }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                onOpenDetail?(event)
+                            }
+                        },
+                        onDelete: {
+                            let event = events[index]
+                            withAnimation { showMenu = false }
+                            if let onDeleteRequest = onDeleteRequest {
+                                onDeleteRequest(event)
+                            } else {
+                                events.removeAll { $0.id == event.id }
+                                if events.isEmpty {
+                                    currentIndex = 0
+                                } else {
+                                    currentIndex = currentIndex % events.count
+                                }
+                            }
+                        },
+                        onDismiss: {
+                            withAnimation { showMenu = false }
+                        }
+                    )
+                    .offset(y: -60)
+                    .transition(.opacity)
+                    .zIndex(1000)
+                }
+            }
+            .allowsHitTesting(index == currentIndex)
     }
     
     // MARK: - Helper Functions
     
     private func getRelativeIndex(_ index: Int) -> Int {
-        return (index - currentIndex + events.count) % events.count
+        (index - currentIndex + events.count) % events.count
     }
     
     private func getScale(_ relativeIndex: Int) -> CGFloat {
-        if relativeIndex == 0 {
-            return 1.0
-        } else {
-            // Cards behind get smaller
-            return 1.0 - (CGFloat(relativeIndex) * 0.05)
-        }
+        relativeIndex == 0 ? 1.0 : 1.0 - CGFloat(relativeIndex) * 0.05
     }
     
     private func getRotation(_ relativeIndex: Int) -> Double {
-        if relativeIndex == 0 {
-            // Rotate with drag
-            return Double(dragOffset.width / 20)
-        } else {
-            // Static rotation for stack effect
-            return Double(relativeIndex) * 2
-        }
+        relativeIndex == 0 ? Double(dragOffset / 20) : Double(relativeIndex) * 2
     }
     
     private func getOffsetX(_ relativeIndex: Int) -> CGFloat {
-        if relativeIndex == 0 {
-            return dragOffset.width
-        } else {
-            // Stack offset to the right
-            return CGFloat(relativeIndex) * 10
-        }
+        relativeIndex == 0 ? dragOffset : CGFloat(relativeIndex) * 10
     }
     
     private func getZIndex(_ relativeIndex: Int) -> Double {
-        if relativeIndex == 0 {
-            return 100
-        } else {
-            return Double(events.count - relativeIndex)
+        relativeIndex == 0 ? 100 : Double(events.count - relativeIndex)
+    }
+}
+
+// MARK: - 简化的胶囊菜单
+struct CardCapsuleMenuView: View {
+    var onEdit: () -> Void
+    var onDelete: () -> Void
+    var onDismiss: () -> Void
+    
+    @State private var showRescanMenu: Bool = false
+    
+    var body: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 0) {
+                // 编辑
+                Text("编辑")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(Color(hex: "333333"))
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .contentShape(Rectangle())
+                    .onTapGesture { onEdit() }
+                
+                Divider().background(Color.black.opacity(0.1)).frame(height: 16)
+                
+                // 重新识别
+                HStack(spacing: 2) {
+                    Text("重新识别")
+                        .font(.system(size: 14, weight: .medium))
+                    Image(systemName: showRescanMenu ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 10, weight: .bold))
+                }
+                .foregroundColor(Color(hex: "333333"))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        showRescanMenu.toggle()
+                    }
+                }
+                
+                Divider().background(Color.black.opacity(0.1)).frame(height: 16)
+                
+                // 删除
+                Text("删除")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(Color(hex: "FF3B30"))
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .contentShape(Rectangle())
+                    .onTapGesture { onDelete() }
+            }
+            .modifier(ConditionalCapsuleBackground(showRescanMenu: showRescanMenu))
+            
+            // 重新识别下拉
+            if showRescanMenu {
+                VStack(spacing: 0) {
+                    ForEach(["这是日程", "这是人脉", "这是发票"], id: \.self) { option in
+                        Text(option)
+                            .font(.system(size: 15))
+                            .foregroundColor(Color(hex: "333333"))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 14)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                withAnimation { showRescanMenu = false }
+                                onDismiss()
+                            }
+                        if option != "这是发票" {
+                            Divider().padding(.horizontal, 20)
+                        }
+                    }
+                }
+                .glassEffect(in: .rect(cornerRadius: 16))
+                .frame(width: 200)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
         }
     }
 }
 
+// MARK: - 日程卡片视图
 struct ScheduleCardView: View {
     @Binding var event: ScheduleEvent
     
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Top Row: Dot
+            // 左上角装饰点
             HStack(alignment: .top) {
-                // 左上角装饰圆点 (18x18, #EBEBEB, Inner Shadow: Y:4, B:5, #000000 25%)
                 Circle()
                     .fill(Color(hex: "EBEBEB"))
                     .frame(width: 18, height: 18)
                     .overlay(
                         GeometryReader { geo in
-                            let w = geo.size.width
-                            let h = geo.size.height
                             ZStack {
                                 Rectangle()
                                     .fill(Color.black.opacity(0.25))
                                     .mask(
                                         ZStack {
                                             Rectangle().fill(Color.black)
-                                            Circle().frame(width: w, height: h).blendMode(.destinationOut)
+                                            Circle().frame(width: geo.size.width, height: geo.size.height).blendMode(.destinationOut)
                                         }
                                         .compositingGroup()
                                     )
-                                    .offset(x: 0, y: 4)
-                                    .blur(radius: 2.5) // Figma Blur 5 ~= SwiftUI radius 2.5
+                                    .offset(y: 4)
+                                    .blur(radius: 2.5)
                             }
-                            .frame(width: w, height: h)
+                            .frame(width: geo.size.width, height: geo.size.height)
                             .clipShape(Circle())
                         }
                     )
-                
                 Spacer()
             }
             .padding(.bottom, 8)
             
-            // Date Row & Conflict Tag
+            // 日期 & 冲突标签
             HStack(alignment: .center, spacing: 8) {
                 Text(event.fullDateString)
                     .font(.system(size: 15))
                     .foregroundColor(Color(hex: "333333"))
-                
                 Spacer()
-                
-                // 冲突提示标签 - 右对齐
                 if event.hasConflict {
                     Text("有日程冲突")
                         .font(.system(size: 13, weight: .regular))
@@ -371,13 +332,9 @@ struct ScheduleCardView: View {
             }
             .padding(.bottom, 14)
             
-            // Divider
+            // 分隔线
             HStack(spacing: 6) {
-                Rectangle()
-                    .fill(Color(hex: "EEEEEE"))
-                    .frame(height: 1)
-                
-                // 右端空心小圆圈
+                Rectangle().fill(Color(hex: "EEEEEE")).frame(height: 1)
                 Circle()
                     .stroke(Color(hex: "E5E5E5"), lineWidth: 1)
                     .background(Circle().fill(Color.white))
@@ -385,32 +342,27 @@ struct ScheduleCardView: View {
             }
             .padding(.bottom, 20)
             
-            // Content Row
+            // 时间 & 内容
             HStack(alignment: .top, spacing: 20) {
-                // Time
                 VStack(alignment: .leading, spacing: 6) {
                     Text(timeString(event.startTime))
                         .font(.system(size: 15, weight: .medium))
                         .foregroundColor(Color(hex: "333333"))
-                    
                     Text("~")
                         .font(.system(size: 14))
                         .foregroundColor(Color(hex: "999999"))
                         .padding(.leading, 2)
-                    
                     Text(timeString(event.endTime))
                         .font(.system(size: 15, weight: .medium))
                         .foregroundColor(Color(hex: "666666"))
                 }
                 .fixedSize()
                 
-                // Title & Description
                 VStack(alignment: .leading, spacing: 8) {
                     Text(event.title)
                         .font(.system(size: 18, weight: .bold))
                         .foregroundColor(Color(hex: "333333"))
                         .lineLimit(1)
-                    
                     Text(event.description)
                         .font(.system(size: 14))
                         .foregroundColor(Color(hex: "666666"))
@@ -421,7 +373,6 @@ struct ScheduleCardView: View {
             
             Spacer()
             
-            // Bottom Hint
             Text("日程将在开始前半小时提醒")
                 .font(.system(size: 16))
                 .foregroundColor(Color(hex: "999999"))
@@ -442,207 +393,16 @@ struct ScheduleCardView: View {
     }
 }
 
-// （已重构）菜单与手势统一由 `ScheduleCardStackView` 内部的 DragGesture 状态机管理。
-
-struct CapsuleMenuView: View {
-    var onEdit: () -> Void
-    var onRescan: () -> Void
-    var onDelete: () -> Void
-    var onDismiss: () -> Void
-    
-    @State private var showRescanMenu: Bool = false
-    @State private var rescanButtonFrame: CGRect = .zero
-    
-    var body: some View {
-        ZStack(alignment: .topLeading) {
-            // 交互逻辑3：当重新识别下拉菜单显示时，点击外部（包括胶囊菜单外部）-> 关闭所有菜单
-            // 包括：下拉菜单、胶囊菜单、卡片全选状态
-            if showRescanMenu {
-                Color.clear
-                    .contentShape(Rectangle())
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .onTapGesture {
-                        withAnimation {
-                            showRescanMenu = false
-                            // 同时关闭胶囊菜单和取消卡片全选状态
-                            onDismiss()
-                        }
-                    }
-                    .zIndex(100)
-            }
-            
-            HStack(spacing: 0) {
-                // 交互逻辑4：点击"编辑"按钮 -> 执行编辑逻辑并关闭胶囊菜单
-                Button(action: onEdit) {
-                    Text("编辑")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(Color(hex: "333333"))
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 12)
-                }
-                .allowsHitTesting(true) // 确保按钮可以接收点击
-                
-                Divider()
-                    .background(Color.black.opacity(0.1))
-                    .frame(height: 16)
-                
-                // 交互逻辑5：点击"重新识别"按钮 -> 展开/收起下拉菜单（不关闭胶囊菜单）
-                Button(action: {
-                    withAnimation {
-                        showRescanMenu.toggle()
-                    }
-                }) {
-                    HStack(spacing: 2) {
-                        Text("重新识别")
-                            .font(.system(size: 14, weight: .medium))
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 10, weight: .bold))
-                    }
-                    .foregroundColor(Color(hex: "333333"))
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-                    .background(
-                        GeometryReader { geo in
-                            Color.clear
-                                .onAppear {
-                                    rescanButtonFrame = geo.frame(in: .local)
-                                }
-                                .onChange(of: geo.frame(in: .local)) { _, newFrame in
-                                    rescanButtonFrame = newFrame
-                                }
-                        }
-                    )
-                }
-                .allowsHitTesting(true) // 确保按钮可以接收点击
-                
-                Divider()
-                    .background(Color.black.opacity(0.1))
-                    .frame(height: 16)
-                
-                // 交互逻辑6：点击"删除"按钮 -> 执行删除逻辑并关闭胶囊菜单
-                Button(action: onDelete) {
-                    Text("删除")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(Color(hex: "FF3B30"))
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 12)
-                }
-                .allowsHitTesting(true) // 确保按钮可以接收点击
-            }
-            .modifier(ConditionalCapsuleBackground(showRescanMenu: showRescanMenu))
-            .contentShape(Capsule()) // 确保整个胶囊区域都可以接收点击
-            .allowsHitTesting(true) // 确保胶囊菜单可以接收点击事件
-            .zIndex(1000) // 确保在背景层上方，按钮点击不会被背景层拦截
-            
-            // 交互逻辑7：选择下拉菜单中的选项 -> 关闭下拉菜单和胶囊菜单，执行相应逻辑
-            if showRescanMenu {
-                RescanDropdownMenu(
-                    onSelectSchedule: {
-                        showRescanMenu = false
-                        onRescan() // 这会关闭胶囊菜单（在 onRescan 回调中处理）
-                    },
-                    onSelectContact: {
-                        showRescanMenu = false
-                        onRescan()
-                    },
-                    onSelectInvoice: {
-                        showRescanMenu = false
-                        onRescan()
-                    }
-                )
-                .offset(x: rescanButtonFrame.minX, y: rescanButtonFrame.maxY - 8) // 稍微叠放在胶囊下部
-                .transition(.opacity.combined(with: .scale(scale: 0.95)))
-                .allowsHitTesting(true) // 确保下拉菜单可以接收点击
-                .zIndex(1000) // 确保在背景层上方
-            }
-        }
-    }
-}
-
-struct RescanDropdownMenu: View {
-    var onSelectSchedule: () -> Void
-    var onSelectContact: () -> Void
-    var onSelectInvoice: () -> Void
-    
-    var body: some View {
-        VStack(spacing: 0) {
-            // 标题 - 带向下箭头
-            HStack {
-                Text("重新识别")
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundColor(Color(hex: "333333"))
-                Spacer()
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(Color(hex: "666666"))
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 20)
-            .padding(.vertical, 16)
-            
-            // 分栏线 - 不占满全宽，有左右边距
-            HStack {
-                Spacer()
-                    .frame(width: 20) // 左边距
-                Rectangle()
-                    .fill(Color.black.opacity(0.1))
-                    .frame(height: 1)
-                Spacer()
-                    .frame(width: 20) // 右边距
-            }
-            
-            // 选项 - 下面三个没有分栏线
-            Button(action: onSelectSchedule) {
-                Text("这是日程")
-                    .font(.system(size: 15, weight: .regular))
-                    .foregroundColor(Color(hex: "333333"))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 16)
-            }
-            
-            Button(action: onSelectContact) {
-                Text("这是人脉")
-                    .font(.system(size: 15, weight: .regular))
-                    .foregroundColor(Color(hex: "333333"))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 16)
-            }
-            
-            Button(action: onSelectInvoice) {
-                Text("这是发票")
-                    .font(.system(size: 15, weight: .regular))
-                    .foregroundColor(Color(hex: "333333"))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 16)
-            }
-        }
-        .glassEffect(in: .rect(cornerRadius: 16)) // 使用系统 Liquid Glass 效果，更大的圆角
-        .frame(width: 200) // 更大的宽度
-        .contentShape(RoundedRectangle(cornerRadius: 16))
-        .onTapGesture {
-            // 阻止点击事件传播
-        }
-    }
-}
-
-// MARK: - Conditional Capsule Background Modifier
+// MARK: - 胶囊背景
 struct ConditionalCapsuleBackground: ViewModifier {
     let showRescanMenu: Bool
     
     func body(content: Content) -> some View {
         Group {
             if showRescanMenu {
-                content
-                    .background(
-                        Capsule()
-                            .fill(Color(hex: "F5F5F5")) // 点击重新识别后显示灰色背景
-                    )
+                content.background(Capsule().fill(Color(hex: "F5F5F5")))
             } else {
-                content
-                    .glassEffect(in: .capsule) // 正常情况下使用与重新识别模块卡片一样的 Liquid glass 透明效果
+                content.glassEffect(in: .capsule)
             }
         }
     }

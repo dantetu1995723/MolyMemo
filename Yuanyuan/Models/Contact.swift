@@ -12,6 +12,12 @@ final class Contact {
     var identity: String?  // 身份（职位/职务）
     var hobbies: String?  // 兴趣爱好
     var relationship: String?  // 与我关系
+    var email: String?  // 邮箱
+    var birthday: String?  // 生日
+    var gender: String?  // 性别
+    var industry: String?  // 行业
+    var location: String?  // 地区
+    var notes: String?  // 备注/详细描述
     
     // 附件数据
     @Attribute(.externalStorage) var avatarData: Data?  // 头像
@@ -28,6 +34,12 @@ final class Contact {
         identity: String? = nil,
         hobbies: String? = nil,
         relationship: String? = nil,
+        email: String? = nil,
+        birthday: String? = nil,
+        gender: String? = nil,
+        industry: String? = nil,
+        location: String? = nil,
+        notes: String? = nil,
         avatarData: Data? = nil,
         imageData: [Data]? = nil,
         textAttachments: [String]? = nil
@@ -39,6 +51,12 @@ final class Contact {
         self.identity = identity
         self.hobbies = hobbies
         self.relationship = relationship
+        self.email = email
+        self.birthday = birthday
+        self.gender = gender
+        self.industry = industry
+        self.location = location
+        self.notes = notes
         self.avatarData = avatarData
         self.imageData = imageData
         self.textAttachments = textAttachments

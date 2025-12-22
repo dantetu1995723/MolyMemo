@@ -1,11 +1,20 @@
 import SwiftUI
+import Combine
 
 struct ContactCardStackView: View {
     @Binding var contacts: [ContactCard]
     /// 横向翻页时，用于通知外层 ScrollView 临时禁用上下滚动，避免手势冲突
     @Binding var isParentScrollDisabled: Bool
+
+    /// 短按打开详情（由外部决定如何打开：sheet / push）
+    var onOpenDetail: ((ContactCard) -> Void)? = nil
+    /// 删除回调（外部可做二次确认）；不提供则默认直接从数组移除
+    var onDeleteRequest: ((ContactCard) -> Void)? = nil
+
     @State private var currentIndex: Int = 0
     @State private var dragOffset: CGSize = .zero
+    @State private var showMenu: Bool = false
+    @State private var lastMenuOpenedAt: CFTimeInterval = 0
     
     // Constants
     private let cardHeight: CGFloat = 220 // Adjusted height for contact card
@@ -32,41 +41,71 @@ struct ContactCardStackView: View {
                         if relativeIndex < 4 || relativeIndex == contacts.count - 1 {
                             ContactCardView(contact: $contacts[index])
                                 .frame(width: cardWidth, height: cardHeight)
-                                .scaleEffect(getScale(relativeIndex))
+                                .scaleEffect(getScale(relativeIndex) * (index == currentIndex && showMenu ? 1.05 : 1.0))
                                 .rotationEffect(.degrees(getRotation(relativeIndex)))
                                 .offset(x: getOffsetX(relativeIndex), y: 0)
                                 .zIndex(getZIndex(relativeIndex))
                                 .shadow(color: Color.black.opacity(0.1), radius: 10, x: 0, y: 5)
-                                // 只在「横向意图」时才会开始识别，从根上避免竖滑被卡片 DragGesture 抢走
-                                .overlay(
-                                    index == currentIndex
-                                    ? HorizontalPanGestureInstaller(
-                                        directionRatio: 1.15,
-                                        onChanged: { dx in
-                                            isParentScrollDisabled = true
-                                            dragOffset = CGSize(width: dx, height: 0)
-                                        },
-                                        onEnded: { dx, vx in
-                                            defer {
-                                                isParentScrollDisabled = false
-                                                withAnimation(.spring()) {
-                                                    dragOffset = .zero
+                                .contentShape(Rectangle())
+                                // 短按：未选中时打开详情；选中（菜单打开）时再次短按取消选中
+                                .onTapGesture {
+                                    guard index == currentIndex else { return }
+                                    if showMenu {
+                                        withAnimation { showMenu = false }
+                                        return
+                                    }
+                                    guard CACurrentMediaTime() - lastMenuOpenedAt > 0.18 else { return }
+                                    guard contacts.indices.contains(index) else { return }
+                                    onOpenDetail?(contacts[index])
+                                }
+                                // 长按：打开胶囊菜单（与日程一致）
+                                .onLongPressGesture(minimumDuration: 0.12, maximumDistance: 20) {
+                                    guard index == currentIndex else { return }
+                                    guard !showMenu else { return }
+                                    lastMenuOpenedAt = CACurrentMediaTime()
+                                    HapticFeedback.medium()
+                                    withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                                        showMenu = true
+                                    }
+                                }
+                                // 胶囊菜单（规格/位置与日程一致：左上角、半透明、offset -60）
+                                .overlay(alignment: .topLeading) {
+                                    if showMenu && index == currentIndex {
+                                        CardCapsuleMenuView(
+                                            onEdit: {
+                                                guard contacts.indices.contains(index) else { return }
+                                                let contact = contacts[index]
+                                                withAnimation { showMenu = false }
+                                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                                    onOpenDetail?(contact)
                                                 }
-                                            }
-                                            guard !contacts.isEmpty else { return }
-                                            withAnimation(.spring()) {
-                                                // 翻页方向与底部圆点方向保持一致：向右 = 下一个点；向左 = 上一个点
-                                                // 更省力：距离阈值降低，同时支持“短距离快速甩动”
-                                                if dx > pageSwipeDistanceThreshold || vx > pageSwipeVelocityThreshold {
-                                                    currentIndex = (currentIndex + 1) % contacts.count
-                                                } else if dx < -pageSwipeDistanceThreshold || vx < -pageSwipeVelocityThreshold {
-                                                    currentIndex = (currentIndex - 1 + contacts.count) % contacts.count
+                                            },
+                                            onDelete: {
+                                                guard contacts.indices.contains(index) else { return }
+                                                let contact = contacts[index]
+                                                withAnimation { showMenu = false }
+                                                if let onDeleteRequest {
+                                                    onDeleteRequest(contact)
+                                                } else {
+                                                    withAnimation {
+                                                        contacts.remove(at: index)
+                                                        if contacts.isEmpty {
+                                                            currentIndex = 0
+                                                        } else {
+                                                            currentIndex = currentIndex % contacts.count
+                                                        }
+                                                    }
                                                 }
+                                            },
+                                            onDismiss: {
+                                                withAnimation { showMenu = false }
                                             }
-                                        }
-                                    )
-                                    : nil
-                                )
+                                        )
+                                        .offset(y: -60)
+                                        .transition(.opacity)
+                                        .zIndex(1000)
+                                    }
+                                }
                                 .allowsHitTesting(index == currentIndex)
                         }
                     }
@@ -74,6 +113,37 @@ struct ContactCardStackView: View {
             }
             .frame(height: cardHeight + 20)
             .padding(.horizontal)
+            // 横滑翻页：与日程一致（不阻塞长按），竖滑放行给外层 ScrollView
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 20)
+                    .onChanged { value in
+                        guard !contacts.isEmpty else { return }
+                        let dx = value.translation.width
+                        let dy = value.translation.height
+                        guard abs(dx) > abs(dy) else { return }
+                        isParentScrollDisabled = true
+                        dragOffset = CGSize(width: dx, height: 0)
+                        if showMenu { withAnimation { showMenu = false } }
+                    }
+                    .onEnded { value in
+                        defer {
+                            isParentScrollDisabled = false
+                            withAnimation(.spring()) { dragOffset = .zero }
+                        }
+                        guard !contacts.isEmpty else { return }
+                        let dx = value.translation.width
+                        let dy = value.translation.height
+                        guard abs(dx) > abs(dy) else { return }
+                        let vx = (value.predictedEndTranslation.width - dx) * 10 // 粗略速度量级
+                        withAnimation(.spring()) {
+                            if dx > pageSwipeDistanceThreshold || vx > pageSwipeVelocityThreshold {
+                                currentIndex = (currentIndex - 1 + contacts.count) % contacts.count
+                            } else if dx < -pageSwipeDistanceThreshold || vx < -pageSwipeVelocityThreshold {
+                                currentIndex = (currentIndex + 1) % contacts.count
+                            }
+                        }
+                    }
+            )
             
             // Pagination Dots
             if contacts.count > 1 {
@@ -85,6 +155,10 @@ struct ContactCardStackView: View {
                     }
                 }
             }
+        }
+        // 点击聊天空白处统一取消选中
+        .onReceive(NotificationCenter.default.publisher(for: .dismissScheduleMenu)) { _ in
+            if showMenu { withAnimation { showMenu = false } }
         }
     }
     

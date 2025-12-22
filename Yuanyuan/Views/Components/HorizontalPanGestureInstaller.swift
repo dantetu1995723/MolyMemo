@@ -67,6 +67,10 @@ struct HorizontalPanGestureInstaller: UIViewRepresentable {
         
         private weak var hostView: UIView?
         private var pan: UIPanGestureRecognizer?
+
+        // 方向锁定：避免一开始就 shouldBegin 失败导致“横滑永远不起”
+        private var hasLockedDirection: Bool = false
+        private var isHorizontal: Bool = false
         
         func installIfNeeded(on host: UIView) {
             // 如果已经安装在同一个 host 上，直接返回
@@ -77,6 +81,7 @@ struct HorizontalPanGestureInstaller: UIViewRepresentable {
             hostView = host
             let recognizer = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
             recognizer.cancelsTouchesInView = false
+            recognizer.maximumNumberOfTouches = 1
             recognizer.delegate = self
             host.addGestureRecognizer(recognizer)
             pan = recognizer
@@ -91,15 +96,15 @@ struct HorizontalPanGestureInstaller: UIViewRepresentable {
         }
         
         func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-            guard let hostView, let pan = gestureRecognizer as? UIPanGestureRecognizer else { return true }
-            let v = pan.velocity(in: hostView)
-            // 允许慢速横滑：如果速度很小，用 translation 的趋势兜底
-            if abs(v.x) < 30, abs(v.y) < 30 {
-                let t = pan.translation(in: hostView)
-                if abs(t.x) < 2, abs(t.y) < 2 { return false }
-                return abs(t.x) > abs(t.y) * directionRatio
-            }
-            return abs(v.x) > abs(v.y) * directionRatio
+            // 不在这里做“早期否决”，否则很容易一开始就失败，后续同一次触摸无法再触发横滑。
+            // 真正的横向意图判定在 handlePan 内做“方向锁定”。
+            true
+        }
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                               shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+            // 允许与 ScrollView 等系统手势同时识别；我们只在锁定为“横向意图”后才回调，从而不抢竖向滚动。
+            true
         }
         
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
@@ -112,14 +117,36 @@ struct HorizontalPanGestureInstaller: UIViewRepresentable {
         
         @objc private func handlePan(_ pan: UIPanGestureRecognizer) {
             guard let hostView else { return }
-            let translation = pan.translation(in: hostView).x
+            let t = pan.translation(in: hostView)
             
             switch pan.state {
             case .began, .changed:
-                onChanged(translation)
+                // 方向锁定：位移足够大才判断，避免微小抖动误判
+                if !hasLockedDirection {
+                    if abs(t.x) < 6, abs(t.y) < 6 {
+                        return
+                    }
+                    isHorizontal = abs(t.x) > abs(t.y) * directionRatio
+                    hasLockedDirection = true
+                    
+                    // 关键：如果判定为竖向，主动取消 UIPan，让 ScrollView 接管
+                    if !isHorizontal {
+                        pan.isEnabled = false
+                        pan.isEnabled = true
+                        hasLockedDirection = false
+                        return
+                    }
+                }
+                guard isHorizontal else { return }
+                onChanged(t.x)
             case .ended, .cancelled, .failed:
+                defer {
+                    hasLockedDirection = false
+                    isHorizontal = false
+                }
+                guard isHorizontal else { return }
                 let velocityX = pan.velocity(in: hostView).x
-                onEnded(translation, velocityX)
+                onEnded(t.x, velocityX)
             default:
                 break
             }

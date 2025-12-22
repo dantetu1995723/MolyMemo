@@ -1,7 +1,16 @@
 import SwiftUI
+import Combine
 
 struct InvoiceCardStackView: View {
     @Binding var invoices: [InvoiceCard]
+
+    /// 短按打开详情（由外部打开 InvoiceDetailSheet）
+    var onOpenDetail: ((InvoiceCard) -> Void)? = nil
+    /// 删除回调（外部可做二次确认）；不提供则默认直接从数组移除
+    var onDeleteRequest: ((InvoiceCard) -> Void)? = nil
+
+    @State private var menuInvoiceId: UUID? = nil
+    @State private var lastMenuOpenedAt: CFTimeInterval = 0
     
     // Constants
     private let cardWidth: CGFloat = 300
@@ -20,9 +29,58 @@ struct InvoiceCardStackView: View {
             } else {
                 VStack(spacing: 12) {
                     ForEach(0..<invoices.count, id: \.self) { index in
-                        InvoiceCardView(invoice: invoices[index])
+                        let invoice = invoices[index]
+                        InvoiceCardView(invoice: invoice)
                             .frame(width: cardWidth, height: cardHeight)
                             .shadow(color: Color.black.opacity(0.1), radius: 10, x: 0, y: 5)
+                            .contentShape(Rectangle())
+                            // 短按：未选中时打开详情；选中（菜单打开）时再次短按取消选中
+                            .onTapGesture {
+                                if menuInvoiceId == invoice.id {
+                                    withAnimation { menuInvoiceId = nil }
+                                    return
+                                }
+                                guard CACurrentMediaTime() - lastMenuOpenedAt > 0.18 else { return }
+                                onOpenDetail?(invoice)
+                            }
+                            // 长按：打开胶囊菜单（与日程一致）
+                            .onLongPressGesture(minimumDuration: 0.12, maximumDistance: 20) {
+                                guard menuInvoiceId == nil else { return }
+                                lastMenuOpenedAt = CACurrentMediaTime()
+                                HapticFeedback.medium()
+                                withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                                    menuInvoiceId = invoice.id
+                                }
+                            }
+                            // 胶囊菜单：左上角上方（不改变卡片 UI）
+                            .overlay(alignment: .topLeading) {
+                                if menuInvoiceId == invoice.id {
+                                    CardCapsuleMenuView(
+                                        onEdit: {
+                                            withAnimation { menuInvoiceId = nil }
+                                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                                onOpenDetail?(invoice)
+                                            }
+                                        },
+                                        onDelete: {
+                                            withAnimation { menuInvoiceId = nil }
+                                            if let onDeleteRequest {
+                                                onDeleteRequest(invoice)
+                                            } else {
+                                                if let idx = invoices.firstIndex(where: { $0.id == invoice.id }) {
+                                                    withAnimation { invoices.remove(at: idx) }
+                                                }
+                                            }
+                                        },
+                                        onDismiss: {
+                                            withAnimation { menuInvoiceId = nil }
+                                        }
+                                    )
+                                    .offset(y: -60)
+                                    .transition(.opacity)
+                                    .zIndex(1000)
+                                }
+                            }
                     }
                 }
                 .padding(.top, 10) // 与人脉、日程卡片一致，ZStack的frame height是cardHeight+20，卡片居中，上方有10pt空间
@@ -38,6 +96,12 @@ struct InvoiceCardStackView: View {
                             .frame(width: 6, height: 6)
                     }
                 }
+            }
+        }
+        // 点击聊天空白处统一取消选中
+        .onReceive(NotificationCenter.default.publisher(for: .dismissScheduleMenu)) { _ in
+            if menuInvoiceId != nil {
+                withAnimation { menuInvoiceId = nil }
             }
         }
     }
