@@ -183,66 +183,64 @@ struct MeetingSummaryCardView: View {
         let isPlaying = isCurrent && playback.isPlaying
 
         VStack(alignment: .leading, spacing: 0) {
-            // 标题和播放按钮
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(meeting.title)
-                        .font(.custom("SourceHanSerifSC-Bold", size: 19))
-                        .foregroundColor(Color(hex: "333333"))
-                        .lineLimit(1)
-                    
-                    Text(meeting.formattedDate)
-                        .font(.system(size: 14))
-                        .foregroundColor(Color(hex: "999999"))
-                }
-                
-                Spacer()
-                
-                // 播放按钮 (蓝色背景，白色播放图标)
-                Button(action: {
-                    HapticFeedback.light()
-                    guard canPlay else { return }
-                    playback.togglePlay(meeting: meeting)
-                }) {
-                    ZStack {
-                        Circle()
-                            .fill(Color(hex: "007AFF")) // 标准 iOS 蓝色
-                            .frame(width: 38, height: 38)
-                            .opacity(canPlay ? 1.0 : 0.35)
-
-                        Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                            .font(.system(size: 16))
-                            .foregroundColor(.white)
-                            .offset(x: isPlaying ? 0 : 1) // 视觉居中偏移
+            if meeting.isGenerating {
+                // 生成中：保持卡片规格不变，卡片内部使用“空白 + loading”占位（不展示半成品标题/日期/播放按钮）
+                MeetingCardFullLoadingView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                // 标题和播放按钮
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(meeting.title)
+                            .font(.custom("SourceHanSerifSC-Bold", size: 19))
+                            .foregroundColor(Color(hex: "333333"))
+                            .lineLimit(1)
+                        
+                        Text(meeting.formattedDate)
+                            .font(.system(size: 14))
+                            .foregroundColor(Color(hex: "999999"))
                     }
+                    
+                    Spacer()
+                    
+                    // 播放按钮 (蓝色背景，白色播放图标)
+                    Button(action: {
+                        HapticFeedback.light()
+                        guard canPlay else { return }
+                        playback.togglePlay(meeting: meeting)
+                    }) {
+                        ZStack {
+                            Circle()
+                                .fill(Color(hex: "007AFF")) // 标准 iOS 蓝色
+                                .frame(width: 38, height: 38)
+                                .opacity(canPlay ? 1.0 : 0.35)
+
+                            Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                                .font(.system(size: 16))
+                                .foregroundColor(.white)
+                                .offset(x: isPlaying ? 0 : 1) // 视觉居中偏移
+                        }
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
-            }
-            .padding(.top, 24)
-            .padding(.horizontal, 24)
-            .padding(.bottom, 20)
-            
-            // 分隔线
-            Rectangle()
-                .fill(Color(hex: "F2F2F2"))
-                .frame(height: 1)
+                .padding(.top, 24)
                 .padding(.horizontal, 24)
-            
-            // 总结内容
-            Group {
-                if meeting.isGenerating {
-                    MeetingSummaryLoadingView()
-                        .padding(24)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                } else {
-                    Text(meeting.summary)
-                        .font(.system(size: 15))
-                        .foregroundColor(Color(hex: "333333").opacity(0.8))
-                        .lineSpacing(5)
-                        .lineLimit(4)
-                        .padding(24)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
+                .padding(.bottom, 20)
+                
+                // 分隔线
+                Rectangle()
+                    .fill(Color(hex: "F2F2F2"))
+                    .frame(height: 1)
+                    .padding(.horizontal, 24)
+                
+                // 总结内容
+                Text(meeting.summary)
+                    .font(.system(size: 15))
+                    .foregroundColor(Color(hex: "333333").opacity(0.8))
+                    .lineSpacing(5)
+                    .lineLimit(4)
+                    .padding(24)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
             
             Spacer(minLength: 0)
@@ -252,22 +250,31 @@ struct MeetingSummaryCardView: View {
     }
 }
 
-/// 卡片内「生成中」占位动画（不依赖 Timer，轻量）
-private struct MeetingSummaryLoadingView: View {
+/// 生成中：全卡片占位（保持卡片规格不变，只在内部显示 loading）
+private struct MeetingCardFullLoadingView: View {
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 10) {
-                ProgressView()
-                    .scaleEffect(0.9)
-                LoadingDotsText(base: "正在生成会议纪要")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(Color(hex: "666666"))
+        VStack(spacing: 16) {
+            Spacer(minLength: 0)
+            
+            ProgressView()
+                .scaleEffect(1.1)
+                .tint(Color(hex: "007AFF"))
+            
+            LoadingDotsText(base: "正在生成会议纪要")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundColor(Color(hex: "666666"))
+            
+            VStack(spacing: 12) {
+                SkeletonLine(widthFactor: 0.78)
+                SkeletonLine(widthFactor: 0.62)
+                SkeletonLine(widthFactor: 0.70)
             }
-
-            SkeletonLine(widthFactor: 0.95)
-            SkeletonLine(widthFactor: 0.85)
-            SkeletonLine(widthFactor: 0.70)
+            .padding(.horizontal, 48)
+            .padding(.top, 6)
+            
+            Spacer(minLength: 0)
         }
+        .padding(.vertical, 10)
         .accessibilityLabel("正在生成会议纪要")
     }
 }

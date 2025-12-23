@@ -36,6 +36,10 @@ class MeetingMinutesService {
         return fromDefaults.isEmpty ? nil : fromDefaults
     }
 
+    #if DEBUG
+    private static var didPrintSessionHeaderOnce: Bool = false
+    #endif
+
     private static func applyCommonHeaders(to request: inout URLRequest) throws {
         guard let sessionId = currentSessionId(), !sessionId.isEmpty else {
             print("❌ [MeetingMinutesService] 缺少 X-Session-Id：请先登录，或检查 AuthStore 是否成功保存 sessionId")
@@ -57,8 +61,11 @@ class MeetingMinutesService {
         #endif
 
         #if DEBUG
-        let masked = sessionId.count <= 8 ? "***" : "\(sessionId.prefix(4))...\(sessionId.suffix(4))"
-        print("🔐 [MeetingMinutesService] header X-Session-Id=\(masked)")
+        if !didPrintSessionHeaderOnce {
+            didPrintSessionHeaderOnce = true
+            let masked = sessionId.count <= 8 ? "***" : "\(sessionId.prefix(4))...\(sessionId.suffix(4))"
+            print("🔐 [MeetingMinutesService] header X-Session-Id=\(masked)")
+        }
         #endif
     }
     
@@ -106,6 +113,13 @@ class MeetingMinutesService {
             case audioUrl = "audio_url"
             case createdAt = "created_at"
         }
+    }
+
+    struct GeneratedMinutes {
+        let title: String?
+        let date: Date?
+        let summary: String
+        let transcriptions: [MeetingTranscription]?
     }
     
     /// 会议纪要列表项
@@ -316,6 +330,10 @@ class MeetingMinutesService {
     /// - Parameter id: 会议纪要ID
     /// - Returns: 会议纪要详情
     static func getMeetingMinutesDetail(id: String) async throws -> MeetingMinutesItem {
+        try await getMeetingMinutesDetail(id: id, verbose: false)
+    }
+
+    private static func getMeetingMinutesDetail(id: String, verbose: Bool) async throws -> MeetingMinutesItem {
         
         let base = try resolvedBaseURL()
         let urlString = "\(base)\(listEndpoint)/\(id)"
@@ -328,7 +346,9 @@ class MeetingMinutesService {
         request.httpMethod = "GET"
         try applyCommonHeaders(to: &request)
         
-        print("🎙️ [MeetingMinutesService] 获取会议纪要详情: \(urlString)")
+        if verbose {
+            print("🎙️ [MeetingMinutesService] 获取会议纪要详情: \(urlString)")
+        }
         
         // 发送请求
         let (data, response) = try await URLSession.shared.data(for: request)
@@ -338,12 +358,8 @@ class MeetingMinutesService {
             throw MeetingMinutesError.invalidResponse
         }
         
-        print("🎙️ [MeetingMinutesService] 响应状态码: \(httpResponse.statusCode)")
-        print("🎙️ [MeetingMinutesService] 响应数据大小: \(data.count) bytes")
-        if let raw = String(data: data, encoding: .utf8) {
-            print("🎙️ [MeetingMinutesService] 响应内容:\n\(raw)")
-        } else {
-            print("⚠️ [MeetingMinutesService] 响应内容无法解码为UTF8")
+        if verbose {
+            print("🎙️ [MeetingMinutesService] 响应状态码: \(httpResponse.statusCode)")
         }
         
         guard httpResponse.statusCode == 200 else {
@@ -400,10 +416,12 @@ class MeetingMinutesService {
             }
         }
         
-        print("✅ [MeetingMinutesService] 获取会议纪要详情成功: \(item.title ?? "无标题")")
-        let sumLen = (item.summary ?? item.meetingSummary)?.count ?? 0
-        let detailCount = item.meetingDetails?.count ?? 0
-        print("✅ [MeetingMinutesService] 解析结果：status=\(item.status ?? "nil"), summary_len=\(sumLen), transcriptions=\(item.transcriptions?.count ?? 0), meeting_details=\(detailCount)")
+        if verbose {
+            let sumLen = (item.summary ?? item.meetingSummary)?.count ?? 0
+            let detailCount = item.meetingDetails?.count ?? 0
+            let titleDesc = item.title?.trimmingCharacters(in: .whitespacesAndNewlines)
+            print("✅ [MeetingMinutesService] 解析结果：title=\(titleDesc?.isEmpty == false ? titleDesc! : "nil") status=\(item.status ?? "nil") summary_len=\(sumLen) meeting_details=\(detailCount)")
+        }
         
         return item
     }
@@ -422,7 +440,7 @@ class MeetingMinutesService {
         speakerCount: Int? = nil,
         enableTranslation: Bool = false,
         targetLanguages: String? = nil
-    ) async throws -> (summary: String, transcriptions: [MeetingTranscription]?) {
+    ) async throws -> GeneratedMinutes {
         
         print("🎙️ ========== POST 生成会议纪要 ==========")
         print("🎙️ [MeetingMinutesService] 音频文件: \(audioFileURL.path)")
@@ -544,8 +562,7 @@ class MeetingMinutesService {
                     content: content
                 )
             }
-            print("✅ [MeetingMinutesService] 同步返回会议纪要成功")
-            return (summary, transcriptions)
+            return GeneratedMinutes(title: nil, date: nil, summary: summary, transcriptions: transcriptions)
         }
 
         // 2) 异步结构：{ code/message/data: { id, status: pending } }
@@ -560,8 +577,7 @@ class MeetingMinutesService {
             throw MeetingMinutesError.emptyResult
         }
 
-        print("⏳ [MeetingMinutesService] 生成任务已创建：id=\(job.id), status=\(job.status ?? "nil")")
-        print("⏳ [MeetingMinutesService] 开始轮询获取结果（最多600秒）...")
+        print("⏳ [MeetingMinutesService] 生成任务已创建：id=\(job.id)")
 
         let item = try await pollMeetingMinutesResult(id: job.id, timeoutSeconds: 600)
         let finalSummary = (item.summary ?? item.meetingSummary)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -595,13 +611,14 @@ class MeetingMinutesService {
             return nil
         }()
 
-        print("✅ ========== 会议纪要生成成功（异步轮询） ==========")
-        print("✅ [MeetingMinutesService] 摘要长度: \(finalSummary.count) 字符")
-        print("✅ [MeetingMinutesService] 摘要预览: \(finalSummary.prefix(100))...")
-        print("✅ [MeetingMinutesService] 转写记录数: \(transcriptions?.count ?? 0)")
-        print("✅ ===============================================\n")
-
-        return (finalSummary, transcriptions)
+        let resolvedTitle = item.title?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedDate = parseMeetingDate(item: item)
+        return GeneratedMinutes(
+            title: (resolvedTitle?.isEmpty == false) ? resolvedTitle : nil,
+            date: resolvedDate,
+            summary: finalSummary,
+            transcriptions: transcriptions
+        )
     }
 
     // MARK: - Polling
@@ -610,26 +627,22 @@ class MeetingMinutesService {
         let start = Date()
         var attempt = 0
         var delayMs: UInt64 = 800
-        var sawNilStatusCount = 0
+        var lastKey: String? = nil
 
         while Date().timeIntervalSince(start) < timeoutSeconds {
             attempt += 1
             do {
-                let item = try await getMeetingMinutesDetail(id: id)
+                let item = try await getMeetingMinutesDetail(id: id, verbose: attempt == 1)
                 let status = (item.status ?? "").lowercased()
                 let hasSummary = !((item.summary ?? item.meetingSummary) ?? "")
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                     .isEmpty
 
-                print("⏳ [MeetingMinutesService] poll#\(attempt) status=\(status.isEmpty ? "nil" : status) hasSummary=\(hasSummary)")
-
-                if status.isEmpty {
-                    sawNilStatusCount += 1
-                    if sawNilStatusCount == 3 {
-                        print("⚠️ [MeetingMinutesService] 连续多次 status=nil，可能是后端字段名不同（比如 state/job_status），已启用宽松解析；请关注上面打印的响应内容。")
-                    }
-                } else {
-                    sawNilStatusCount = 0
+                // 控制台降噪：只在状态/hasSummary 变化或每 12 次打印一次
+                let key = "\(status.isEmpty ? "nil" : status)|\(hasSummary)"
+                if lastKey != key || attempt % 12 == 0 {
+                    lastKey = key
+                    print("⏳ [MeetingMinutesService] poll#\(attempt) status=\(status.isEmpty ? "nil" : status) hasSummary=\(hasSummary)")
                 }
 
                 if status.contains("fail") || status.contains("error") {
@@ -640,7 +653,9 @@ class MeetingMinutesService {
                 }
             } catch {
                 // 轮询期间的偶发错误不立刻终止（例如网络波动），打印后继续
-                print("⚠️ [MeetingMinutesService] poll#\(attempt) 请求失败：\(error.localizedDescription)")
+                if attempt == 1 || attempt % 12 == 0 {
+                    print("⚠️ [MeetingMinutesService] poll#\(attempt) 请求失败：\(error.localizedDescription)")
+                }
             }
 
             try await Task.sleep(nanoseconds: delayMs * 1_000_000)
@@ -749,6 +764,24 @@ class MeetingMinutesService {
         let m = (total % 3600) / 60
         let s = total % 60
         return String(format: "%02d:%02d:%02d", h, m, s)
+    }
+
+    private static func parseMeetingDate(item: MeetingMinutesItem) -> Date? {
+        if let dateString = item.meetingDate ?? item.date {
+            let df = DateFormatter()
+            df.locale = Locale(identifier: "zh_CN")
+            df.dateFormat = "yyyy-MM-dd"
+            if let d = df.date(from: dateString) { return d }
+            let iso = ISO8601DateFormatter()
+            iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            if let d = iso.date(from: dateString) { return d }
+        }
+        if let createdAt = item.createdAt {
+            let iso = ISO8601DateFormatter()
+            iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            return iso.date(from: createdAt)
+        }
+        return nil
     }
 }
 

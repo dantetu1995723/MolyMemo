@@ -521,18 +521,18 @@ struct MeetingRecordView: View {
                     transcriptionProgress = "正在生成会议纪要..."
                 }
                 
-                let (meetingSummary, transcriptions) = try await MeetingMinutesService.generateMeetingMinutes(
+                let result = try await MeetingMinutesService.generateMeetingMinutes(
                     audioFileURL: audioURL
                 )
                 
                 await MainActor.run {
                     // 更新录音项的会议纪要
                     if let index = recordingItems.firstIndex(where: { $0.id == item.id }) {
-                        recordingItems[index].meetingSummary = meetingSummary
+                        recordingItems[index].meetingSummary = result.summary
                         
                         // 保存到数据库
                         if let meeting = allMeetings.first(where: { $0.id == item.id }) {
-                            meeting.content = meetingSummary
+                            meeting.content = result.summary
                             do {
                                 try modelContext.save()
                                 print("✅ 会议纪要已保存到数据库")
@@ -542,7 +542,7 @@ struct MeetingRecordView: View {
                         }
                         
                         // 同步更新聊天室中的会议卡片
-                        updateMeetingCardInChat(item: item, summary: meetingSummary, transcriptions: transcriptions)
+                        updateMeetingCardInChat(item: item, title: result.title, summary: result.summary, transcriptions: result.transcriptions)
                         
                         // 自动展开该项
                         withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
@@ -569,13 +569,16 @@ struct MeetingRecordView: View {
     }
     
     /// 更新聊天室中的会议卡片
-    private func updateMeetingCardInChat(item: RecordingItem, summary: String, transcriptions: [MeetingTranscription]?) {
+    private func updateMeetingCardInChat(item: RecordingItem, title: String?, summary: String, transcriptions: [MeetingTranscription]?) {
         // 遍历聊天消息，找到对应的会议卡片并更新
         for i in 0..<appState.chatMessages.count {
             if let meetings = appState.chatMessages[i].meetings {
                 for j in 0..<meetings.count {
                     if meetings[j].id == item.id {
                         // 找到对应的卡片，更新摘要和转写记录
+                        if let title, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            appState.chatMessages[i].meetings?[j].title = title
+                        }
                         appState.chatMessages[i].meetings?[j].summary = summary
                         appState.chatMessages[i].meetings?[j].transcriptions = transcriptions
                         

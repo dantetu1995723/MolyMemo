@@ -226,12 +226,12 @@ struct YuanyuanApp: App {
                             let audioURL = URL(fileURLWithPath: audioPath)
                             print("📤 [YuanyuanApp] 开始调用后端API...")
                             
-                            let (summary, transcriptions) = try await MeetingMinutesService.generateMeetingMinutes(
+                            let result = try await MeetingMinutesService.generateMeetingMinutes(
                                 audioFileURL: audioURL
                             )
                             
                             print("✅ [YuanyuanApp] 后端返回成功!")
-                            print("✅ [YuanyuanApp] 摘要长度: \(summary.count)")
+                            print("✅ [YuanyuanApp] 摘要长度: \(result.summary.count)")
                             
                             // 更新卡片内容
                             await MainActor.run {
@@ -239,8 +239,14 @@ struct YuanyuanApp: App {
                                 if let lastIndex = appState.chatMessages.lastIndex(where: { $0.meetings != nil }) {
                                     if var meetings = appState.chatMessages[lastIndex].meetings,
                                        let meetingIndex = meetings.lastIndex(where: { $0.audioPath == audioPath }) {
-                                        meetings[meetingIndex].summary = summary
-                                        meetings[meetingIndex].transcriptions = transcriptions
+                                        if let newTitle = result.title, !newTitle.isEmpty {
+                                            meetings[meetingIndex].title = newTitle
+                                        }
+                                        if let newDate = result.date {
+                                            meetings[meetingIndex].date = newDate
+                                        }
+                                        meetings[meetingIndex].summary = result.summary
+                                        meetings[meetingIndex].transcriptions = result.transcriptions
                                         meetings[meetingIndex].isGenerating = false
                                         appState.chatMessages[lastIndex].meetings = meetings
                                         appState.saveMessageToStorage(appState.chatMessages[lastIndex], modelContext: modelContainer.mainContext)

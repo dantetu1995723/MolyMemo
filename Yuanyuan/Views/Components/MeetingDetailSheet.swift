@@ -61,9 +61,17 @@ struct MeetingDetailSheet: View {
                     VStack(alignment: .leading, spacing: 30) {
                         // 2. 标题和日期
                         VStack(alignment: .leading, spacing: 10) {
-                            Text(meeting.title)
-                                .font(.system(size: 26, weight: .bold))
-                                .foregroundColor(Color(hex: "333333"))
+                            HStack(spacing: 10) {
+                                Text(meeting.title)
+                                    .font(.system(size: 26, weight: .bold))
+                                    .foregroundColor(Color(hex: "333333"))
+
+                                if meeting.isGenerating {
+                                    ProgressView()
+                                        .scaleEffect(0.9)
+                                        .tint(Color(hex: "007AFF"))
+                                }
+                            }
                             
                             Text(meeting.formattedDate)
                                 .font(.system(size: 16))
