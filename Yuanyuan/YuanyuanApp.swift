@@ -75,6 +75,12 @@ struct YuanyuanApp: App {
                     
                     // App首次启动时，开始新session
                     appState.startNewSession()
+
+                    // 兜底：如果 AppIntent 因 openAppWhenRun 启动了主App，但 Darwin 通知在监听注册前发出而丢失，
+                    // 这里会主动拉取 pending command，确保“一次点击就生效”。
+                    Task { @MainActor in
+                        RecordingCommandProcessor.shared.processIfNeeded(source: "app:onAppear")
+                    }
                 }
                 .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("TriggerScreenshotAnalysis"))) { notification in
                     print("🎯 收到截图分析触发通知")
@@ -245,6 +251,7 @@ struct YuanyuanApp: App {
                                         if let newDate = result.date {
                                             meetings[meetingIndex].date = newDate
                                         }
+                                        meetings[meetingIndex].remoteId = result.id
                                         meetings[meetingIndex].summary = result.summary
                                         meetings[meetingIndex].transcriptions = result.transcriptions
                                         meetings[meetingIndex].isGenerating = false
@@ -324,6 +331,11 @@ struct YuanyuanApp: App {
         case .active:
             // App进入前台
             print("🌅 App进入前台")
+
+            // 兜底：从后台/被系统唤起时，主动处理一次 pending command（带时间戳去重）。
+            Task { @MainActor in
+                RecordingCommandProcessor.shared.processIfNeeded(source: "app:scenePhase.active")
+            }
             
             // 如果是从后台返回（不是首次启动），开始新session
             if oldPhase == .background {

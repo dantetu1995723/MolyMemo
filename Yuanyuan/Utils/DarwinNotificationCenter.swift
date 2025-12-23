@@ -41,7 +41,11 @@ enum RecordingSharedDefaults {
     /// - true: 展示（默认）
     /// - false: 只录音/内部转写，但不把转写文本推到 UI（避免出现“蓝色球/歌词滚动”）
     static let publishTranscriptionToUIKey = "recording.publishTranscriptionToUI"
+    /// 最近一次来自 Widget/AppIntent 的命令类型（start/pause/resume/stop），用于兜底处理。
+    static let pendingCommandKey = "recording.pendingCommand"
     static let commandTimestampKey = "recording.commandTimestamp"
+    /// 主App已处理的最后一次命令时间戳，用于去重（避免 Darwin + onAppear 重复执行）。
+    static let lastHandledTimestampKey = "recording.lastHandledTimestamp"
 }
 
 

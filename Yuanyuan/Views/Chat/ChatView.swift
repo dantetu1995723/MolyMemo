@@ -298,7 +298,7 @@ struct ChatView: View {
                         meeting: Binding(
                             get: {
                                 appState.chatMessages[msgIndex].meetings?[meetingIndex]
-                                ?? MeetingCard(title: "", date: Date(), summary: "")
+                                ?? MeetingCard(remoteId: nil, title: "", date: Date(), summary: "")
                             },
                             set: { appState.chatMessages[msgIndex].meetings?[meetingIndex] = $0 }
                         )

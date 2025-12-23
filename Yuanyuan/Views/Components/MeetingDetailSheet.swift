@@ -7,11 +7,15 @@ struct MeetingDetailSheet: View {
     @StateObject private var playback = RecordingPlaybackController.shared
     @State private var isScrubbing: Bool = false
     @State private var scrubValue: Double = 0
+    @State private var isLoading = false
+    @State private var loadError: String?
+    @State private var didFetchOnAppear: Bool = false
     
     var body: some View {
         let canPlay = playback.canPlay(meeting: meeting)
         let isCurrent = playback.isCurrent(meeting: meeting)
         let isPlaying = isCurrent && playback.isPlaying
+        let isDownloading = isCurrent && playback.isDownloading
         let duration = max(playback.duration, 0.0001)
         let progressValue = isScrubbing ? scrubValue : min(max(playback.currentTime / duration, 0), 1)
         let currentTimeLabel = formatHMS(isScrubbing ? scrubValue * duration : playback.currentTime)
@@ -78,6 +82,31 @@ struct MeetingDetailSheet: View {
                                 .foregroundColor(Color(hex: "999999"))
                         }
                         .padding(.horizontal, 24)
+                        
+                        if isLoading {
+                            HStack(spacing: 12) {
+                                ProgressView()
+                                    .tint(Color(hex: "007AFF"))
+                                Text("正在更新会议详情...")
+                                    .font(.system(size: 15))
+                                    .foregroundColor(Color(hex: "999999"))
+                            }
+                            .padding(.horizontal, 24)
+                        } else if let error = loadError {
+                            HStack(spacing: 8) {
+                                Image(systemName: "exclamationmark.circle.fill")
+                                    .foregroundColor(.red)
+                                Text(error)
+                                    .font(.system(size: 14))
+                                    .foregroundColor(.red)
+                                Button("重试") {
+                                    Task { await fetchDetails() }
+                                }
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundColor(Color(hex: "007AFF"))
+                            }
+                            .padding(.horizontal, 24)
+                        }
                         
                         // 3. 智能总结区块
                         VStack(alignment: .leading, spacing: 14) {
@@ -224,11 +253,16 @@ struct MeetingDetailSheet: View {
                                     .fill(Color(hex: "007AFF"))
                                     .frame(width: 68, height: 68)
                                     .shadow(color: Color(hex: "007AFF").opacity(0.3), radius: 8, x: 0, y: 4)
-                                
-                                Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                                    .font(.system(size: 30))
-                                    .foregroundColor(.white)
-                                    .offset(x: isPlaying ? 0 : 3)
+
+                                if isDownloading {
+                                    ProgressView()
+                                        .tint(.white)
+                                } else {
+                                    Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                                        .font(.system(size: 30))
+                                        .foregroundColor(.white)
+                                        .offset(x: isPlaying ? 0 : 3)
+                                }
                             }
                         }
                         .disabled(!canPlay)
@@ -255,6 +289,72 @@ struct MeetingDetailSheet: View {
                 )
             }
             .ignoresSafeArea(edges: .bottom)
+        }
+        .task {
+            // 如果有远程ID，自动获取详情以更新内容（特别是转写记录）
+            guard !didFetchOnAppear else { return }
+            didFetchOnAppear = true
+            if meeting.remoteId != nil { await fetchDetails() }
+        }
+    }
+
+    @MainActor
+    private func fetchDetails() async {
+        guard let remoteId = meeting.remoteId else { return }
+        
+        isLoading = true
+        loadError = nil
+        
+        do {
+            print("🌐 [MeetingDetailSheet] GET 会议详情: id=\(remoteId)")
+            let item = try await MeetingMinutesService.getMeetingMinutesDetail(id: remoteId)
+            
+            // 更新标题（如果不为空）
+            if let newTitle = item.title, !newTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                meeting.title = newTitle
+            }
+            
+            // 更新摘要
+            if let newSummary = item.summary ?? item.meetingSummary {
+                meeting.summary = newSummary
+            }
+            
+            // 更新转写记录
+            if let details = item.meetingDetails, !details.isEmpty {
+                meeting.transcriptions = details.compactMap { d in
+                    guard let text = d.text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+                    let speaker = (d.speakerName?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
+                        ? d.speakerName!
+                        : ("说话人" + (d.speakerId ?? ""))
+                    let time = formatHMS(d.startTime ?? 0)
+                    return MeetingTranscription(speaker: speaker, time: time, content: text)
+                }
+            } else if let ts = item.transcriptions, !ts.isEmpty {
+                meeting.transcriptions = ts.compactMap { t in
+                    guard let content = t.content, !content.isEmpty else { return nil }
+                    return MeetingTranscription(
+                        speaker: t.speaker ?? "说话人",
+                        time: t.time ?? "00:00:00",
+                        content: content
+                    )
+                }
+            }
+            
+            // 更新时长和路径
+            if let duration = item.duration {
+                meeting.duration = duration
+            }
+            // 音频：audio_url 作为远程原始文件链接；audio_path 可能是服务端路径，不保证本地可用
+            if let audioUrl = item.audioUrl, !audioUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                meeting.audioRemoteURL = audioUrl
+            }
+            
+            print("✅ [MeetingDetailSheet] 会议详情已更新")
+            isLoading = false
+        } catch {
+            print("❌ [MeetingDetailSheet] 获取详情失败: \(error)")
+            loadError = "详情更新失败: \(error.localizedDescription)"
+            isLoading = false
         }
     }
 

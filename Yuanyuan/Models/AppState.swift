@@ -172,11 +172,14 @@ struct InvoiceCard: Identifiable, Equatable, Codable {
 // 会议纪要卡片数据
 struct MeetingCard: Identifiable, Equatable, Codable {
     var id = UUID()
+    var remoteId: String? = nil  // 远程服务器ID
     var title: String
     var date: Date
     var summary: String
     var duration: TimeInterval?
     var audioPath: String?
+    /// 后端返回的原始录音文件 URL（可用于下载到本地后播放）
+    var audioRemoteURL: String? = nil
     var transcriptions: [MeetingTranscription]?
     /// 是否正在生成会议纪要（后端异步处理中）
     var isGenerating: Bool = false

@@ -1569,9 +1569,32 @@ struct ChatTextField: UIViewRepresentable {
     class Coordinator: NSObject, UITextFieldDelegate {
         var parent: ChatTextField
         weak var textField: UITextField?
+        private var didStartLongPressForCurrentGesture: Bool = false
+        private var ignoreLongPressUntil: Date = Date()
+        private var didBecomeActiveObserver: NSObjectProtocol?
         
         init(_ parent: ChatTextField) {
             self.parent = parent
+            super.init()
+            
+            // 关键修复：
+            // 灵动岛/通知唤回 App 的瞬间，用户的“同一次按压”可能被 UIKit 投递到新出现的 UITextField 上，
+            // 导致 UILongPressGestureRecognizer 立即进入 .began，从而误触发语音转文字。
+            // 这里在 App 刚回到前台的短窗口内抑制 long press，只影响误触发，不影响正常长按灵敏度。
+            ignoreLongPressUntil = Date().addingTimeInterval(0.35)
+            didBecomeActiveObserver = NotificationCenter.default.addObserver(
+                forName: UIApplication.didBecomeActiveNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                self?.ignoreLongPressUntil = Date().addingTimeInterval(0.35)
+            }
+        }
+        
+        deinit {
+            if let token = didBecomeActiveObserver {
+                NotificationCenter.default.removeObserver(token)
+            }
         }
         
         @objc func textChanged(_ textField: UITextField) {
@@ -1580,6 +1603,12 @@ struct ChatTextField: UIViewRepresentable {
         
         @objc func handleLongPress(_ gesture: UILongPressGestureRecognizer) {
             if gesture.state == .began {
+                // 前台恢复/视图重建后的误触发抑制
+                guard Date() >= ignoreLongPressUntil else {
+                    didStartLongPressForCurrentGesture = false
+                    return
+                }
+                didStartLongPressForCurrentGesture = true
                 // 长按时触发触觉反馈
                 HapticFeedback.medium()
                 // 长按时直接触发录音，保持键盘弹起状态（不调用resignFirstResponder）
@@ -1587,6 +1616,9 @@ struct ChatTextField: UIViewRepresentable {
             } else if gesture.state == .ended || gesture.state == .cancelled || gesture.state == .failed {
                 // 长按结束、取消或失败，都触发松开事件
                 print("🔵 UILongPressGestureRecognizer state: \(gesture.state.rawValue)")
+                // 只有真正触发过开始事件，才允许结束事件继续向上传递，避免“没开始却 stop”的竞态。
+                guard didStartLongPressForCurrentGesture else { return }
+                didStartLongPressForCurrentGesture = false
                 // 使用主线程确保立即执行
                 DispatchQueue.main.async {
                     print("🔵 调用 onLongPressEnd")

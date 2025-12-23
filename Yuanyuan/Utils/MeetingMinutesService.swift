@@ -54,10 +54,19 @@ class MeetingMinutesService {
         let build = (Bundle.main.infoDictionary?["CFBundleVersion"] as? String) ?? ""
         let osVersion = UIDevice.current.systemVersion
         let deviceId = UIDevice.current.identifierForVendor?.uuidString ?? ""
+        let appId = Bundle.main.bundleIdentifier ?? ""
+        request.setValue(appId, forHTTPHeaderField: "X-App-Id")
         request.setValue(appVersion.isEmpty ? "" : "\(appVersion) (\(build))", forHTTPHeaderField: "X-App-Version")
         request.setValue(deviceId, forHTTPHeaderField: "X-Device-Id")
         request.setValue("iOS", forHTTPHeaderField: "X-OS-Type")
         request.setValue(osVersion, forHTTPHeaderField: "X-OS-Version")
+
+        // 地理信息：当前工程未接入定位，先留空（与聊天请求保持一致）
+        request.setValue("", forHTTPHeaderField: "X-Longitude")
+        request.setValue("", forHTTPHeaderField: "X-Latitude")
+        request.setValue("", forHTTPHeaderField: "X-Address")
+        request.setValue("", forHTTPHeaderField: "X-City")
+        request.setValue("", forHTTPHeaderField: "X-Country")
         #endif
 
         #if DEBUG
@@ -101,6 +110,26 @@ class MeetingMinutesService {
         }
     }
 
+    /// 列表分页包裹：后端可能返回 { data: { items: [...], page, page_size, total } }
+    private struct PagedList<T: Decodable>: Decodable {
+        let items: [T]?
+        let list: [T]?
+        let rows: [T]?
+        let records: [T]?
+        let total: Int?
+        let page: Int?
+        let pageSize: Int?
+
+        enum CodingKeys: String, CodingKey {
+            case items, list, rows, records, total, page
+            case pageSize = "page_size"
+        }
+
+        var resolvedItems: [T] {
+            items ?? list ?? rows ?? records ?? []
+        }
+    }
+
     // POST /generate 返回的异步任务信息（你截图里的结构）
     private struct GenerateJob: Decodable {
         let id: String
@@ -116,6 +145,7 @@ class MeetingMinutesService {
     }
 
     struct GeneratedMinutes {
+        let id: String?
         let title: String?
         let date: Date?
         let summary: String
@@ -194,6 +224,18 @@ class MeetingMinutesService {
             case pageSize = "page_size"
             case error
             case message
+        }
+    }
+
+    /// 会议纪要列表响应（v2：data 为对象，内部含 items/分页字段）
+    private struct MeetingMinutesListResponseV2: Decodable {
+        let success: Bool?
+        let data: PagedList<MeetingMinutesItem>?
+        let error: String?
+        let message: String?
+
+        enum CodingKeys: String, CodingKey {
+            case success, data, error, message
         }
     }
     
@@ -291,18 +333,48 @@ class MeetingMinutesService {
                 return items
             }
 
-            // 2) 新结构：{ code, message, data: [...] }
-            let env = try JSONDecoder().decode(APIEnvelope<[MeetingMinutesItem]>.self, from: data)
-            print("🔄 [MeetingMinutesService] JSON解析成功（APIEnvelope<[MeetingMinutesItem]>）")
-            if let success = env.success, !success {
-                let msg = env.error ?? env.message ?? "获取列表失败"
+            // 2) 结构：{ success, data: { items: [...], page, page_size, total } }
+            if let resultV2 = try? JSONDecoder().decode(MeetingMinutesListResponseV2.self, from: data) {
+                print("🔄 [MeetingMinutesService] JSON解析成功（MeetingMinutesListResponseV2）")
+                if let success = resultV2.success, !success {
+                    let msg = resultV2.error ?? resultV2.message ?? "获取列表失败"
+                    throw MeetingMinutesError.serverError(msg)
+                }
+                let items = resultV2.data?.resolvedItems ?? []
+                print("✅ [MeetingMinutesService] 获取到 \(items.count) 条会议纪要")
+                print("🌐 ========================================\n")
+                return items
+            }
+
+            // 3) 新结构：{ code, message, data: [...] }
+            if let env = try? JSONDecoder().decode(APIEnvelope<[MeetingMinutesItem]>.self, from: data) {
+                print("🔄 [MeetingMinutesService] JSON解析成功（APIEnvelope<[MeetingMinutesItem]>）")
+                if let success = env.success, !success {
+                    let msg = env.error ?? env.message ?? "获取列表失败"
+                    throw MeetingMinutesError.serverError(msg)
+                }
+                if let code = env.code, !(200...299).contains(code) {
+                    let msg = env.error ?? env.message ?? "获取列表失败（code=\(code)）"
+                    throw MeetingMinutesError.serverError(msg)
+                }
+                let items = env.data ?? []
+                print("✅ [MeetingMinutesService] 获取到 \(items.count) 条会议纪要")
+                print("🌐 ========================================\n")
+                return items
+            }
+
+            // 4) 结构：{ code, message, data: { items: [...], page, page_size, total } }
+            let envV2 = try JSONDecoder().decode(APIEnvelope<PagedList<MeetingMinutesItem>>.self, from: data)
+            print("🔄 [MeetingMinutesService] JSON解析成功（APIEnvelope<PagedList<MeetingMinutesItem>>）")
+            if let success = envV2.success, !success {
+                let msg = envV2.error ?? envV2.message ?? "获取列表失败"
                 throw MeetingMinutesError.serverError(msg)
             }
-            if let code = env.code, !(200...299).contains(code) {
-                let msg = env.error ?? env.message ?? "获取列表失败（code=\(code)）"
+            if let code = envV2.code, !(200...299).contains(code) {
+                let msg = envV2.error ?? envV2.message ?? "获取列表失败（code=\(code)）"
                 throw MeetingMinutesError.serverError(msg)
             }
-            let items = env.data ?? []
+            let items = envV2.data?.resolvedItems ?? []
             print("✅ [MeetingMinutesService] 获取到 \(items.count) 条会议纪要")
             print("🌐 ========================================\n")
             return items
@@ -330,7 +402,12 @@ class MeetingMinutesService {
     /// - Parameter id: 会议纪要ID
     /// - Returns: 会议纪要详情
     static func getMeetingMinutesDetail(id: String) async throws -> MeetingMinutesItem {
-        try await getMeetingMinutesDetail(id: id, verbose: false)
+        #if DEBUG
+        // Debug 下强制打印请求与解析摘要，便于验证“是否触发了 GET”
+        return try await getMeetingMinutesDetail(id: id, verbose: true)
+        #else
+        return try await getMeetingMinutesDetail(id: id, verbose: false)
+        #endif
     }
 
     private static func getMeetingMinutesDetail(id: String, verbose: Bool) async throws -> MeetingMinutesItem {
@@ -562,7 +639,7 @@ class MeetingMinutesService {
                     content: content
                 )
             }
-            return GeneratedMinutes(title: nil, date: nil, summary: summary, transcriptions: transcriptions)
+            return GeneratedMinutes(id: nil, title: nil, date: nil, summary: summary, transcriptions: transcriptions)
         }
 
         // 2) 异步结构：{ code/message/data: { id, status: pending } }
@@ -614,6 +691,7 @@ class MeetingMinutesService {
         let resolvedTitle = item.title?.trimmingCharacters(in: .whitespacesAndNewlines)
         let resolvedDate = parseMeetingDate(item: item)
         return GeneratedMinutes(
+            id: item.id,
             title: (resolvedTitle?.isEmpty == false) ? resolvedTitle : nil,
             date: resolvedDate,
             summary: finalSummary,

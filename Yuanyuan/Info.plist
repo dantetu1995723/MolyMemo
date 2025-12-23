@@ -43,5 +43,19 @@
 	<array>
 		<string>SourceHanSerifSC-Bold.otf</string>
 	</array>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSExceptionDomains</key>
+		<dict>
+			<!-- 开发环境：允许内网后端使用 HTTP（仅限该 IP） -->
+			<key>192.168.106.108</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+				<key>NSIncludesSubdomains</key>
+				<true/>
+			</dict>
+		</dict>
+	</dict>
 </dict>
 </plist>

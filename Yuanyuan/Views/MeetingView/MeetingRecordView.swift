@@ -146,26 +146,13 @@ struct MeetingRecordView: View {
     @State private var loadError: String?
     @State private var searchText: String = ""
     
-    // 播放状态
-    @State private var audioPlayer: AVAudioPlayer?
-    @State private var playingRecordingId: UUID?
-    @State private var playbackTimer: Timer?
-    @State private var playbackProgress: TimeInterval = 0
-    
-    // 转换状态
-    @State private var transcribingRecordingId: UUID?
-    @State private var transcriptionProgress: String = ""
-    
     // UI动画状态
     @State private var showContent = false
     @State private var showHeader = false
     
-    // 折叠状态（录音项的折叠）
-    @State private var expandedRecordings: Set<UUID> = []
-    
-    // 重命名状态
-    @State private var renamingRecordingId: UUID?
-    @State private var newTitle: String = ""
+    // 会议详情 Sheet
+    @State private var showingDetailSheet = false
+    @State private var selectedMeetingCard: MeetingCard?
     
     init(showAddSheet: Binding<Bool> = .constant(false)) {
         self._showAddSheet = showAddSheet
@@ -221,35 +208,31 @@ struct MeetingRecordView: View {
                                     ForEach(recordingItems) { item in
                                         RecordingItemCard(
                                             item: item,
-                                            isPlaying: playingRecordingId == item.id,
-                                            playbackProgress: playingRecordingId == item.id ? playbackProgress : 0,
-                                            duration: item.duration,
-                                            isTranscribing: transcribingRecordingId == item.id,
-                                            transcriptionProgress: transcriptionProgress,
-                                            isExpanded: expandedRecordings.contains(item.id),
-                                            onPlay: {
-                                                playRecording(item)
-                                            },
-                                            onStop: {
-                                                stopPlaying()
-                                            },
-                                            onTranscribe: {
-                                                transcribeRecording(item)
-                                            },
-                                            onToggle: {
-                                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                                    if expandedRecordings.contains(item.id) {
-                                                        expandedRecordings.remove(item.id)
-                                                    } else {
-                                                        expandedRecordings.insert(item.id)
-                                                    }
-                                                }
-                                            },
-                                            onRename: {
-                                                startRenaming(item)
-                                            },
-                                            onCopyAndShare: {
-                                                copyAndShareRecording(item)
+                                            onTap: {
+                                                // 转换为 MeetingCard 并显示详情页
+                                                let remoteURLString: String? = {
+                                                    guard let u = item.audioURL, !u.isFileURL else { return nil }
+                                                    return u.absoluteString
+                                                }()
+                                                let localPath: String? = {
+                                                    guard let u = item.audioURL, u.isFileURL else { return nil }
+                                                    return u.path
+                                                }()
+                                                let card = MeetingCard(
+                                                    id: item.id,
+                                                    remoteId: item.remoteId,
+                                                    title: item.title,
+                                                    date: item.createdAt,
+                                                    // 不使用 list 接口的摘要/转写，强制以详情 GET 的返回为准
+                                                    summary: "",
+                                                    duration: item.duration,
+                                                    audioPath: localPath,
+                                                    audioRemoteURL: remoteURLString,
+                                                    transcriptions: nil,
+                                                    isGenerating: false
+                                                )
+                                                selectedMeetingCard = card
+                                                showingDetailSheet = true
                                             },
                                             onDelete: {
                                                 deleteRecording(item)
@@ -279,28 +262,16 @@ struct MeetingRecordView: View {
             )
         }
         .toolbar(.hidden, for: .navigationBar)
-        .alert("重命名会议", isPresented: Binding(
-            get: { renamingRecordingId != nil },
-            set: { if !$0 { renamingRecordingId = nil } }
-        )) {
-            TextField("输入新标题", text: $newTitle)
-                .onChange(of: newTitle) { oldValue, newValue in
-                    // 限制最多50个字符
-                    if newValue.count > 50 {
-                        newTitle = String(newValue.prefix(50))
-                    }
-                }
-            Button("取消", role: .cancel) {
-                renamingRecordingId = nil
+        .sheet(isPresented: $showingDetailSheet) {
+            if selectedMeetingCard != nil {
+                MeetingDetailSheet(meeting: Binding(
+                    get: {
+                        selectedMeetingCard
+                            ?? MeetingCard(remoteId: nil, title: "", date: Date(), summary: "")
+                    },
+                    set: { selectedMeetingCard = $0 }
+                ))
             }
-            Button("确定") {
-                if let id = renamingRecordingId,
-                   let item = recordingItems.first(where: { $0.id == id }) {
-                    saveRename(item)
-                }
-            }
-        } message: {
-            Text("为这个会议录音设置一个新标题（最多50字）")
         }
         .onAppear {
             // 立即显示内容，不要延迟
@@ -314,11 +285,6 @@ struct MeetingRecordView: View {
             
             // 先加载已有的录音（轻量操作）
             loadRecordingsFromMeetings()
-            
-            // 音频会话配置延迟到后台执行，避免阻塞UI
-            DispatchQueue.global(qos: .userInitiated).async {
-                setupAudio()
-            }
             
             // 延迟恢复孤立录音（避免和App终止时的保存操作冲突）
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
@@ -361,17 +327,6 @@ struct MeetingRecordView: View {
     
     // MARK: - 录音控制方法
     
-    private func setupAudio() {
-        let audioSession = AVAudioSession.sharedInstance()
-        do {
-            try audioSession.setCategory(.playAndRecord, mode: .default)
-            try audioSession.setActive(true)
-            print("✅ 音频会话配置成功")
-        } catch {
-            print("❌ 音频会话配置失败: \(error)")
-        }
-    }
-    
     private func loadRecordingsFromMeetings() {
         // 使用异步任务从后端加载
         Task {
@@ -400,21 +355,9 @@ struct MeetingRecordView: View {
             print("📡 [MeetingRecordView] 请求耗时: \(String(format: "%.2f", elapsed))秒")
             print("📡 [MeetingRecordView] 返回数据条数: \(remoteItems.count)")
             
-            // 打印每条数据详情
-            for (index, item) in remoteItems.enumerated() {
-                print("📋 [\(index + 1)] ID: \(item.id ?? "nil")")
-                print("     标题: \(item.title ?? "nil")")
-                print("     日期: \(item.date ?? item.createdAt ?? "nil")")
-                print("     时长: \(item.duration ?? 0)秒")
-                print("     摘要: \(item.summary?.prefix(50) ?? "nil")...")
-                print("     音频路径: \(item.audioPath ?? "nil")")
-                print("     转写记录数: \(item.transcriptions?.count ?? 0)")
-            }
-            
             // 转换为 RecordingItem
             recordingItems = remoteItems.map { remoteItem in
                 let recordingItem = RecordingItem(remoteItem: remoteItem)
-                print("🔄 转换: \(remoteItem.title ?? "nil") -> canPlay=\(recordingItem.canPlay)")
                 return recordingItem
             }
             
@@ -424,307 +367,15 @@ struct MeetingRecordView: View {
             
         } catch {
             print("❌ ========== 加载失败 ==========")
-            print("❌ [MeetingRecordView] 错误类型: \(type(of: error))")
             print("❌ [MeetingRecordView] 错误详情: \(error)")
-            print("❌ [MeetingRecordView] 本地化描述: \(error.localizedDescription)")
-            print("❌ ========================================\n")
             
             isLoading = false
             loadError = "加载失败: \(error.localizedDescription)"
         }
     }
     
-    private func stopPlayingIfNeeded(for itemId: UUID) {
-        if playingRecordingId == itemId {
-            stopPlaying()
-        }
-    }
-    
-    // MARK: - 播放控制
-    
-    private func playRecording(_ item: RecordingItem) {
-        // 检查是否有可播放的音频
-        guard let audioURL = item.audioURL, item.canPlay else {
-            print("⚠️ 该录音没有本地音频文件，无法播放")
-            return
-        }
-        
-        // 如果正在播放其他录音，先停止
-        if playingRecordingId != nil && playingRecordingId != item.id {
-            stopPlaying()
-        }
-        
-        // 如果正在播放当前录音，则停止
-        if playingRecordingId == item.id {
-            stopPlaying()
-            return
-        }
-        
-        HapticFeedback.light()
-        
-        do {
-            let audioSession = AVAudioSession.sharedInstance()
-            try audioSession.setCategory(.playback, mode: .default)
-            try audioSession.setActive(true)
-            
-            audioPlayer = try AVAudioPlayer(contentsOf: audioURL)
-            audioPlayer?.prepareToPlay()
-            audioPlayer?.play()
-            
-            playingRecordingId = item.id
-            playbackProgress = 0
-            
-            playbackTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
-                guard let player = self.audioPlayer else { return }
-                self.playbackProgress = player.currentTime
-                
-                if !player.isPlaying {
-                    self.stopPlaying()
-                }
-            }
-            
-            print("▶️ 开始播放录音: \(item.id)")
-        } catch {
-            print("❌ 播放失败: \(error)")
-        }
-    }
-    
-    private func stopPlaying() {
-        HapticFeedback.light()
-        
-        audioPlayer?.stop()
-        playbackTimer?.invalidate()
-        playingRecordingId = nil
-        playbackProgress = 0
-        
-        print("⏹️ 停止播放")
-    }
-    
-    // MARK: - 语音转文字
-    
-    private func transcribeRecording(_ item: RecordingItem) {
-        // 检查是否有音频文件
-        guard let audioURL = item.audioURL, item.canPlay else {
-            print("⚠️ 该录音没有本地音频文件，无法转写")
-            return
-        }
-        
-        transcribingRecordingId = item.id
-        transcriptionProgress = "正在上传音频..."
-        
-        Task {
-            do {
-                print("🎤 [MeetingRecord] 开始处理录音: \(audioURL.lastPathComponent)")
-                
-                // 使用后端服务生成会议纪要
-                await MainActor.run {
-                    transcriptionProgress = "正在生成会议纪要..."
-                }
-                
-                let result = try await MeetingMinutesService.generateMeetingMinutes(
-                    audioFileURL: audioURL
-                )
-                
-                await MainActor.run {
-                    // 更新录音项的会议纪要
-                    if let index = recordingItems.firstIndex(where: { $0.id == item.id }) {
-                        recordingItems[index].meetingSummary = result.summary
-                        
-                        // 保存到数据库
-                        if let meeting = allMeetings.first(where: { $0.id == item.id }) {
-                            meeting.content = result.summary
-                            do {
-                                try modelContext.save()
-                                print("✅ 会议纪要已保存到数据库")
-                            } catch {
-                                print("❌ 保存会议纪要失败: \(error)")
-                            }
-                        }
-                        
-                        // 同步更新聊天室中的会议卡片
-                        updateMeetingCardInChat(item: item, title: result.title, summary: result.summary, transcriptions: result.transcriptions)
-                        
-                        // 自动展开该项
-                        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                            expandedRecordings.insert(item.id)
-                        }
-                    }
-                    
-                    transcribingRecordingId = nil
-                    transcriptionProgress = ""
-                    
-                    HapticFeedback.success()
-                    print("✅ 会议纪要生成并保存完成")
-                }
-            } catch {
-                await MainActor.run {
-                    transcribingRecordingId = nil
-                    transcriptionProgress = ""
-                    
-                    print("❌ 转换失败: \(error)")
-                    HapticFeedback.error()
-                }
-            }
-        }
-    }
-    
-    /// 更新聊天室中的会议卡片
-    private func updateMeetingCardInChat(item: RecordingItem, title: String?, summary: String, transcriptions: [MeetingTranscription]?) {
-        // 遍历聊天消息，找到对应的会议卡片并更新
-        for i in 0..<appState.chatMessages.count {
-            if let meetings = appState.chatMessages[i].meetings {
-                for j in 0..<meetings.count {
-                    if meetings[j].id == item.id {
-                        // 找到对应的卡片，更新摘要和转写记录
-                        if let title, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            appState.chatMessages[i].meetings?[j].title = title
-                        }
-                        appState.chatMessages[i].meetings?[j].summary = summary
-                        appState.chatMessages[i].meetings?[j].transcriptions = transcriptions
-                        
-                        // 保存到存储
-                        appState.saveMessageToStorage(appState.chatMessages[i], modelContext: modelContext)
-                        print("✅ 聊天室中的会议卡片已更新")
-                        return
-                    }
-                }
-            }
-        }
-    }
-    
-    // 分享会议纪要（以文件形式）
-    private func copyAndShareRecording(_ item: RecordingItem) {
-        HapticFeedback.light()
-        
-        // 构建分享内容
-        var shareText = ""
-        
-        // 添加标题
-        shareText += "📝 会议纪要\n"
-        shareText += "━━━━━━━━━━━━━━━━\n\n"
-        
-        // 添加录音信息
-        shareText += "📅 时间：\(item.formattedDate)\n"
-        shareText += "⏱️ 时长：\(item.formattedDuration)\n\n"
-        
-        // 添加会议纪要内容
-        if let summary = item.meetingSummary, !summary.isEmpty {
-            shareText += summary
-        } else {
-            shareText += "（未生成会议纪要）"
-        }
-        
-        shareText += "\n\n━━━━━━━━━━━━━━━━\n"
-        shareText += "来自 Yuanyuan 会议记录"
-        
-        // 同时复制到剪贴板（备用）
-        UIPasteboard.general.string = shareText
-        
-        // 创建临时文本文件
-        let fileName = "会议纪要_\(item.formattedDate).txt"
-        let tempDir = FileManager.default.temporaryDirectory
-        let fileURL = tempDir.appendingPathComponent(fileName)
-        
-        do {
-            // 写入文件
-            try shareText.write(to: fileURL, atomically: true, encoding: .utf8)
-            print("✅ 已创建临时文件: \(fileURL.path)")
-            
-            // 弹出分享面板（以文件形式分享）
-            guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                  let window = windowScene.windows.first else {
-                print("❌ 无法获取window")
-                return
-            }
-            
-            // 找到最顶层的 view controller
-            var topController = window.rootViewController
-            while let presented = topController?.presentedViewController {
-                topController = presented
-            }
-            
-            guard let presentingVC = topController else {
-                print("❌ 无法获取presenting view controller")
-                return
-            }
-            
-            let activityVC = UIActivityViewController(
-                activityItems: [fileURL],  // 分享文件 URL
-                applicationActivities: nil
-            )
-            
-            // 设置完成回调，清理临时文件
-            activityVC.completionWithItemsHandler = { _, _, _, _ in
-                try? FileManager.default.removeItem(at: fileURL)
-                print("🗑️ 已清理临时文件")
-            }
-            
-            // iPad 需要设置 popover，iPhone 默认从底部弹出
-            if UIDevice.current.userInterfaceIdiom == .pad {
-                activityVC.popoverPresentationController?.sourceView = presentingVC.view
-                activityVC.popoverPresentationController?.sourceRect = CGRect(
-                    x: presentingVC.view.bounds.midX,
-                    y: presentingVC.view.bounds.midY,
-                    width: 0,
-                    height: 0
-                )
-                activityVC.popoverPresentationController?.permittedArrowDirections = []
-            }
-            
-            presentingVC.present(activityVC, animated: true)
-            HapticFeedback.success()
-            print("✅ 打开分享面板（文件模式）")
-            
-        } catch {
-            print("❌ 创建临时文件失败: \(error)")
-            HapticFeedback.error()
-        }
-    }
-    
-    // 开始重命名
-    private func startRenaming(_ item: RecordingItem) {
-        HapticFeedback.light()
-        newTitle = item.title
-        renamingRecordingId = item.id
-    }
-    
-    // 保存重命名
-    private func saveRename(_ item: RecordingItem) {
-        guard !newTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            renamingRecordingId = nil
-            return
-        }
-        
-        // 限制字数（最多50个字符）
-        let trimmedTitle = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        let finalTitle = trimmedTitle.count > 50 ? String(trimmedTitle.prefix(50)) : trimmedTitle
-        
-        // 更新数据库
-        if let meeting = allMeetings.first(where: { $0.id == item.id }) {
-            meeting.title = finalTitle
-            do {
-                try modelContext.save()
-                print("✅ 标题已更新: \(newTitle)")
-                
-                // 更新本地列表
-                if let index = recordingItems.firstIndex(where: { $0.id == item.id }) {
-                    recordingItems[index].title = finalTitle
-                }
-                
-                HapticFeedback.success()
-            } catch {
-                print("❌ 保存标题失败: \(error)")
-            }
-        }
-        
-        renamingRecordingId = nil
-    }
-    
     private func deleteRecording(_ item: RecordingItem) {
         HapticFeedback.medium()
-        
-        // 如果正在播放该录音，先停止
-        stopPlayingIfNeeded(for: item.id)
         
         // 删除本地音频文件（如果存在）
         if let audioURL = item.audioURL {
@@ -879,21 +530,10 @@ struct NavRecordingButton: View {
     }
 }
 
-// 录音文件卡片（可展开显示会议纪要）
+// 录音文件卡片（简化样式：仅标题、日期、时长）
 struct RecordingItemCard: View {
     let item: RecordingItem
-    let isPlaying: Bool
-    let playbackProgress: TimeInterval
-    let duration: TimeInterval
-    let isTranscribing: Bool
-    let transcriptionProgress: String
-    let isExpanded: Bool
-    let onPlay: () -> Void
-    let onStop: () -> Void
-    let onTranscribe: () -> Void
-    let onToggle: () -> Void
-    let onRename: () -> Void
-    let onCopyAndShare: () -> Void
+    let onTap: () -> Void
     let onDelete: () -> Void
     
     @State private var offset: CGFloat = 0
@@ -902,24 +542,6 @@ struct RecordingItemCard: View {
     
     private var isButtonDisabled: Bool {
         isDragging || abs(offset) > 5
-    }
-    
-    // 根据标题长度计算字体大小（自适应）
-    private func calculateTitleFontSize(_ title: String) -> CGFloat {
-        let titleLength = title.isEmpty ? 4 : title.count
-        // 根据长度动态调整：短标题18，长标题逐渐减小，最小14
-        // 使用更平滑的递减曲线
-        if titleLength <= 8 {
-            return 18
-        } else if titleLength <= 15 {
-            return 17.5
-        } else if titleLength <= 25 {
-            return 16.5
-        } else if titleLength <= 35 {
-            return 15.5
-        } else {
-            return 14.5
-        }
     }
     
     var body: some View {
@@ -947,261 +569,120 @@ struct RecordingItemCard: View {
             }
             
             // 前景卡片内容
-        VStack(spacing: 0) {
-            // 主卡片内容
-            VStack(spacing: 16) {
-                // 标题和操作行
-                HStack(alignment: .top, spacing: 12) {
-                    // 播放按钮（放在标题前面）
-                    Button(action: {
-                        if isPlaying {
-                            onStop()
-                        } else {
-                            onPlay()
-                        }
-                    }) {
-                        Image(systemName: isPlaying ? "stop.fill" : "play.fill")
-                            .font(.system(size: 15, weight: .bold))
-                            .foregroundColor(.black.opacity(0.7))
-                            .frame(width: 44, height: 44)
-                            .background(GlassButtonBackground())
-                    }
-                    .buttonStyle(ScaleButtonStyle())
-                    .disabled(isButtonDisabled)
-                    
-                    // 标题区域 - 确保可以换行
+            Button(action: {
+                if !isDragging && abs(offset) < 5 {
+                    onTap()
+                }
+            }) {
+                VStack(spacing: 12) {
+                    // 标题
                     Text(item.title.isEmpty ? "会议录音" : item.title)
-                        .font(.system(size: calculateTitleFontSize(item.title), weight: .bold, design: .rounded))
+                        .font(.system(size: 17, weight: .bold, design: .rounded))
                         .foregroundColor(Color.black.opacity(0.9))
                         .lineLimit(2)
-                        .truncationMode(.tail)
                         .multilineTextAlignment(.leading)
-                        .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .layoutPriority(1)
                     
-                    // 操作按钮组
-                    HStack(spacing: 10) {
-                        // 编辑按钮
-                        Button(action: onRename) {
-                            Image(systemName: "square.and.pencil")
-                                .font(.system(size: 16, weight: .medium))
-                                .foregroundColor(Color.black.opacity(0.4))
-                                .frame(width: 40, height: 40)
-                                .background(
-                                    Circle()
-                                        .fill(Color.black.opacity(0.05))
-                                )
+                    // 日期和时长
+                    HStack {
+                        HStack(spacing: 4) {
+                            Image(systemName: "calendar")
+                                .font(.system(size: 11))
+                            Text(item.formattedDate)
                         }
-                        .buttonStyle(ScaleButtonStyle())
-                        .disabled(isButtonDisabled)
-                        
-                        // 分享按钮（仅在有会议纪要时显示）
-                        if item.hasTranscription {
-                            Button(action: onCopyAndShare) {
-                                Image(systemName: "square.and.arrow.up")
-                                    .font(.system(size: 15, weight: .bold))
-                                    .foregroundColor(Color.black.opacity(0.7))
-                                    .frame(width: 44, height: 44)
-                                    .background(GlassButtonBackground())
-                            }
-                            .buttonStyle(ScaleButtonStyle())
-                            .disabled(isButtonDisabled)
-                        }
-                        
-                        // 转换/折叠按钮
-                        if isTranscribing {
-                            ProgressView()
-                                .tint(Color.black.opacity(0.6))
-                                .frame(width: 44, height: 44)
-                                .background(GlassButtonBackground())
-                        } else if item.hasTranscription {
-                            // 已转换，显示折叠按钮
-                            Button(action: onToggle) {
-                                Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                                    .font(.system(size: 15, weight: .bold))
-                                    .foregroundColor(.black.opacity(0.7))
-                                    .frame(width: 44, height: 44)
-                                    .background(GlassButtonBackground())
-                            }
-                            .buttonStyle(ScaleButtonStyle())
-                            .disabled(isButtonDisabled)
-                        } else {
-                            // 未转换，显示转换图标按钮
-                            Button(action: onTranscribe) {
-                                Image(systemName: "doc.text.fill")
-                                    .font(.system(size: 15, weight: .bold))
-                                    .foregroundColor(.black.opacity(0.7))
-                                    .frame(width: 44, height: 44)
-                                    .background(GlassButtonBackground())
-                            }
-                            .buttonStyle(ScaleButtonStyle())
-                            .disabled(isButtonDisabled)
-                        }
-                    }
-                }
-                
-                // 下半部分：日期和时长（底部信息栏）
-                HStack {
-                    HStack(spacing: 4) {
-                        Image(systemName: "calendar")
-                            .font(.system(size: 12))
-                        Text(item.formattedDate)
-                    }
-                    
-                    Spacer()
-                    
-                    HStack(spacing: 4) {
-                        Image(systemName: "clock")
-                            .font(.system(size: 12))
-                        Text(item.formattedDuration)
-                    }
-                }
-                .font(.system(size: 13, weight: .medium, design: .rounded))
-                .foregroundColor(Color.black.opacity(0.4))
-                .padding(.horizontal, 4)
-            }
-            .padding(.horizontal, 18)
-            .padding(.vertical, 16)
-            
-            // 转文字进度显示（转文字过程中显示）
-            if isTranscribing {
-                VStack(spacing: 0) {
-                    Divider()
-                        .padding(.horizontal, 18)
-                    
-                    HStack(spacing: 12) {
-                        // 进度指示器
-                        ProgressView()
-                            .tint(Color(red: 0.65, green: 0.85, blue: 0.15))
-                            .scaleEffect(0.9)
-                        
-                        // 进度文本
-                        Text(transcriptionProgress.isEmpty ? "正在处理..." : transcriptionProgress)
-                            .font(.system(size: 14, weight: .medium, design: .rounded))
-                            .foregroundColor(Color.black.opacity(0.6))
                         
                         Spacer()
+                        
+                        HStack(spacing: 4) {
+                            Image(systemName: "clock")
+                                .font(.system(size: 11))
+                            Text(item.formattedDuration)
+                        }
                     }
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 12)
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundColor(Color.black.opacity(0.4))
                 }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 18)
                 .background(
-                    Color(red: 0.65, green: 0.85, blue: 0.15).opacity(0.05)
+                    ZStack {
+                        // 液态玻璃基础
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .fill(
+                                LinearGradient(
+                                    gradient: Gradient(stops: [
+                                        .init(color: Color.white.opacity(0.88), location: 0.0),
+                                        .init(color: Color.white.opacity(0.68), location: 0.5),
+                                        .init(color: Color.white.opacity(0.78), location: 1.0)
+                                    ]),
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                        
+                        // 表面高光
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .fill(
+                                LinearGradient(
+                                    gradient: Gradient(stops: [
+                                        .init(color: Color.white.opacity(0.45), location: 0.0),
+                                        .init(color: Color.white.opacity(0.15), location: 0.2),
+                                        .init(color: Color.clear, location: 0.5)
+                                    ]),
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
+                        
+                        // 晶体边框
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .strokeBorder(
+                                LinearGradient(
+                                    gradient: Gradient(stops: [
+                                        .init(color: Color.white.opacity(0.9), location: 0.0),
+                                        .init(color: Color.white.opacity(0.35), location: 0.5),
+                                        .init(color: Color.white.opacity(0.65), location: 1.0)
+                                    ]),
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ),
+                                lineWidth: 1
+                            )
+                    }
                 )
-                .transition(.opacity.combined(with: .move(edge: .top)))
+                .shadow(color: Color.white.opacity(0.5), radius: 6, x: 0, y: -2)
+                .shadow(color: Color.black.opacity(0.06), radius: 10, x: 0, y: 4)
             }
-            
-            // 会议纪要/原始文本（展开时显示）
-            if isExpanded, let summary = item.meetingSummary, !summary.isEmpty {
-                VStack(alignment: .leading, spacing: 16) {
-                    Divider()
-                        .padding(.horizontal, 18)
-                    
-                    // 如果是AI生成的会议纪要，正常显示
-                    // 如果是原始转写文本，显示提示
-                    VStack(alignment: .leading, spacing: 12) {
-                        if !item.hasTranscription {
-                            // 原始转写文本提示
-                            HStack(spacing: 6) {
-                                Image(systemName: "waveform")
-                                    .font(.system(size: 12, weight: .medium))
-                                    .foregroundColor(Color.black.opacity(0.5))
-                                Text("原始录音文字")
-                                    .font(.system(size: 13, weight: .medium, design: .rounded))
-                                    .foregroundColor(Color.black.opacity(0.5))
+            .buttonStyle(.plain)
+            .padding(.horizontal, 20)
+            .offset(x: offset)
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 20, coordinateSpace: .local)
+                    .onChanged { value in
+                        isDragging = true
+                        if value.translation.width < 0 {
+                            offset = value.translation.width
+                        } else if isDeleteVisible {
+                            let newOffset = -90 + value.translation.width
+                            offset = min(0, newOffset)
+                        }
+                    }
+                    .onEnded { value in
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            if value.translation.width < -60 {
+                                offset = -90
+                                isDeleteVisible = true
+                            } else {
+                                offset = 0
+                                isDeleteVisible = false
                             }
-                            .padding(.horizontal, 18)
                         }
-                    
-                    Text(summary)
-                            .font(.system(size: 15, design: .rounded))
-                        .foregroundColor(Color.black.opacity(0.7))
-                            .lineSpacing(8)
-                            .padding(.horizontal, 18)
-                            .padding(.bottom, 16)
-                    }
-                }
-                .transition(.opacity.combined(with: .move(edge: .top)))
-            }
-        }
-        .background(
-            ZStack {
-                // 液态玻璃基础
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            gradient: Gradient(stops: [
-                                .init(color: Color.white.opacity(0.88), location: 0.0),
-                                .init(color: Color.white.opacity(0.68), location: 0.5),
-                                .init(color: Color.white.opacity(0.78), location: 1.0)
-                            ]),
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                
-                // 表面高光
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            gradient: Gradient(stops: [
-                                .init(color: Color.white.opacity(0.45), location: 0.0),
-                                .init(color: Color.white.opacity(0.15), location: 0.2),
-                                .init(color: Color.clear, location: 0.5)
-                            ]),
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
-                
-                // 晶体边框
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .strokeBorder(
-                        LinearGradient(
-                            gradient: Gradient(stops: [
-                                .init(color: Color.white.opacity(0.9), location: 0.0),
-                                .init(color: Color.white.opacity(0.35), location: 0.5),
-                                .init(color: Color.white.opacity(0.65), location: 1.0)
-                            ]),
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1
-                    )
-            }
-        )
-        .shadow(color: Color.white.opacity(0.5), radius: 6, x: 0, y: -2)
-        .shadow(color: Color.black.opacity(0.06), radius: 10, x: 0, y: 4)
-        .padding(.horizontal, 20)
-        .offset(x: offset)
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 20, coordinateSpace: .local)
-                .onChanged { value in
-                    isDragging = true
-                    if value.translation.width < 0 {
-                        offset = value.translation.width
-                    } else if isDeleteVisible {
-                        let newOffset = -90 + value.translation.width
-                        offset = min(0, newOffset)
-                    }
-                }
-                .onEnded { value in
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                        if value.translation.width < -60 {
-                            offset = -90
-                            isDeleteVisible = true
-                        } else {
-                            offset = 0
-                            isDeleteVisible = false
+                        // 延迟一点再恢复按钮，确保动画完成
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            isDragging = false
                         }
                     }
-                    // 延迟一点再恢复按钮，确保动画完成
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                        isDragging = false
-                    }
-                }
-        )
+            )
         }
     }
 }

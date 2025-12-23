@@ -42,48 +42,9 @@ final class RecordingDarwinObserver {
 
     private func handleNotification(name: CFNotificationName?) {
         guard let raw = name?.rawValue as String? else { return }
-        let defaults = UserDefaults(suiteName: RecordingSharedDefaults.suite)
-        let ts = defaults?.double(forKey: RecordingSharedDefaults.commandTimestampKey) ?? 0
-
         DispatchQueue.main.async {
-            switch raw {
-            case RecordingDarwinNames.start:
-                let shouldNavigateToChat = defaults?.bool(forKey: RecordingSharedDefaults.shouldNavigateToChatRoomKey) ?? true
-                let autoMinimize = defaults?.bool(forKey: RecordingSharedDefaults.autoMinimizeKey) ?? true
-                let publishTranscriptionToUI = defaults?.bool(forKey: RecordingSharedDefaults.publishTranscriptionToUIKey) ?? true
-                print("🏝️ Darwin start (\(ts)) shouldNavigateToChat=\(shouldNavigateToChat) autoMinimize=\(autoMinimize) publishTranscriptionToUI=\(publishTranscriptionToUI)")
-                NotificationCenter.default.post(
-                    name: NSNotification.Name("StartRecordingFromWidget"),
-                    object: nil,
-                    userInfo: [
-                        "shouldNavigateToChatRoom": shouldNavigateToChat,
-                        "autoMinimize": autoMinimize,
-                        "publishTranscriptionToUI": publishTranscriptionToUI
-                    ]
-                )
-
-            case RecordingDarwinNames.pause:
-                print("🏝️ Darwin pause (\(ts))")
-                LiveRecordingManager.shared.pauseRecording()
-
-            case RecordingDarwinNames.resume:
-                print("🏝️ Darwin resume (\(ts))")
-                LiveRecordingManager.shared.resumeRecording()
-
-            case RecordingDarwinNames.stop:
-                let shouldNavigateToChat = defaults?.bool(forKey: RecordingSharedDefaults.shouldNavigateToChatRoomKey) ?? true
-                print("🏝️ Darwin stop (\(ts)) shouldNavigateToChat=\(shouldNavigateToChat)")
-                NotificationCenter.default.post(
-                    name: NSNotification.Name("StopRecordingFromWidget"),
-                    object: nil,
-                    userInfo: [
-                        "shouldNavigateToChatRoom": shouldNavigateToChat
-                    ]
-                )
-
-            default:
-                break
-            }
+            // 统一走 “pending command + 时间戳去重” 处理器，避免两路触发重复执行。
+            RecordingCommandProcessor.shared.processIfNeeded(source: "darwin:\(raw)")
         }
     }
 }

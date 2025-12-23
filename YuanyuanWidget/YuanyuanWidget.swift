@@ -120,10 +120,10 @@ struct MeetingRecordingLiveActivity: Widget {
                 // 展开视图
                 DynamicIslandExpandedRegion(.leading) {
                     HStack(spacing: 8) {
-                        Image(systemName: "mic.fill")
+                        Image(systemName: context.state.isRecording ? "mic.fill" : "checkmark.circle.fill")
                             .font(.system(size: 14))
-                            .foregroundColor(.white)
-                        Text("Moly 录音")
+                            .foregroundColor(context.state.isRecording ? .white : Color(red: 0.8, green: 1.0, blue: 0.1))
+                        Text(context.state.isRecording ? "Moly 录音" : "录音已完成")
                             .font(.system(size: 14, weight: .bold))
                             .foregroundColor(.white)
                     }
@@ -131,16 +131,24 @@ struct MeetingRecordingLiveActivity: Widget {
                 }
                 
                 DynamicIslandExpandedRegion(.trailing) {
-                    Text(formatDuration(context.state.duration))
-                        .font(.system(size: 14, weight: .bold))
-                        .monospacedDigit()
-                        .foregroundColor(.white.opacity(0.9))
-                        .padding(.trailing, 8)
+                    if context.state.isRecording {
+                        Text(formatDuration(context.state.duration))
+                            .font(.system(size: 14, weight: .bold))
+                            .monospacedDigit()
+                            .foregroundColor(.white.opacity(0.9))
+                            .padding(.trailing, 8)
+                    } else {
+                        // 完成时显示一个简单的状态
+                        Text("已保存")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(Color(red: 0.8, green: 1.0, blue: 0.1))
+                            .padding(.trailing, 8)
+                    }
                 }
                 
                 DynamicIslandExpandedRegion(.bottom) {
-                    // 只保留停止按钮
                     if context.state.isRecording {
+                        // 只保留停止按钮
                         Button(intent: StopMeetingRecordingIntent()) {
                             HStack(spacing: 6) {
                                 Image(systemName: "stop.fill")
@@ -158,21 +166,33 @@ struct MeetingRecordingLiveActivity: Widget {
                         .buttonStyle(.plain)
                         .padding(.horizontal, 8)
                         .padding(.bottom, 12)
+                    } else {
+                        // 完成后的状态反馈
+                        Text("正在后台为您生成会议卡片...")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.white.opacity(0.8))
+                            .padding(.bottom, 12)
                     }
                 }
             } compactLeading: {
-                Image(systemName: "mic.fill")
+                Image(systemName: context.state.isRecording ? "mic.fill" : "checkmark")
                     .font(.system(size: 12))
-                    .foregroundColor(.white)
+                    .foregroundColor(context.state.isRecording ? .white : Color(red: 0.8, green: 1.0, blue: 0.1))
             } compactTrailing: {
-                Text(formatDuration(context.state.duration))
-                    .font(.system(size: 12, weight: .bold))
-                    .monospacedDigit()
-                    .foregroundColor(.white)
+                if context.state.isRecording {
+                    Text(formatDuration(context.state.duration))
+                        .font(.system(size: 12, weight: .bold))
+                        .monospacedDigit()
+                        .foregroundColor(.white)
+                } else {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 12))
+                        .foregroundColor(Color(red: 0.8, green: 1.0, blue: 0.1))
+                }
             } minimal: {
-                Image(systemName: "mic.fill")
+                Image(systemName: context.state.isRecording ? "mic.fill" : "checkmark")
                     .font(.system(size: 10))
-                    .foregroundColor(.white)
+                    .foregroundColor(context.state.isRecording ? .white : Color(red: 0.8, green: 1.0, blue: 0.1))
             }
         }
     }

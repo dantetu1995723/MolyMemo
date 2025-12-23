@@ -13,6 +13,7 @@ private enum RecordingIPC {
         static let autoMinimize = "recording.autoMinimize"
         static let shouldNavigateToChatRoom = "recording.shouldNavigateToChatRoom"
         static let publishTranscriptionToUI = "recording.publishTranscriptionToUI"
+        static let pendingCommand = "recording.pendingCommand"
         static let commandTimestamp = "recording.commandTimestamp"
     }
 
@@ -55,6 +56,7 @@ struct StartMeetingRecordingIntent: AppIntent {
         defaults?.set(true, forKey: RecordingIPC.Key.autoMinimize)
         // 快捷指令/Widget 场景：不在 UI 上展示实时转写（避免自动弹出“蓝色球/歌词滚动”转写界面）
         defaults?.set(false, forKey: RecordingIPC.Key.publishTranscriptionToUI)
+        defaults?.set("start", forKey: RecordingIPC.Key.pendingCommand)
         defaults?.set(Date().timeIntervalSince1970, forKey: RecordingIPC.Key.commandTimestamp)
         defaults?.synchronize()
         RecordingIPC.postDarwin(RecordingIPC.DarwinName.start)
@@ -74,6 +76,10 @@ struct PauseMeetingRecordingIntent: AppIntent {
     @MainActor
     func perform() async throws -> some IntentResult {
         print("⏸️ 执行PauseMeetingRecordingIntent - 从灵动岛暂停")
+        let defaults = RecordingIPC.defaults()
+        defaults?.set("pause", forKey: RecordingIPC.Key.pendingCommand)
+        defaults?.set(Date().timeIntervalSince1970, forKey: RecordingIPC.Key.commandTimestamp)
+        defaults?.synchronize()
         RecordingIPC.postDarwin(RecordingIPC.DarwinName.pause)
         
         return .result()
@@ -89,6 +95,10 @@ struct ResumeMeetingRecordingIntent: AppIntent {
     @MainActor
     func perform() async throws -> some IntentResult {
         print("▶️ 执行ResumeMeetingRecordingIntent - 从灵动岛继续")
+        let defaults = RecordingIPC.defaults()
+        defaults?.set("resume", forKey: RecordingIPC.Key.pendingCommand)
+        defaults?.set(Date().timeIntervalSince1970, forKey: RecordingIPC.Key.commandTimestamp)
+        defaults?.synchronize()
         RecordingIPC.postDarwin(RecordingIPC.DarwinName.resume)
         
         return .result()
@@ -99,20 +109,19 @@ struct ResumeMeetingRecordingIntent: AppIntent {
 struct StopMeetingRecordingIntent: AppIntent {
     static var title: LocalizedStringResource = "停止录音"
     static var description = IntentDescription("停止录音并保存到会议纪要")
-    static var openAppWhenRun: Bool = true  // 需要App上下文保存数据
+    static var openAppWhenRun: Bool = false  // 后台执行即可：录音正在进行时主App必然存活（后台音频），无需拉起前台
     
     @MainActor
     func perform() async throws -> some IntentResult {
         print("🛑 执行StopMeetingRecordingIntent - 从灵动岛停止")
         let defaults = RecordingIPC.defaults()
-        defaults?.set(true, forKey: RecordingIPC.Key.shouldNavigateToChatRoom)
+        // 停止动作默认不强制拉起/跳转界面，避免出现“转圈加载后才跳回App”的感觉
+        defaults?.set(false, forKey: RecordingIPC.Key.shouldNavigateToChatRoom)
+        defaults?.set("stop", forKey: RecordingIPC.Key.pendingCommand)
         defaults?.set(Date().timeIntervalSince1970, forKey: RecordingIPC.Key.commandTimestamp)
         defaults?.synchronize()
         RecordingIPC.postDarwin(RecordingIPC.DarwinName.stop)
-        
-        // 给主app一点时间来保存
-        try? await Task.sleep(nanoseconds: 500_000_000)  // 0.5秒
-        
+
         return .result()
     }
 }
