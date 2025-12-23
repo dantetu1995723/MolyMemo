@@ -81,7 +81,7 @@ struct RecordingRecoveryManager {
     private static func defaultTitle(for date: Date) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "MM月dd日 HH:mm"
-        return "会议录音 - \(formatter.string(from: date))"
+        return "Moly录音 - \(formatter.string(from: date))"
     }
     
     private static func candidateFolders() -> [URL] {

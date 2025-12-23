@@ -75,4 +75,28 @@ final class StoredInvoiceCardBatch {
     }
 }
 
+/// 存储「会议纪要卡片」的一次批次
+@Model
+final class StoredMeetingCardBatch {
+    var id: UUID
+    var createdAt: Date
+    var sourceMessageId: UUID?
+    @Attribute(.externalStorage) var encodedMeetings: Data
+
+    init(meetings: [MeetingCard], sourceMessageId: UUID? = nil, createdAt: Date = Date()) {
+        self.id = UUID()
+        self.createdAt = createdAt
+        self.sourceMessageId = sourceMessageId
+        self.encodedMeetings = (try? JSONEncoder().encode(meetings)) ?? Data()
+    }
+
+    func decodedMeetings() -> [MeetingCard] {
+        (try? JSONDecoder().decode([MeetingCard].self, from: encodedMeetings)) ?? []
+    }
+
+    func update(meetings: [MeetingCard]) {
+        encodedMeetings = (try? JSONEncoder().encode(meetings)) ?? Data()
+    }
+}
+
 

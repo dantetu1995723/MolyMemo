@@ -5,11 +5,8 @@ import UIKit
 struct SettingsView: View {
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var appState: AppState
-    @State private var showAlert = false
-    @State private var alertMessage = ""
-    @State private var showCompanySettings = false
-    @State private var showFeishuSettings = false
-    @State private var showBackendSettings = false
+    @EnvironmentObject private var authStore: AuthStore
+    @State private var showLogoutConfirm = false
     
     // 主题色 - 统一灰色
     private let themeColor = Color(white: 0.55)
@@ -20,67 +17,57 @@ struct SettingsView: View {
             ModuleBackgroundView(themeColor: themeColor)
             
             ModuleSheetContainer {
-                VStack(spacing: 0) {
-                    ScrollView(showsIndicators: false) {
-                        VStack(spacing: 16) {
-                            Color.clear.frame(height: 16)
-                            // 标题区域
-                            VStack(spacing: 12) {
-                                Image(systemName: "hand.tap.fill")
-                                    .font(.system(size: 52))
-                                    .foregroundColor(themeColor)
-                                    .shadow(color: themeColor.opacity(0.3), radius: 8, x: 0, y: 4)
-                                
-                                VStack(spacing: 6) {
-                                    Text("背面轻点截图")
-                                        .font(.system(size: 24, weight: .bold, design: .rounded))
-                                        .foregroundColor(.black.opacity(0.85))
-                                    
-                                    Text("快速分享截图给小助手")
-                                        .font(.system(size: 15, weight: .medium))
-                                        .foregroundColor(.black.opacity(0.5))
-                                }
-                            }
-                            .padding(.vertical, 8)
-                            
-                            // 公司开票信息设置按钮
-                            CompanySettingsButton(showCompanySettings: $showCompanySettings, themeColor: themeColor)
-                            
-                            // 飞书日历设置按钮
-                            FeishuSettingsButton(showFeishuSettings: $showFeishuSettings, themeColor: themeColor)
-                            
-                            // 聊天后端设置按钮
-                            BackendSettingsButton(showBackendSettings: $showBackendSettings, themeColor: themeColor)
-                            
-                            // 快捷指令按钮
-                            ShortcutActionButton(themeColor: themeColor)
-                            
-                            // 步骤说明
-                            SetupInstructionsView(themeColor: themeColor)
-                            
-                            Spacer(minLength: 40)
+                VStack(spacing: 20) {
+                    Text(greetingText)
+                        .font(.custom("SourceHanSerifSC-Bold", size: 18))
+                        .foregroundColor(.black.opacity(0.85))
+                        .multilineTextAlignment(.center)
+                        .padding(.top, 30)
+                        .padding(.horizontal, 24)
+                    
+                    Button {
+                        HapticFeedback.medium()
+                        showLogoutConfirm = true
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "rectangle.portrait.and.arrow.right")
+                                .font(.system(size: 18, weight: .bold))
+                            Text("退出登录")
+                                .font(.system(size: 17, weight: .bold, design: .rounded))
                         }
-                        .padding(.horizontal, 20)
-                        .padding(.bottom, 34)
+                        .foregroundColor(.black.opacity(0.75))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(LiquidGlassCapsuleBackground())
                     }
+                    .buttonStyle(ScaleButtonStyle())
+                    .padding(.horizontal, 24)
                 }
+                .padding(.bottom, 20)
             }
         }
         .navigationBarHidden(true)
-        .sheet(isPresented: $showCompanySettings) {
-            CompanySettingsView()
-                .environmentObject(appState)
-                .presentationDragIndicator(.visible)
+        .alert("确认退出登录？", isPresented: $showLogoutConfirm) {
+            Button("取消", role: .cancel) { }
+            Button("退出登录", role: .destructive) {
+                Task {
+                    await authStore.logoutAsync()
+                    appState.showSettings = false
+                    dismiss()
+                }
+            }
+        } message: {
+            Text("退出后将清除本地登录 token。")
         }
-        .sheet(isPresented: $showFeishuSettings) {
-            FeishuSettingsView()
-                .environmentObject(appState)
-                .presentationDragIndicator(.visible)
+    }
+    
+    private var greetingText: String {
+        let p = authStore.phone.trimmingCharacters(in: .whitespacesAndNewlines)
+        let suffix = p.count >= 4 ? String(p.suffix(4)) : p
+        if suffix.isEmpty {
+            return "尊贵的主人，使用 MolyMemo 还愉快吗？"
         }
-        .sheet(isPresented: $showBackendSettings) {
-            BackendSettingsView()
-                .presentationDragIndicator(.visible)
-        }
+        return "尊贵的主人\(suffix)，使用 MolyMemo 还愉快吗？"
     }
 }
 
@@ -393,5 +380,7 @@ struct InstructionStep: View {
 
 #Preview {
     SettingsView()
+        .environmentObject(AppState())
+        .environmentObject(AuthStore())
 }
 

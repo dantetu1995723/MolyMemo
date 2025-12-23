@@ -65,11 +65,11 @@ struct YuanyuanShortcuts: AppShortcutsProvider {
         AppShortcut(
             intent: StartMeetingRecordingIntent(),
             phrases: [
-                "在\(.applicationName)开始录音",
-                "用\(.applicationName)录音",
-                "\(.applicationName)会议录音"
+                "在\(.applicationName)Moly录音",
+                "用\(.applicationName)Moly录音",
+                "\(.applicationName)Moly录音"
             ],
-            shortTitle: "会议录音",
+            shortTitle: "Moly录音",
             systemImageName: "mic.circle.fill"
         )
     }

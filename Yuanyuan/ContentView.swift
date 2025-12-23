@@ -5,25 +5,33 @@ import UIKit
 
 struct ContentView: View {
     @EnvironmentObject var appState: AppState
+    @EnvironmentObject var authStore: AuthStore
     @State private var showModuleContainer = false
     
     var body: some View {
-        NavigationStack {
-            // 直接进入对话界面（首次引导在对话中完成）
-            ChatView(showModuleContainer: $showModuleContainer)
-                .environmentObject(appState)
-                .statusBar(hidden: false)
-                .navigationDestination(isPresented: $showModuleContainer) {
-                    ModuleContainerView()
+        Group {
+            if authStore.isLoggedIn {
+                NavigationStack {
+                    // 直接进入对话界面（首次引导在对话中完成）
+                    ChatView(showModuleContainer: $showModuleContainer)
                         .environmentObject(appState)
+                        .statusBar(hidden: false)
+                        .navigationDestination(isPresented: $showModuleContainer) {
+                            ModuleContainerView()
+                                .environmentObject(appState)
+                        }
                 }
-        }
-        .sheet(isPresented: $appState.showSettings) {
-            SettingsView()
-                .presentationDragIndicator(.visible)
-        }
-        .fullScreenCover(isPresented: $appState.showLiveRecording) {
-            LiveRecordingView()
+                .sheet(isPresented: $appState.showSettings) {
+                    SettingsView()
+                        .presentationDragIndicator(.visible)
+                        .presentationDetents([.height(200)])
+                }
+                .fullScreenCover(isPresented: $appState.showLiveRecording) {
+                    LiveRecordingView()
+                }
+            } else {
+                LoginView()
+            }
         }
     }
 }

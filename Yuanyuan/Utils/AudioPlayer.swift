@@ -6,6 +6,7 @@ class AudioPlayer: NSObject, ObservableObject {
     @Published var isPlaying = false
     @Published var currentTime: TimeInterval = 0
     @Published var duration: TimeInterval = 0
+    @Published var currentURL: URL? = nil
     
     private var audioPlayer: AVAudioPlayer?
     private var playbackTimer: Timer?
@@ -37,6 +38,7 @@ class AudioPlayer: NSObject, ObservableObject {
             
             duration = audioPlayer?.duration ?? 0
             audioPlayer?.play()
+            currentURL = url
             
             isPlaying = true
             
@@ -63,6 +65,7 @@ class AudioPlayer: NSObject, ObservableObject {
             
             duration = audioPlayer?.duration ?? 0
             audioPlayer?.play()
+            currentURL = nil
             
             isPlaying = true
             
@@ -87,6 +90,7 @@ class AudioPlayer: NSObject, ObservableObject {
         isPlaying = false
         currentTime = 0
         duration = 0
+        currentURL = nil
     }
     
     // 暂停播放
@@ -99,6 +103,7 @@ class AudioPlayer: NSObject, ObservableObject {
     
     // 恢复播放
     func resume() {
+        guard audioPlayer != nil else { return }
         audioPlayer?.play()
         isPlaying = true
         
@@ -106,6 +111,13 @@ class AudioPlayer: NSObject, ObservableObject {
             guard let self = self else { return }
             self.currentTime = self.audioPlayer?.currentTime ?? 0
         }
+    }
+
+    func seek(to time: TimeInterval) {
+        guard let audioPlayer else { return }
+        let clamped = max(0, min(time, audioPlayer.duration))
+        audioPlayer.currentTime = clamped
+        currentTime = clamped
     }
     
     // 格式化时间

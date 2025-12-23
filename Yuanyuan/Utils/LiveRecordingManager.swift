@@ -26,6 +26,9 @@ class LiveRecordingManager: ObservableObject {
     
     // Live Activity
     private var activity: Activity<MeetingRecordingAttributes>?
+
+    // Widget/快捷指令场景：可以只在后台做转写，但不把文本推到 UI（灵动岛/Live Activity）
+    private var publishTranscriptionToUI: Bool = true
     
     // 保存 ModelContext 的回调
     var modelContextProvider: (() -> ModelContext?)?
@@ -38,8 +41,10 @@ class LiveRecordingManager: ObservableObject {
     }
     
     // 开始录音
-    func startRecording() {
+    /// - Parameter publishTranscriptionToUI: 是否在 Live Activity / 灵动岛显示实时转写文本（默认 true）。
+    func startRecording(publishTranscriptionToUI: Bool = true) {
         print("🎤 准备开始录音...")
+        self.publishTranscriptionToUI = publishTranscriptionToUI
         
         // 请求权限
         requestPermissions { [weak self] granted in
@@ -253,9 +258,12 @@ class LiveRecordingManager: ObservableObject {
     
     // 停止录音
     func stopRecording(modelContext: ModelContext? = nil) {
-        print("🛑 停止录音...")
+        print("🛑 ========== 停止录音 ==========")
         
-        guard isRecording else { return }
+        guard isRecording else { 
+            print("⚠️ 当前没有在录音，跳过")
+            return 
+        }
         
         isRecording = false
         isPaused = false
@@ -275,89 +283,57 @@ class LiveRecordingManager: ObservableObject {
         recognitionTask = nil
         recognitionRequest = nil
         
-        // 保存到会议纪要（尝试从参数或回调获取 ModelContext）
-        let context = modelContext ?? modelContextProvider?()
-        saveToMeeting(modelContext: context)
+        print("🎙️ 录音已停止，准备上传到后端...")
+        print("🎙️ 音频文件: \(audioURL?.path ?? "nil")")
+        print("🎙️ 录音时长: \(recordingDuration)秒")
+        
+        // 调用后端API生成会议纪要
+        uploadToBackend()
         
         // 结束 Live Activity
         endLiveActivity()
         
-        print("✅ 录音已停止")
+        print("✅ ========== 停止录音完成 ==========\n")
     }
     
-    // 保存到会议纪要
-    private func saveToMeeting(modelContext: ModelContext?) {
-        guard let audioURL = audioURL,
-              let modelContext = modelContext else {
-            print("❌ 无法保存会议纪要")
+    /// 通知主App上传音频到后端生成会议纪要
+    /// 注意：这里只发送通知，实际的后端调用由主App处理（因为Widget Extension无法访问MeetingMinutesService）
+    private func uploadToBackend() {
+        guard let audioURL = audioURL else {
+            print("❌ [uploadToBackend] 没有音频文件URL")
             return
         }
         
-        let audioPath = audioURL.path  // 先保存为局部变量，供Predicate使用
+        let title = "Moly录音 - \(formatDate(Date()))"
+        let date = Date()
+        let duration = recordingDuration
+        let audioPath = audioURL.path
         
-        // 第一层：严格按文件路径去重（同一文件只保存一次）
-        let pathDescriptor = FetchDescriptor<Meeting>(
-            predicate: #Predicate<Meeting> { meeting in
-                meeting.audioFilePath == audioPath
-            }
-        )
+        print("📤 ========== 准备上传到后端 ==========")
+        print("📤 [uploadToBackend] 音频路径: \(audioPath)")
+        print("📤 [uploadToBackend] 标题: \(title)")
+        print("📤 [uploadToBackend] 时长: \(duration)秒")
         
-        do {
-            let existingMeetings = try modelContext.fetch(pathDescriptor)
-            if !existingMeetings.isEmpty {
-                print("⚠️ 该录音已存在（按路径去重），跳过保存：\(audioURL.lastPathComponent)")
-                return
-            }
-        } catch {
-            print("⚠️ 检查重复录音失败，继续保存: \(error)")
+        // 发送通知，让主App处理后端上传
+        // RecordingNeedsUpload: 主App会监听这个通知并调用MeetingMinutesService
+        let meetingData: [String: Any] = [
+            "title": title,
+            "date": date,
+            "duration": duration,
+            "audioPath": audioPath,
+            "needsBackendUpload": true  // 标记需要后端上传
+        ]
+        
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(
+                name: NSNotification.Name("RecordingNeedsUpload"),
+                object: nil,
+                userInfo: meetingData
+            )
+            print("📤 [uploadToBackend] 已发送上传请求通知到主App")
         }
         
-        // 第二层：兜底去重（防止极端情况下生成两个不同路径但实质相同的录音）
-        // 规则：在最近1分钟内、时长相差不超过1秒的记录，视为同一段录音
-        let now = Date()
-        let recentDescriptor = FetchDescriptor<Meeting>(
-            sortBy: [SortDescriptor(\Meeting.createdAt, order: .reverse)]
-        )
-        
-        if let recentMeetings = try? modelContext.fetch(recentDescriptor) {
-            if let duplicate = recentMeetings.prefix(20).first(where: { meeting in
-                let timeDiff = abs(meeting.createdAt.timeIntervalSince(now))
-                let durationDiff = abs(meeting.duration - recordingDuration)
-                return timeDiff <= 60 && durationDiff <= 1
-            }) {
-                print("⚠️ 检测到可能重复录音，复用已有记录: \(duplicate.title)")
-                
-                // 如果旧记录没有路径，则补全路径
-                if duplicate.audioFilePath == nil {
-                    duplicate.audioFilePath = audioPath
-                    do {
-                        try modelContext.save()
-                        print("✅ 已为旧记录补全音频路径")
-                    } catch {
-                        print("❌ 补全旧记录路径失败: \(error)")
-                    }
-                }
-                
-                return
-            }
-        }
-        
-        let meeting = Meeting(
-            title: "会议录音 - \(formatDate(Date()))",
-            content: recognizedText,
-            audioFilePath: audioURL.path,
-            createdAt: Date(),
-            duration: recordingDuration
-        )
-        
-        modelContext.insert(meeting)
-        
-        do {
-            try modelContext.save()
-            print("✅ 会议纪要已保存")
-        } catch {
-            print("❌ 保存失败: \(error)")
-        }
+        print("📤 ========== 通知已发送 ==========\n")
     }
     
     // MARK: - Live Activity 管理
@@ -368,9 +344,9 @@ class LiveRecordingManager: ObservableObject {
             return
         }
         
-        let attributes = MeetingRecordingAttributes(meetingTitle: "会议录音")
+        let attributes = MeetingRecordingAttributes(meetingTitle: "Moly录音")
         let contentState = MeetingRecordingAttributes.ContentState(
-            transcribedText: "开始录音...",
+            transcribedText: publishTranscriptionToUI ? "开始录音..." : "",
             duration: 0,
             isRecording: true,
             isPaused: false
@@ -399,7 +375,10 @@ class LiveRecordingManager: ObservableObject {
         guard let activity = activity else { return }
         
         let contentState = MeetingRecordingAttributes.ContentState(
-            transcribedText: recognizedText.isEmpty ? "等待说话..." : recognizedText,
+            transcribedText: {
+                guard publishTranscriptionToUI else { return "" }
+                return recognizedText.isEmpty ? "等待说话..." : recognizedText
+            }(),
             duration: recordingDuration,
             isRecording: isRecording,
             isPaused: isPaused
@@ -592,12 +571,13 @@ class LiveRecordingManager: ObservableObject {
     }
     
     @objc private func handleAppWillTerminate() {
-        print("🚨 App即将终止，自动保存录音")
+        print("🚨 App即将终止")
         
-        // 如果正在录音，立即停止并保存
+        // 如果正在录音，立即停止（但无法上传到后端，因为app即将终止）
         if isRecording {
-            // 获取 ModelContext
-            let context = modelContextProvider?()
+            print("⚠️ [handleAppWillTerminate] 录音正在进行中，强制停止...")
+            print("⚠️ [handleAppWillTerminate] 注意：App终止时无法异步上传，录音文件已保存在本地")
+            print("⚠️ [handleAppWillTerminate] 音频文件: \(audioURL?.path ?? "nil")")
             
             // 同步停止录音（因为时间紧迫）
             isRecording = false
@@ -617,9 +597,6 @@ class LiveRecordingManager: ObservableObject {
             recognitionTask?.cancel()
             recognitionTask = nil
             recognitionRequest = nil
-            
-            // 保存到数据库
-            saveToMeeting(modelContext: context)
             
             // 同步结束 Live Activity（使用信号量等待完成）
             if let activity = activity {
@@ -641,7 +618,7 @@ class LiveRecordingManager: ObservableObject {
                 print("✅ Live Activity 已强制结束")
             }
             
-            print("✅ 录音已自动保存（App终止）")
+            print("✅ 录音已停止（App终止，未上传后端）")
         } else {
             // 即使没在录音，也要清理可能残留的Activity
             endLiveActivityImmediately()

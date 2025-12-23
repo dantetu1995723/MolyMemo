@@ -28,26 +28,31 @@ struct ModuleNavigationBar: View {
     }
     
     var body: some View {
-        HStack(spacing: 12) {
-            navButton(icon: "chevron.left", action: onBack)
-            
-            Spacer(minLength: 8)
-            
+        ZStack {
+            // 居中标题
             Text(title)
                 .font(.system(size: 17, weight: .semibold, design: .rounded))
                 .foregroundColor(.black.opacity(0.78))
                 .lineLimit(1)
             
-            Spacer(minLength: 8)
+            // 左侧返回按钮
+            HStack {
+                navButton(icon: "chevron.left", action: onBack)
+                Spacer()
+            }
             
-            if let custom = customTrailing {
-                custom
-            } else if let icon = trailingIcon,
-               let action = trailingAction {
-                navButton(icon: icon, action: action)
-            } else {
-                Color.clear
-                    .frame(width: buttonSize, height: buttonSize)
+            // 右侧按钮
+            HStack {
+                Spacer()
+                if let custom = customTrailing {
+                    custom
+                } else if let icon = trailingIcon,
+                   let action = trailingAction {
+                    navButton(icon: icon, action: action)
+                } else {
+                    Color.clear
+                        .frame(width: buttonSize, height: buttonSize)
+                }
             }
         }
         .padding(.horizontal, 18)

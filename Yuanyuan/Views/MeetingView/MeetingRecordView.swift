@@ -6,12 +6,16 @@ import UIKit
 // 录音文件项（可包含会议纪要）
 struct RecordingItem: Identifiable {
     var id: UUID
-    let audioURL: URL
+    var remoteId: String?  // 远程服务器ID
+    var audioURL: URL?  // 本地音频文件URL（可选）
     let createdAt: Date
     let duration: TimeInterval
     var meetingSummary: String?  // 会议纪要内容
     var title: String  // 会议标题
+    var transcriptions: [MeetingTranscription]?  // 转写记录
+    var isFromRemote: Bool = false  // 是否来自远程服务器
     
+    // 本地录音初始化
     init(id: UUID = UUID(), audioURL: URL, createdAt: Date = Date(), duration: TimeInterval, meetingSummary: String? = nil, title: String = "") {
         self.id = id
         self.audioURL = audioURL
@@ -19,6 +23,73 @@ struct RecordingItem: Identifiable {
         self.duration = duration
         self.meetingSummary = meetingSummary
         self.title = title
+        self.isFromRemote = false
+    }
+    
+    // 远程数据初始化
+    init(remoteItem: MeetingMinutesService.MeetingMinutesItem) {
+        self.id = UUID()
+        self.remoteId = remoteItem.id
+        self.isFromRemote = true
+        
+        // 解析日期
+        if let dateString = remoteItem.meetingDate ?? remoteItem.date {
+            // 兼容 "yyyy-MM-dd" / ISO8601
+            let df = DateFormatter()
+            df.locale = Locale(identifier: "zh_CN")
+            df.dateFormat = "yyyy-MM-dd"
+            if let d = df.date(from: dateString) {
+                self.createdAt = d
+            } else {
+                let iso = ISO8601DateFormatter()
+                iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                self.createdAt = iso.date(from: dateString) ?? Date()
+            }
+        } else if let createdAt = remoteItem.createdAt {
+            let iso = ISO8601DateFormatter()
+            iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            self.createdAt = iso.date(from: createdAt) ?? Date()
+        } else {
+            self.createdAt = Date()
+        }
+        
+        self.duration = remoteItem.duration ?? 0
+        self.meetingSummary = remoteItem.summary ?? remoteItem.meetingSummary
+        self.title = remoteItem.title ?? "会议录音"
+        
+        // 设置音频路径
+        if let audioPath = remoteItem.audioPath, !audioPath.isEmpty {
+            self.audioURL = URL(fileURLWithPath: audioPath)
+        } else if let audioUrl = remoteItem.audioUrl, !audioUrl.isEmpty, let u = URL(string: audioUrl) {
+            self.audioURL = u
+        }
+        
+        // 转换转写记录
+        if let details = remoteItem.meetingDetails, !details.isEmpty {
+            self.transcriptions = details.compactMap { d in
+                guard let text = d.text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+                let speaker = (d.speakerName?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
+                    ? d.speakerName!
+                    : ("说话人" + (d.speakerId ?? ""))
+                let time = {
+                    let total = Int((d.startTime ?? 0).rounded(.down))
+                    let h = total / 3600
+                    let m = (total % 3600) / 60
+                    let s = total % 60
+                    return String(format: "%02d:%02d:%02d", h, m, s)
+                }()
+                return MeetingTranscription(speaker: speaker, time: time, content: text)
+            }
+        } else {
+            self.transcriptions = remoteItem.transcriptions?.compactMap { item in
+                guard let content = item.content, !content.isEmpty else { return nil }
+                return MeetingTranscription(
+                    speaker: item.speaker ?? "说话人",
+                    time: item.time ?? "00:00:00",
+                    content: content
+                )
+            }
+        }
     }
     
     var formattedDate: String {
@@ -46,6 +117,12 @@ struct RecordingItem: Identifiable {
         // 实时录音的原始语音识别文本不会有这个标记
         return summary.contains("•")
     }
+    
+    // 是否可以播放（有本地音频文件）
+    var canPlay: Bool {
+        guard let url = audioURL else { return false }
+        return FileManager.default.fileExists(atPath: url.path)
+    }
 }
 
 // 会议纪要录音视图 - 重新设计
@@ -63,6 +140,11 @@ struct MeetingRecordView: View {
     
     // 录音文件列表
     @State private var recordingItems: [RecordingItem] = []
+    
+    // 加载状态
+    @State private var isLoading = false
+    @State private var loadError: String?
+    @State private var searchText: String = ""
     
     // 播放状态
     @State private var audioPlayer: AVAudioPlayer?
@@ -103,8 +185,36 @@ struct MeetingRecordView: View {
                     if showContent {
                         ScrollView {
                             LazyVStack(spacing: 12) {
+                                // 加载中状态
+                                if isLoading && recordingItems.isEmpty {
+                                    VStack(spacing: 16) {
+                                        ProgressView()
+                                            .scaleEffect(1.2)
+                                        Text("正在加载会议纪要...")
+                                            .font(.system(size: 14, weight: .medium, design: .rounded))
+                                            .foregroundColor(Color.black.opacity(0.5))
+                                    }
+                                    .padding(.top, 80)
+                                }
+                                // 错误状态
+                                else if let error = loadError {
+                                    VStack(spacing: 16) {
+                                        Image(systemName: "exclamationmark.triangle")
+                                            .font(.system(size: 48, weight: .light))
+                                            .foregroundColor(Color.orange.opacity(0.6))
+                                        Text(error)
+                                            .font(.system(size: 14, weight: .medium, design: .rounded))
+                                            .foregroundColor(Color.black.opacity(0.5))
+                                        Button("重试") {
+                                            loadRecordingsFromMeetings()
+                                        }
+                                        .font(.system(size: 14, weight: .medium))
+                                        .foregroundColor(.blue)
+                                    }
+                                    .padding(.top, 60)
+                                }
                                 // 空状态
-                                if recordingItems.isEmpty {
+                                else if recordingItems.isEmpty {
                                     EmptyMeetingView()
                                         .padding(.top, 60)
                                 } else {
@@ -151,6 +261,10 @@ struct MeetingRecordView: View {
                             .padding(.top, 8)
                             .padding(.bottom, 120)
                         }
+                        .refreshable {
+                            // 下拉刷新
+                            await loadRecordingsFromServer()
+                        }
                     }
                 }
             }
@@ -160,29 +274,8 @@ struct MeetingRecordView: View {
                 title: "会议纪要",
                 themeColor: themeColor,
                 onBack: { dismiss() },
-                customTrailing: AnyView(
-                    NavRecordingButton(
-                        isRecording: recordingManager.isRecording,
-                        isPaused: recordingManager.isPaused,
-                        recordingDuration: recordingManager.recordingDuration,
-                        onStartRecording: {
-                            recordingManager.modelContextProvider = { [modelContext] in
-                                return modelContext
-                            }
-                            recordingManager.startRecording()
-                        },
-                        onPauseRecording: {
-                            recordingManager.pauseRecording()
-                        },
-                        onResumeRecording: {
-                            recordingManager.resumeRecording()
-                        },
-                        onStopRecording: {
-                            recordingManager.stopRecording(modelContext: modelContext)
-                            loadRecordingsFromMeetings()
-                        }
-                    )
-                )
+                // 新流程：会议纪要页不再提供“开始录音”入口（避免与快捷指令流程冲突）
+                customTrailing: AnyView(EmptyView())
             )
         }
         .toolbar(.hidden, for: .navigationBar)
@@ -259,12 +352,8 @@ struct MeetingRecordView: View {
             }
         }
         .onChange(of: showAddSheet) { _, newValue in
-            // 当从底部tab栏点击加号时，开始录音
-            if newValue && !recordingManager.isRecording {
-                recordingManager.modelContextProvider = { [modelContext] in
-                    return modelContext
-                }
-                recordingManager.startRecording()
+            // 新流程：不再在会议纪要页通过“加号/新增”触发录音
+            if newValue {
                 showAddSheet = false
             }
         }
@@ -284,43 +373,64 @@ struct MeetingRecordView: View {
     }
     
     private func loadRecordingsFromMeetings() {
-        let descriptor = FetchDescriptor<Meeting>(sortBy: [SortDescriptor(\Meeting.createdAt, order: .reverse)])
+        // 使用异步任务从后端加载
+        Task {
+            await loadRecordingsFromServer()
+        }
+    }
+    
+    /// 从服务器加载会议纪要列表
+    @MainActor
+    private func loadRecordingsFromServer() async {
+        print("📡 ========== 开始加载会议纪要 ==========")
+        print("📡 [MeetingRecordView] 搜索关键词: \(searchText.isEmpty ? "(空)" : searchText)")
+        
+        isLoading = true
+        loadError = nil
+        
         do {
-            let meetings = try modelContext.fetch(descriptor)
+            print("📡 [MeetingRecordView] 正在请求后端API...")
+            let startTime = Date()
             
-            // 根据「时间+时长」兜底去重，同一段录音只展示一次
-            // 即使底层因为异常生成了两条记录，这里也只会看到一条
-            var seenKeys = Set<String>()
-            recordingItems = meetings.compactMap { (meeting: Meeting) -> RecordingItem? in
-                guard let audioPath = meeting.audioFilePath,
-                      FileManager.default.fileExists(atPath: audioPath) else {
-                    return nil
-                }
-                
-                // 以分钟级时间戳 + 四舍五入后的时长作为“同一段录音”的标识
-                let minuteStamp = Int(meeting.createdAt.timeIntervalSince1970 / 60)
-                let roundedDuration = Int(meeting.duration.rounded())
-                let key = "\(minuteStamp)|\(roundedDuration)"
-                
-                guard !seenKeys.contains(key) else {
-                    let fileName = URL(fileURLWithPath: audioPath).lastPathComponent
-                    print("⚠️ 检测到重复会议记录（同时间同时长），已在列表中隐藏: \(fileName)")
-                    return nil
-                }
-                
-                seenKeys.insert(key)
-                
-                return RecordingItem(
-                    id: meeting.id,
-                    audioURL: URL(fileURLWithPath: audioPath),
-                    createdAt: meeting.createdAt,
-                    duration: meeting.duration,
-                    meetingSummary: meeting.content,
-                    title: meeting.title
-                )
+            let remoteItems = try await MeetingMinutesService.getMeetingMinutesList(
+                search: searchText.isEmpty ? nil : searchText
+            )
+            
+            let elapsed = Date().timeIntervalSince(startTime)
+            print("📡 [MeetingRecordView] 请求耗时: \(String(format: "%.2f", elapsed))秒")
+            print("📡 [MeetingRecordView] 返回数据条数: \(remoteItems.count)")
+            
+            // 打印每条数据详情
+            for (index, item) in remoteItems.enumerated() {
+                print("📋 [\(index + 1)] ID: \(item.id ?? "nil")")
+                print("     标题: \(item.title ?? "nil")")
+                print("     日期: \(item.date ?? item.createdAt ?? "nil")")
+                print("     时长: \(item.duration ?? 0)秒")
+                print("     摘要: \(item.summary?.prefix(50) ?? "nil")...")
+                print("     音频路径: \(item.audioPath ?? "nil")")
+                print("     转写记录数: \(item.transcriptions?.count ?? 0)")
             }
+            
+            // 转换为 RecordingItem
+            recordingItems = remoteItems.map { remoteItem in
+                let recordingItem = RecordingItem(remoteItem: remoteItem)
+                print("🔄 转换: \(remoteItem.title ?? "nil") -> canPlay=\(recordingItem.canPlay)")
+                return recordingItem
+            }
+            
+            print("✅ [MeetingRecordView] 成功加载 \(recordingItems.count) 条会议纪要")
+            print("📡 ========== 加载完成 ==========\n")
+            isLoading = false
+            
         } catch {
-            print("❌ 读取录音失败: \(error)")
+            print("❌ ========== 加载失败 ==========")
+            print("❌ [MeetingRecordView] 错误类型: \(type(of: error))")
+            print("❌ [MeetingRecordView] 错误详情: \(error)")
+            print("❌ [MeetingRecordView] 本地化描述: \(error.localizedDescription)")
+            print("❌ ========================================\n")
+            
+            isLoading = false
+            loadError = "加载失败: \(error.localizedDescription)"
         }
     }
     
@@ -333,6 +443,12 @@ struct MeetingRecordView: View {
     // MARK: - 播放控制
     
     private func playRecording(_ item: RecordingItem) {
+        // 检查是否有可播放的音频
+        guard let audioURL = item.audioURL, item.canPlay else {
+            print("⚠️ 该录音没有本地音频文件，无法播放")
+            return
+        }
+        
         // 如果正在播放其他录音，先停止
         if playingRecordingId != nil && playingRecordingId != item.id {
             stopPlaying()
@@ -351,7 +467,7 @@ struct MeetingRecordView: View {
             try audioSession.setCategory(.playback, mode: .default)
             try audioSession.setActive(true)
             
-            audioPlayer = try AVAudioPlayer(contentsOf: item.audioURL)
+            audioPlayer = try AVAudioPlayer(contentsOf: audioURL)
             audioPlayer?.prepareToPlay()
             audioPlayer?.play()
             
@@ -387,33 +503,27 @@ struct MeetingRecordView: View {
     // MARK: - 语音转文字
     
     private func transcribeRecording(_ item: RecordingItem) {
+        // 检查是否有音频文件
+        guard let audioURL = item.audioURL, item.canPlay else {
+            print("⚠️ 该录音没有本地音频文件，无法转写")
+            return
+        }
+        
         transcribingRecordingId = item.id
-        transcriptionProgress = "正在转写音频..."
+        transcriptionProgress = "正在上传音频..."
         
         Task {
             do {
-                // 第一步：使用通义千问3 ASR转写音频（支持长音频、情感识别）
-                await MainActor.run {
-                    transcriptionProgress = "正在识别音频..."
-                }
+                print("🎤 [MeetingRecord] 开始处理录音: \(audioURL.lastPathComponent)")
                 
-                print("🎤 [MeetingRecord] 开始转写录音: \(item.audioURL.lastPathComponent)")
-                let transcription = try await QwenASRService.transcribeAudio(fileURL: item.audioURL)
-                
-                guard !transcription.isEmpty else {
-                    print("❌ [MeetingRecord] 识别结果为空")
-                    throw NSError(domain: "Transcription", code: -1, userInfo: [NSLocalizedDescriptionKey: "识别结果为空"])
-                }
-                
-                print("✅ [MeetingRecord] 音频转写完成 - 长度: \(transcription.count) 字符")
-                print("   预览: \(transcription.prefix(100))...")
-                
-                // 第二步：使用 qwen max 生成会议纪要
+                // 使用后端服务生成会议纪要
                 await MainActor.run {
                     transcriptionProgress = "正在生成会议纪要..."
                 }
                 
-                let meetingSummary = try await QwenMaxService.generateMeetingSummary(transcription: transcription)
+                let (meetingSummary, transcriptions) = try await MeetingMinutesService.generateMeetingMinutes(
+                    audioFileURL: audioURL
+                )
                 
                 await MainActor.run {
                     // 更新录音项的会议纪要
@@ -430,6 +540,9 @@ struct MeetingRecordView: View {
                                 print("❌ 保存会议纪要失败: \(error)")
                             }
                         }
+                        
+                        // 同步更新聊天室中的会议卡片
+                        updateMeetingCardInChat(item: item, summary: meetingSummary, transcriptions: transcriptions)
                         
                         // 自动展开该项
                         withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
@@ -449,6 +562,28 @@ struct MeetingRecordView: View {
                     transcriptionProgress = ""
                     
                     print("❌ 转换失败: \(error)")
+                    HapticFeedback.error()
+                }
+            }
+        }
+    }
+    
+    /// 更新聊天室中的会议卡片
+    private func updateMeetingCardInChat(item: RecordingItem, summary: String, transcriptions: [MeetingTranscription]?) {
+        // 遍历聊天消息，找到对应的会议卡片并更新
+        for i in 0..<appState.chatMessages.count {
+            if let meetings = appState.chatMessages[i].meetings {
+                for j in 0..<meetings.count {
+                    if meetings[j].id == item.id {
+                        // 找到对应的卡片，更新摘要和转写记录
+                        appState.chatMessages[i].meetings?[j].summary = summary
+                        appState.chatMessages[i].meetings?[j].transcriptions = transcriptions
+                        
+                        // 保存到存储
+                        appState.saveMessageToStorage(appState.chatMessages[i], modelContext: modelContext)
+                        print("✅ 聊天室中的会议卡片已更新")
+                        return
+                    }
                 }
             }
         }
@@ -588,8 +723,10 @@ struct MeetingRecordView: View {
         // 如果正在播放该录音，先停止
         stopPlayingIfNeeded(for: item.id)
         
-        // 删除音频文件
-        try? FileManager.default.removeItem(at: item.audioURL)
+        // 删除本地音频文件（如果存在）
+        if let audioURL = item.audioURL {
+            try? FileManager.default.removeItem(at: audioURL)
+        }
         
         // 从列表中移除
         withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
@@ -615,7 +752,7 @@ struct EmptyMeetingView: View {
                 .font(.system(size: 18, weight: .medium, design: .rounded))
                 .foregroundColor(Color.black.opacity(0.5))
             
-            Text("点击下方按钮开始录音")
+            Text("通过快捷指令开始录音")
                 .font(.system(size: 14, weight: .regular, design: .rounded))
                 .foregroundColor(Color.black.opacity(0.35))
         }

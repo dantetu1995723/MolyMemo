@@ -30,6 +30,10 @@ struct ChatView: View {
     @State private var showDeleteConfirmation: Bool = false
     @State private var eventToDelete: ScheduleEvent? = nil
     @State private var messageIdToDeleteFrom: UUID? = nil
+    
+    // 聊天搜索
+    @State private var showSearch: Bool = false
+    @State private var pendingScrollToMessageId: UUID? = nil
 
     // 日程详情弹窗（点击卡片打开）
     private struct ScheduleDetailSelection: Identifiable, Equatable {
@@ -49,6 +53,14 @@ struct ChatView: View {
         var id: String { "\(messageId.uuidString)-\(invoiceId.uuidString)" }
     }
     @State private var invoiceDetailSelection: InvoiceDetailSelection? = nil
+    
+    // 会议纪要详情（点击卡片打开）
+    private struct MeetingDetailSelection: Identifiable, Equatable {
+        let messageId: UUID
+        let meetingId: UUID
+        var id: String { "\(messageId.uuidString)-\(meetingId.uuidString)" }
+    }
+    @State private var meetingDetailSelection: MeetingDetailSelection? = nil
     
     // 主题色
     private let primaryGray = Color(hex: "333333")
@@ -147,6 +159,15 @@ struct ChatView: View {
                         }
                         .onChange(of: appState.chatMessages.count) { _, _ in
                             scrollToBottom(proxy: proxy)
+                        }
+                        .onChange(of: pendingScrollToMessageId) { _, newValue in
+                            guard let id = newValue else { return }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    proxy.scrollTo(id, anchor: .center)
+                                }
+                                pendingScrollToMessageId = nil
+                            }
                         }
                     }
                 }
@@ -266,10 +287,46 @@ struct ChatView: View {
                     .background(Color.white)
                 }
             }
+            .sheet(item: $meetingDetailSelection, onDismiss: {
+                meetingDetailSelection = nil
+            }) { selection in
+                if
+                    let msgIndex = appState.chatMessages.firstIndex(where: { $0.id == selection.messageId }),
+                    let meetingIndex = appState.chatMessages[msgIndex].meetings?.firstIndex(where: { $0.id == selection.meetingId })
+                {
+                    MeetingDetailSheet(
+                        meeting: Binding(
+                            get: {
+                                appState.chatMessages[msgIndex].meetings?[meetingIndex]
+                                ?? MeetingCard(title: "", date: Date(), summary: "")
+                            },
+                            set: { appState.chatMessages[msgIndex].meetings?[meetingIndex] = $0 }
+                        )
+                    )
+                } else {
+                    VStack {
+                        Text("记录不存在或已删除")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(Color(hex: "666666"))
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color.white)
+                }
+            }
             .sheet(item: $selectedContact) { contact in
                 ContactDetailView(contact: contact)
                     .presentationDetents([.large])
                     .presentationDragIndicator(.visible)
+            }
+            .sheet(isPresented: $showSearch) {
+                ChatSearchView(
+                    messages: appState.chatMessages,
+                    onSelect: { id in
+                        showSearch = false
+                        pendingScrollToMessageId = id
+                    }
+                )
+                .presentationDragIndicator(.visible)
             }
             
             // 删除确认弹窗
@@ -337,6 +394,11 @@ struct ChatView: View {
                     // 再延迟一点添加发票示例
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                         appState.addSampleInvoiceMessage()
+                        
+                        // 最后延迟一点添加会议纪要示例
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                            appState.addSampleMeetingMessage()
+                        }
                     }
                 }
             }
@@ -356,9 +418,10 @@ struct ChatView: View {
     // MARK: - 顶部导航
     private var headerView: some View {
         HStack {
-            // 左侧菜单
+            // 左侧：打开设置
             Button(action: {
                 HapticFeedback.light()
+                appState.showSettings = true
             }) {
                 Image(systemName: "line.3.horizontal")
                     .font(.system(size: 20, weight: .light))
@@ -374,9 +437,10 @@ struct ChatView: View {
             
             Spacer()
             
-            // 右侧搜索
+            // 右侧：搜索聊天记录
             Button(action: {
                 HapticFeedback.light()
+                showSearch = true
             }) {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 20, weight: .light))
@@ -421,7 +485,7 @@ struct ChatView: View {
             // 消息列表
             ForEach(appState.chatMessages) { message in
                 if message.role == .user {
-                    UserBubble(text: message.content, images: message.images)
+                    UserBubble(message: message)
                         .id(message.id)
                 } else {
                     VStack(alignment: .leading, spacing: 12) {
@@ -431,7 +495,8 @@ struct ChatView: View {
                             messageId: message.id,
                             showActionButtons: (message.scheduleEvents == nil || message.scheduleEvents?.isEmpty == true) && 
                                              (message.contacts == nil || message.contacts?.isEmpty == true) &&
-                                             (message.invoices == nil || message.invoices?.isEmpty == true),
+                                             (message.invoices == nil || message.invoices?.isEmpty == true) &&
+                                             (message.meetings == nil || message.meetings?.isEmpty == true),
                             isInterrupted: message.isInterrupted
                         )
                         
@@ -460,6 +525,33 @@ struct ChatView: View {
                                     .frame(width: agentAvatarSize + 12) // 头像宽度 + spacing
                                 
                                 // 操作按钮
+                                MessageActionButtons(messageId: message.id)
+                            }
+                            .padding(.top, 4)
+                        }
+                        
+                        // 会议纪要卡片部分
+                        if let _ = message.meetings,
+                           let index = appState.chatMessages.firstIndex(where: { $0.id == message.id }) {
+                            MeetingSummaryCardStackView(meetings: Binding(
+                                get: { appState.chatMessages[index].meetings ?? [] },
+                                set: { appState.chatMessages[index].meetings = $0 }
+                            ), isParentScrollDisabled: $isCardHorizontalPaging,
+                            onDeleteRequest: { meeting in
+                                withAnimation {
+                                    appState.chatMessages[index].meetings?.removeAll(where: { $0.id == meeting.id })
+                                    appState.saveMessageToStorage(appState.chatMessages[index], modelContext: modelContext)
+                                }
+                            }, onOpenDetail: { meeting in
+                                meetingDetailSelection = MeetingDetailSelection(messageId: message.id, meetingId: meeting.id)
+                            })
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, -10)
+                            
+                            // 操作按钮
+                            HStack(alignment: .center, spacing: 0) {
+                                Spacer()
+                                    .frame(width: agentAvatarSize + 12)
                                 MessageActionButtons(messageId: message.id)
                             }
                             .padding(.top, 4)
@@ -755,7 +847,7 @@ struct TypewriterBubble: View {
                 }
                 .frame(maxWidth: UIScreen.main.bounds.width * 0.75)
             } else {
-                UserBubble(text: displayedText)
+                UserBubble(message: ChatMessage(role: .user, content: displayedText))
             }
         }
         .onAppear {
@@ -1006,8 +1098,7 @@ struct AIBubble: View {
 
 // 标准用户气泡
 struct UserBubble: View {
-    let text: String
-    var images: [UIImage] = []
+    let message: ChatMessage
     
     private let messageImageSize: CGFloat = 120
     
@@ -1016,19 +1107,19 @@ struct UserBubble: View {
             Spacer(minLength: agentAvatarSize + 12) // 对齐到AI文本左侧起点（头像30 + spacing12）
             
             VStack(alignment: .trailing, spacing: 8) {
-                if !images.isEmpty {
-                    ForEach(Array(images.enumerated()), id: \.offset) { _, image in
+                if !message.images.isEmpty {
+                    ForEach(Array(message.images.enumerated()), id: \.offset) { _, image in
                         Image(uiImage: image)
                             .resizable()
                             .scaledToFill()
-                            .frame(width: messageImageSize, height: messageImageSize) // 圆角正方形缩略图（大于下方指令胶囊）
+                            .frame(width: messageImageSize, height: messageImageSize)
                             .cornerRadius(12)
                             .clipped()
                     }
                 }
                 
-                if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    Text(text)
+                if !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text(message.content)
                         .font(.system(size: 16))
                         .foregroundColor(Color(hex: "333333")) // 黑色文字
                         .lineSpacing(5)
@@ -1040,12 +1131,13 @@ struct UserBubble: View {
                         )
                 }
             }
-            .frame(maxWidth: UIScreen.main.bounds.width * 0.80 + 28, alignment: .trailing) // +28补偿padding，使文本宽度与AI一致
+            .frame(maxWidth: UIScreen.main.bounds.width * 0.80 + 28, alignment: .trailing)
             
-            Spacer(minLength: 4) // 额外4点间距，使总侧向padding达到20（父容器16 + 4）
+            Spacer(minLength: 4)
         }
     }
 }
+
 
 // 操作按钮组件
 struct ActionButton: View {
@@ -1058,6 +1150,67 @@ struct ActionButton: View {
             Image(systemName: icon)
                 .font(.system(size: 14))
                 .foregroundColor(Color(hex: "999999"))
+        }
+    }
+}
+
+// MARK: - 聊天记录搜索
+private struct ChatSearchView: View {
+    let messages: [ChatMessage]
+    let onSelect: (UUID) -> Void
+    
+    @Environment(\.dismiss) private var dismiss
+    @State private var query: String = ""
+    
+    private var results: [ChatMessage] {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return [] }
+        return messages.filter { m in
+            !m.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+            m.content.localizedCaseInsensitiveContains(q)
+        }
+    }
+    
+    var body: some View {
+        NavigationStack {
+            List {
+                if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text("输入关键词搜索聊天记录")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.secondary)
+                } else if results.isEmpty {
+                    Text("没有找到匹配内容")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.secondary)
+                } else {
+                    ForEach(results) { m in
+                        Button {
+                            HapticFeedback.light()
+                            onSelect(m.id)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(m.role == .user ? "我" : "圆圆")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundColor(.secondary)
+                                
+                                Text(m.content)
+                                    .font(.system(size: 15, weight: .medium))
+                                    .foregroundColor(.primary)
+                                    .lineLimit(3)
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("搜索")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("关闭") { dismiss() }
+                }
+            }
+            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "搜索聊天内容")
         }
     }
 }
@@ -1176,6 +1329,16 @@ struct MessageActionButtons: View {
             }
         }
         
+        // 如果有会议纪要卡片，添加卡片信息
+        if let meetings = message.meetings, !meetings.isEmpty {
+            textToCopy += "\n\n会议纪要：\n"
+            for (index, meeting) in meetings.enumerated() {
+                textToCopy += "\n\(index + 1). \(meeting.title)\n"
+                textToCopy += "   时间：\(meeting.formattedDate)\n"
+                textToCopy += "   摘要：\(meeting.summary)\n"
+            }
+        }
+        
         UIPasteboard.general.string = textToCopy
     }
     
@@ -1196,6 +1359,7 @@ struct MessageActionButtons: View {
         appState.chatMessages[currentIndex].scheduleEvents = nil
         appState.chatMessages[currentIndex].contacts = nil
         appState.chatMessages[currentIndex].invoices = nil
+        appState.chatMessages[currentIndex].meetings = nil
         appState.chatMessages[currentIndex].streamingState = .idle
         
         // 重新调用API

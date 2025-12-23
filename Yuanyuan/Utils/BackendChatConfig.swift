@@ -42,14 +42,12 @@ enum BackendChatConfig {
                 return existing
             }
             
-            // Debug 默认指向你提供的本地服务地址；用户之后可在设置里覆盖
-            #if DEBUG
+            // 默认指向你提供的本地服务地址；用户之后可在设置里覆盖
             if UserDefaults.standard.object(forKey: Keys.baseURL) == nil || existing.isEmpty {
-                let fallback = "http://192.168.106.108:8000"
+                let fallback = "http://192.168.106.108:8000/"
                 UserDefaults.standard.set(fallback, forKey: Keys.baseURL)
                 return fallback
             }
-            #endif
             
             return existing
         }

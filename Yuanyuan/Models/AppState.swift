@@ -169,6 +169,32 @@ struct InvoiceCard: Identifiable, Equatable, Codable {
     var notes: String?        // 备注
 }
 
+// 会议纪要卡片数据
+struct MeetingCard: Identifiable, Equatable, Codable {
+    var id = UUID()
+    var title: String
+    var date: Date
+    var summary: String
+    var duration: TimeInterval?
+    var audioPath: String?
+    var transcriptions: [MeetingTranscription]?
+    /// 是否正在生成会议纪要（后端异步处理中）
+    var isGenerating: Bool = false
+    
+    var formattedDate: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        return formatter.string(from: date)
+    }
+}
+
+struct MeetingTranscription: Identifiable, Equatable, Codable {
+    var id = UUID()
+    var speaker: String
+    var time: String
+    var content: String
+}
+
 // 人脉预览数据
 struct ContactPreviewData: Equatable {
     var name: String
@@ -215,11 +241,13 @@ struct ChatMessage: Identifiable, Equatable {
     var scheduleEvents: [ScheduleEvent]? = nil // 日程卡片列表
     var contacts: [ContactCard]? = nil // 人脉卡片列表
     var invoices: [InvoiceCard]? = nil // 发票卡片列表
+    var meetings: [MeetingCard]? = nil // 会议纪要卡片列表
     var notes: String? = nil  // 临时存储数据（如待处理的报销信息）
     var showIntentSelection: Bool = false  // 是否显示意图选择器
     var isWrongClassification: Bool = false  // 是否是错误识别（用于"识别错了"按钮）
     var showReclassifyBubble: Bool = false  // 是否显示重新分类气泡
     var isInterrupted: Bool = false // 是否被中断
+    var isLiveRecording: Bool = false // 是否是实时录音状态气泡
     
     enum MessageRole {
         case user
@@ -273,6 +301,7 @@ struct ChatMessage: Identifiable, Equatable {
         lhs.scheduleEvents == rhs.scheduleEvents &&
         lhs.contacts == rhs.contacts &&
         lhs.invoices == rhs.invoices &&
+        lhs.meetings == rhs.meetings &&
         lhs.showIntentSelection == rhs.showIntentSelection &&
         lhs.isWrongClassification == rhs.isWrongClassification &&
         lhs.showReclassifyBubble == rhs.showReclassifyBubble &&
@@ -377,6 +406,7 @@ class AppState: ObservableObject {
     @Published var shouldSendClipboardImage: Bool = false  // 标记是否需要从剪贴板发送截图
     @Published var screenshotCategory: ScreenshotCategory? = nil  // 截图预分类结果
     @Published var isLoadingOlderMessages: Bool = false  // 是否正在加载更早的消息
+    @Published var activeRecordingMessageId: UUID? = nil // 当前活动的录音气泡ID
     
     // 当前生成任务（用于中止）
     var currentGenerationTask: Task<Void, Never>?
@@ -889,6 +919,90 @@ class AppState: ObservableObject {
         message.invoices = [invoice1]
         
         chatMessages.append(message)
+    }
+    
+    /// 添加示例会议纪要消息
+    func addSampleMeetingMessage() {
+        let meeting = MeetingCard(
+            title: "圆圆产品记忆系统设计",
+            date: {
+                var components = DateComponents()
+                components.year = 2025
+                components.month = 12
+                components.day = 17
+                components.hour = 1
+                components.minute = 27
+                components.second = 27
+                return Calendar.current.date(from: components) ?? Date()
+            }(),
+            summary: "本次会议围绕个人AI助手「圆圆」的产品功能设计与技术实现路径展开，重点讨论了核心功能模块、知识库构建策略以及多模态交互体验的优化方案。会议明确了第一阶段的研发重点为长效记忆的准确索引与上下文关联能力的提升。",
+            transcriptions: [
+                MeetingTranscription(
+                    speaker: "说话人1",
+                    time: "00:00:00",
+                    content: "本次会议围绕个人AI助手「圆圆」的产品功能设计与技术实现路径展开，重点讨论了核心功能模块、信息采集方式、人脉系统逻辑及记忆架构等关键议题。"
+                ),
+                MeetingTranscription(
+                    speaker: "说话人2",
+                    time: "00:00:00",
+                    content: "本次会议围绕个人AI助手「圆圆」的产品功能设计与技术实现路径展开，重点讨论了核心功能模块、信息采集方式、人脉系统逻辑及记忆架构等关键议题。"
+                )
+            ]
+        )
+        
+        var message = ChatMessage(role: .agent, content: "已为您创建了一份会议纪要文件，长按可调整。")
+        message.meetings = [meeting]
+        
+        chatMessages.append(message)
+    }
+    
+    /// 添加会议卡片消息（从录音完成后调用）
+    @discardableResult
+    func addMeetingCardMessage(_ meetingCard: MeetingCard) -> ChatMessage {
+        var message = ChatMessage(role: .agent, content: "已生成录音卡片，点击查看详情。")
+        message.meetings = [meetingCard]
+        withAnimation {
+            chatMessages.append(message)
+        }
+        print("✅ 会议卡片消息已添加: \(meetingCard.title)")
+        return message
+    }
+    
+    /// 用户提示气泡：录音完成，正在生成录音卡片（用于“停止录音”后即时反馈）
+    @discardableResult
+    func addRecordingGeneratingUserMessage() -> ChatMessage {
+        let message = ChatMessage(role: .user, content: "录音完成，正在生成录音卡片")
+        withAnimation {
+            chatMessages.append(message)
+        }
+        return message
+    }
+
+    /// 用户提示气泡：开始录音（用于"快捷指令启动录音"后即时反馈）
+    @discardableResult
+    func addRecordingStartedUserMessage() -> ChatMessage {
+        let message = ChatMessage(role: .user, content: "录音已开始")
+        withAnimation {
+            chatMessages.append(message)
+        }
+        return message
+    }
+
+    /// 执行停止录音流程：添加生成中提示气泡 -> 调用停止
+    func stopRecordingAndShowGenerating(modelContext: ModelContext) {
+        guard LiveRecordingManager.shared.isRecording else { return }
+        
+        // 添加"正在生成"提示
+        let userMsg = addRecordingGeneratingUserMessage()
+        saveMessageToStorage(userMsg, modelContext: modelContext)
+        
+        // 停止录音
+        LiveRecordingManager.shared.stopRecording(modelContext: modelContext)
+    }
+
+    /// 清理活动的录音气泡状态（已简化，保留空方法以兼容调用）
+    func clearActiveRecordingStatus() {
+        // 录音气泡已简化为纯文字，无需清理动态状态
     }
     
 }
