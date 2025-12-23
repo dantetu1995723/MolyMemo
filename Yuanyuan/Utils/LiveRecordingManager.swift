@@ -284,13 +284,12 @@ class LiveRecordingManager: ObservableObject {
         recognitionRequest = nil
         
         print("🎙️ 录音已停止，准备上传到后端...")
-        print("🎙️ 音频文件: \(audioURL?.path ?? "nil")")
-        print("🎙️ 录音时长: \(recordingDuration)秒")
         
         // 调用后端API生成会议纪要
         uploadToBackend()
         
-        // 结束 Live Activity
+        // 结束 Live Activity（内部已包含“已完成”状态展示和延迟逻辑）
+        endLiveActivity()
         endLiveActivity()
         
         print("✅ ========== 停止录音完成 ==========\n")
@@ -405,22 +404,34 @@ class LiveRecordingManager: ObservableObject {
             isPaused: false
         )
         
+        // 捕获当前的 activity 引用
+        let currentActivity = activity
+        
         Task {
+            // 1. 立即更新到“已完成”状态，灵动岛会根据 Widget 逻辑显示绿色勾选和完成文案
+            let updateContent = ActivityContent(
+                state: finalState,
+                staleDate: nil,
+                relevanceScore: 100.0
+            )
+            await currentActivity.update(updateContent)
+            print("✨ 灵动岛已切换至“已完成”状态")
+            
+            // 2. 停留 2.5 秒，让用户有充足的时间感受到录音已经成功结束并保存
+            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            
+            // 3. 正式告知系统结束 Activity
+            // dismissalPolicy 设置为 immediate 因为我们已经在上面主动停留过了
+            // 如果是在锁屏界面，系统会根据其策略决定是否继续保留小部件
             if #available(iOS 16.2, *) {
-                // 新API：使用 ActivityContent 结束 Activity，避免使用已废弃的 using: 版本
-                let content = ActivityContent(
-                    state: finalState,
-                    staleDate: nil,
-                    relevanceScore: 100.0
-                )
-                await activity.end(content, dismissalPolicy: .after(.now + 3))
+                await currentActivity.end(updateContent, dismissalPolicy: .after(.now + 1.0))
             } else {
-                // 旧系统上使用无状态的结束方式
-                await activity.end(dismissalPolicy: .after(.now + 3))
+                await currentActivity.end(dismissalPolicy: .after(.now + 1.0))
             }
-            print("✅ Live Activity 已结束")
+            print("✅ Live Activity 已平滑消失")
         }
         
+        // 置空实例，防止重复操作
         self.activity = nil
     }
     
