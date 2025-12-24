@@ -7,168 +7,100 @@ struct MeetingSummaryCardStackView: View {
     var onDeleteRequest: ((MeetingCard) -> Void)? = nil
     var onOpenDetail: ((MeetingCard) -> Void)? = nil
     
-    @State private var currentIndex: Int = 0
-    @State private var dragOffset: CGFloat = 0
-    @State private var showMenu: Bool = false
-    @State private var lastMenuOpenedAt: CFTimeInterval = 0
-    @State private var isPressingCurrentCard: Bool = false
-
     @StateObject private var playback = RecordingPlaybackController.shared
     
     private let cardWidth: CGFloat = 300
     private let cardHeight: CGFloat = 220
-    private let pageSwipeThreshold: CGFloat = 50
+
+    // 与发票卡片一致：不做左右滑动/堆叠翻页，仅做“单张/垂直列表”
+    @State private var menuMeetingId: UUID? = nil
+    @State private var lastMenuOpenedAt: CFTimeInterval = 0
+    @State private var pressingMeetingId: UUID? = nil
     
     var body: some View {
-        VStack(spacing: 0) {
-            // 卡片堆叠区域
-            ZStack {
-                if meetings.isEmpty {
-                    Text("无会议纪要")
-                        .foregroundColor(.gray)
-                        .frame(width: cardWidth, height: cardHeight)
-                        .background(Color.white)
-                        .cornerRadius(24)
-                } else {
-                    ForEach(0..<meetings.count, id: \.self) { index in
-                        let relativeIndex = (index - currentIndex + meetings.count) % meetings.count
-                        
-                        if relativeIndex < 3 {
-                            MeetingSummaryCardView(meeting: meetings[index], playback: playback)
-                                .frame(width: cardWidth, height: cardHeight)
-                                .scaleEffect(
-                                    (1.0 - CGFloat(relativeIndex) * 0.05)
-                                    * (index == currentIndex
-                                       ? (showMenu ? 1.05 : (isPressingCurrentCard ? 0.985 : 1.0))
-                                       : 1.0)
-                                )
-                                .offset(x: relativeIndex == 0 ? dragOffset : CGFloat(relativeIndex) * 12, y: 0)
-                                .zIndex(Double(meetings.count - relativeIndex))
-                                .shadow(color: Color.black.opacity(showMenu && index == currentIndex ? 0.12 : 0.04),
-                                        radius: showMenu && index == currentIndex ? 16 : 10,
-                                        x: 0,
-                                        y: showMenu && index == currentIndex ? 9 : 4)
-                                .opacity(relativeIndex < 3 ? 1 : 0)
-                                .animation(.spring(response: 0.28, dampingFraction: 0.78), value: isPressingCurrentCard)
-                                .animation(.spring(response: 0.35, dampingFraction: 0.72), value: showMenu)
-                                .contentShape(Rectangle())
-                                .onTapGesture {
-                                    guard index == currentIndex else { return }
-                                    if showMenu {
-                                        withAnimation { showMenu = false }
-                                        return
-                                    }
-                                    guard CACurrentMediaTime() - lastMenuOpenedAt > 0.18 else { return }
-                                    onOpenDetail?(meetings[index])
+        VStack(spacing: 8) {
+            if meetings.isEmpty {
+                Text("无会议纪要")
+                    .foregroundColor(.gray)
+                    .frame(width: cardWidth, height: cardHeight)
+                    .background(Color.white)
+                    .cornerRadius(24)
+                    .padding(.horizontal)
+            } else {
+                VStack(spacing: 12) {
+                    ForEach(meetings) { meeting in
+                        MeetingSummaryCardView(meeting: meeting, playback: playback)
+                            .frame(width: cardWidth, height: cardHeight)
+                            .scaleEffect(menuMeetingId == meeting.id ? 1.03 : (pressingMeetingId == meeting.id ? 0.985 : 1.0))
+                            .shadow(color: Color.black.opacity(menuMeetingId == meeting.id ? 0.12 : 0.06),
+                                    radius: menuMeetingId == meeting.id ? 14 : 10,
+                                    x: 0,
+                                    y: menuMeetingId == meeting.id ? 8 : 4)
+                            .animation(.spring(response: 0.28, dampingFraction: 0.78), value: pressingMeetingId)
+                            .animation(.spring(response: 0.35, dampingFraction: 0.72), value: menuMeetingId)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                if menuMeetingId == meeting.id {
+                                    withAnimation { menuMeetingId = nil }
+                                    return
                                 }
-                                .onLongPressGesture(
-                                    minimumDuration: 0.12,
-                                    maximumDistance: 20,
-                                    perform: {
-                                        guard index == currentIndex else { return }
-                                        guard !showMenu else { return }
-                                        lastMenuOpenedAt = CACurrentMediaTime()
-                                        HapticFeedback.selection()
-                                        withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
-                                            showMenu = true
-                                        }
-                                    },
-                                    onPressingChanged: { pressing in
-                                        guard index == currentIndex else { return }
-                                        if showMenu { return }
-                                        isPressingCurrentCard = pressing
+                                guard CACurrentMediaTime() - lastMenuOpenedAt > 0.18 else { return }
+                                onOpenDetail?(meeting)
+                            }
+                            .onLongPressGesture(
+                                minimumDuration: 0.12,
+                                maximumDistance: 20,
+                                perform: {
+                                    guard menuMeetingId == nil else { return }
+                                    lastMenuOpenedAt = CACurrentMediaTime()
+                                    HapticFeedback.selection()
+                                    withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                                        menuMeetingId = meeting.id
                                     }
-                                )
-                                .overlay(alignment: .topLeading) {
-                                    if showMenu && index == currentIndex {
-                                        CardCapsuleMenuView(
-                                            onEdit: {
-                                                let meeting = meetings[index]
-                                                withAnimation { showMenu = false }
-                                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                                                    onOpenDetail?(meeting)
-                                                }
-                                            },
-                                            onDelete: {
-                                                let meeting = meetings[index]
-                                                withAnimation { showMenu = false }
-                                                if let onDeleteRequest = onDeleteRequest {
-                                                    onDeleteRequest(meeting)
-                                                } else {
-                                                    meetings.removeAll { $0.id == meeting.id }
-                                                    if meetings.isEmpty {
-                                                        currentIndex = 0
-                                                    } else {
-                                                        currentIndex = currentIndex % meetings.count
-                                                    }
-                                                }
-                                            },
-                                            onDismiss: {
-                                                withAnimation { showMenu = false }
+                                },
+                                onPressingChanged: { pressing in
+                                    if menuMeetingId != nil { return }
+                                    pressingMeetingId = pressing ? meeting.id : nil
+                                }
+                            )
+                            .overlay(alignment: .topLeading) {
+                                if menuMeetingId == meeting.id {
+                                    CardCapsuleMenuView(
+                                        onEdit: {
+                                            withAnimation { menuMeetingId = nil }
+                                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                                onOpenDetail?(meeting)
                                             }
-                                        )
-                                        .offset(y: -60)
-                                        .transition(.opacity)
-                                        .zIndex(1000)
-                                    }
+                                        },
+                                        onDelete: {
+                                            withAnimation { menuMeetingId = nil }
+                                            if let onDeleteRequest {
+                                                onDeleteRequest(meeting)
+                                            } else if let idx = meetings.firstIndex(where: { $0.id == meeting.id }) {
+                                                withAnimation { meetings.remove(at: idx) }
+                                            }
+                                        },
+                                        onDismiss: {
+                                            withAnimation { menuMeetingId = nil }
+                                        }
+                                    )
+                                    .offset(y: -60)
+                                    .transition(.opacity)
+                                    .zIndex(1000)
                                 }
-                                .allowsHitTesting(index == currentIndex)
-                        }
+                            }
                     }
                 }
-            }
-            .frame(height: cardHeight + 10) // 紧贴底部，只预留顶部空间给缩放/阴影
-            .padding(.top, 10)
-            .simultaneousGesture(
-                DragGesture(minimumDistance: 20)
-                    .onChanged { value in
-                        let dx = value.translation.width
-                        let dy = value.translation.height
-                        guard abs(dx) > abs(dy) else { return }
-                        
-                        isParentScrollDisabled = true
-                        dragOffset = dx
-                        if showMenu { withAnimation { showMenu = false } }
-                    }
-                    .onEnded { value in
-                        defer {
-                            isParentScrollDisabled = false
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                dragOffset = 0
-                            }
-                        }
-                        
-                        let dx = value.translation.width
-                        guard !meetings.isEmpty else { return }
-                        
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                            if dx > pageSwipeThreshold {
-                                currentIndex = (currentIndex - 1 + meetings.count) % meetings.count
-                            } else if dx < -pageSwipeThreshold {
-                                currentIndex = (currentIndex + 1) % meetings.count
-                            }
-                        }
-                    }
-            )
-            .padding(.horizontal)
-            
-            // Pagination Dots
-            if meetings.count > 1 {
-                HStack(spacing: 6) {
-                    ForEach(0..<meetings.count, id: \.self) { index in
-                        Circle()
-                            .fill(index == currentIndex ? Color.blue : Color.gray.opacity(0.3))
-                            .frame(width: 6, height: 6)
-                    }
-                }
-                .padding(.top, 4)
+                // 与发票卡片一致：顶部仅留 10pt 给阴影/菜单，ChatView 里有 -10，会抵消并贴近上方文字
+                .padding(.top, 10)
+                .padding(.horizontal)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .dismissScheduleMenu)) { _ in
-            if showMenu {
-                withAnimation { showMenu = false }
+            if menuMeetingId != nil {
+                withAnimation { menuMeetingId = nil }
             }
-            isPressingCurrentCard = false
+            pressingMeetingId = nil
         }
     }
 }

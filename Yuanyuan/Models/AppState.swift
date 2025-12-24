@@ -963,7 +963,7 @@ class AppState: ObservableObject {
             ]
         )
         
-        var message = ChatMessage(role: .agent, content: "已为您创建了一份会议纪要文件，长按可调整。")
+        var message = ChatMessage(role: .agent, content: MeetingCardCopy.agentMessageReady)
         message.meetings = [meeting]
         
         chatMessages.append(message)
@@ -972,13 +972,24 @@ class AppState: ObservableObject {
     /// 添加会议卡片消息（从录音完成后调用）
     @discardableResult
     func addMeetingCardMessage(_ meetingCard: MeetingCard) -> ChatMessage {
-        var message = ChatMessage(role: .agent, content: "已生成录音卡片，点击查看详情。")
+        let content = meetingCard.isGenerating
+            ? MeetingCardCopy.agentMessageGenerating
+            : MeetingCardCopy.agentMessageReady
+        var message = ChatMessage(role: .agent, content: content)
         message.meetings = [meetingCard]
         withAnimation {
             chatMessages.append(message)
         }
         print("✅ 会议卡片消息已添加: \(meetingCard.title)")
         return message
+    }
+
+    // MARK: - Copy
+    private enum MeetingCardCopy {
+        /// demo / 真实流程统一：生成完成后的 AI 气泡文案
+        static let agentMessageReady = "已为您创建了一份会议纪要文件，长按可调整。"
+        /// 真实录音生成中：避免出现“已生成”时态不一致
+        static let agentMessageGenerating = "正在生成会议纪要，请稍候..."
     }
     
     /// 用户提示气泡：录音完成，正在生成录音卡片（用于“停止录音”后即时反馈）

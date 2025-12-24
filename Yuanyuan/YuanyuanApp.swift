@@ -272,6 +272,8 @@ struct YuanyuanApp: App {
                                         }
                                         meetings[meetingIndex].isGenerating = false
                                         appState.chatMessages[lastIndex].meetings = meetings
+                                        // 同步更新“AI气泡文案”：从生成中 -> 生成完成（与 demo 一致）
+                                        appState.chatMessages[lastIndex].content = "已为您创建了一份会议纪要文件，长按可调整。"
                                         appState.saveMessageToStorage(appState.chatMessages[lastIndex], modelContext: modelContainer.mainContext)
                                         print("✅ [YuanyuanApp] 会议卡片已更新")
 
@@ -294,6 +296,8 @@ struct YuanyuanApp: App {
                                         meetings[meetingIndex].summary = "⚠️ 会议纪要生成失败: \(error.localizedDescription)"
                                         meetings[meetingIndex].isGenerating = false
                                         appState.chatMessages[lastIndex].meetings = meetings
+                                        // 同步更新“AI气泡文案”：提示失败，避免仍显示“正在生成”
+                                        appState.chatMessages[lastIndex].content = "会议纪要生成失败，请稍后重试。"
                                         appState.saveMessageToStorage(appState.chatMessages[lastIndex], modelContext: modelContainer.mainContext)
                                         print("❌ [YuanyuanApp] 已更新错误状态")
                                     }
