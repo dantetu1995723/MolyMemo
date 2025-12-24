@@ -10,13 +10,24 @@ struct MeetingDetailSheet: View {
     @State private var isLoading = false
     @State private var loadError: String?
     @State private var didFetchOnAppear: Bool = false
+    @State private var pollingTask: Task<Void, Never>? = nil
     
     var body: some View {
         let canPlay = playback.canPlay(meeting: meeting)
         let isCurrent = playback.isCurrent(meeting: meeting)
         let isPlaying = isCurrent && playback.isPlaying
         let isDownloading = isCurrent && playback.isDownloading
-        let duration = max(playback.duration, 0.0001)
+
+        // 🔍 调试：播放器时长 vs 后端时长
+        let backendDuration = meeting.duration ?? 0
+        let playerDuration = playback.duration
+        let duration = max(playerDuration > 0 ? playerDuration : backendDuration, 0.0001)
+        #if DEBUG
+        let _ = {
+            print("🔍 [MeetingDetailSheet] duration 选择: player=\(playerDuration) backend=\(backendDuration) used=\(duration)")
+            return true
+        }()
+        #endif
         let progressValue = isScrubbing ? scrubValue : min(max(playback.currentTime / duration, 0), 1)
         let currentTimeLabel = formatHMS(isScrubbing ? scrubValue * duration : playback.currentTime)
         let remainingTimeLabel = "-\(formatHMS(max(duration - (isScrubbing ? scrubValue * duration : playback.currentTime), 0)))"
@@ -100,7 +111,8 @@ struct MeetingDetailSheet: View {
                                     .font(.system(size: 14))
                                     .foregroundColor(.red)
                                 Button("重试") {
-                                    Task { await fetchDetails() }
+                                    pollingTask?.cancel()
+                                    pollingTask = Task { await fetchDetailsWithPolling() }
                                 }
                                 .font(.system(size: 14, weight: .bold))
                                 .foregroundColor(Color(hex: "007AFF"))
@@ -294,20 +306,37 @@ struct MeetingDetailSheet: View {
             // 如果有远程ID，自动获取详情以更新内容（特别是转写记录）
             guard !didFetchOnAppear else { return }
             didFetchOnAppear = true
-            if meeting.remoteId != nil { await fetchDetails() }
+            if meeting.remoteId != nil {
+                pollingTask?.cancel()
+                pollingTask = Task { await fetchDetailsWithPolling() }
+                await pollingTask?.value
+            }
+        }
+        .onDisappear {
+            pollingTask?.cancel()
+            pollingTask = nil
+            // 下滑关闭详情页时，停止播放（避免切换到其他会议详情仍在播放上一条）
+            playback.stop()
         }
     }
 
     @MainActor
-    private func fetchDetails() async {
+    private func fetchDetailsWithPolling() async {
         guard let remoteId = meeting.remoteId else { return }
         
         isLoading = true
         loadError = nil
         
-        do {
-            print("🌐 [MeetingDetailSheet] GET 会议详情: id=\(remoteId)")
-            let item = try await MeetingMinutesService.getMeetingMinutesDetail(id: remoteId)
+        let maxAttempts = 20
+        let delayNs: UInt64 = 900_000_000 // 0.9s
+
+        for attempt in 1...maxAttempts {
+            if Task.isCancelled { break }
+            do {
+                print("🌐 [MeetingDetailSheet] GET 会议详情: id=\(remoteId) attempt=\(attempt)/\(maxAttempts)")
+                let item = try await MeetingMinutesService.getMeetingMinutesDetail(id: remoteId)
+                let status = (item.status ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                print("🔍 [MeetingDetailSheet] 当前 status=\(status.isEmpty ? "nil" : status) audioDuration=\(String(describing: item.audioDuration))")
             
             // 更新标题（如果不为空）
             if let newTitle = item.title, !newTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -340,9 +369,13 @@ struct MeetingDetailSheet: View {
                 }
             }
             
-            // 更新时长和路径
-            if let duration = item.duration {
+            // 更新时长和路径（只使用 audio_duration）
+            print("🔍 [MeetingDetailSheet] 收到时长: audioDuration=\(String(describing: item.audioDuration)) (raw duration=\(String(describing: item.duration)))")
+            if let duration = item.audioDuration {
+                print("🔍 [MeetingDetailSheet] 更新 meeting.duration = \(duration)")
                 meeting.duration = duration
+            } else {
+                print("⚠️ [MeetingDetailSheet] audioDuration 为 nil，不更新时长")
             }
             // 音频：audio_url 作为远程原始文件链接；audio_path 可能是服务端路径，不保证本地可用
             if let audioUrl = item.audioUrl, !audioUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -350,12 +383,30 @@ struct MeetingDetailSheet: View {
             }
             
             print("✅ [MeetingDetailSheet] 会议详情已更新")
-            isLoading = false
-        } catch {
-            print("❌ [MeetingDetailSheet] 获取详情失败: \(error)")
-            loadError = "详情更新失败: \(error.localizedDescription)"
-            isLoading = false
+                // 轮询退出条件：拿到 audio_duration 且状态完成
+                let lowered = status.lowercased()
+                let isDone = lowered.contains("completed") || lowered.contains("done") || lowered.contains("success")
+                if item.audioDuration != nil && isDone {
+                    print("✅ [MeetingDetailSheet] 轮询结束：已拿到 audio_duration 且 status=\(status)")
+                    break
+                }
+
+                if attempt < maxAttempts {
+                    try await Task.sleep(nanoseconds: delayNs)
+                } else {
+                    print("⚠️ [MeetingDetailSheet] 轮询达到上限，最后 status=\(status.isEmpty ? "nil" : status) audioDuration=\(String(describing: item.audioDuration))")
+                }
+            } catch {
+                print("❌ [MeetingDetailSheet] 获取详情失败 attempt=\(attempt): \(error)")
+                if attempt >= maxAttempts {
+                    loadError = "详情更新失败: \(error.localizedDescription)"
+                } else {
+                    try? await Task.sleep(nanoseconds: delayNs)
+                }
+            }
         }
+
+        isLoading = false
     }
 
     private func formatHMS(_ time: TimeInterval) -> String {

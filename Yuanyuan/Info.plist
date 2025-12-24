@@ -55,6 +55,14 @@
 				<key>NSIncludesSubdomains</key>
 				<true/>
 			</dict>
+			<!-- 录音原文件下载：允许该 IP 使用 HTTP（仅限开发/自建服务场景） -->
+			<key>110.16.193.170</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+				<key>NSIncludesSubdomains</key>
+				<true/>
+			</dict>
 		</dict>
 	</dict>
 </dict>

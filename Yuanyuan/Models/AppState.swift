@@ -189,6 +189,16 @@ struct MeetingCard: Identifiable, Equatable, Codable {
         formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
         return formatter.string(from: date)
     }
+
+    /// 录音时长展示（00:00:00），仅基于 meeting.duration（后端 audio_duration）
+    var formattedDuration: String? {
+        guard let duration, duration > 0 else { return nil }
+        let total = Int(duration.rounded(.down))
+        let h = total / 3600
+        let m = (total % 3600) / 60
+        let s = total % 60
+        return String(format: "%02d:%02d:%02d", h, m, s)
+    }
 }
 
 struct MeetingTranscription: Identifiable, Equatable, Codable {

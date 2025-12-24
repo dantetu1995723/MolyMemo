@@ -13,25 +13,47 @@ class AudioPlayer: NSObject, ObservableObject {
     
     override init() {
         super.init()
-        setupAudioSession()
+        configureAudioSessionForPlayback()
     }
     
-    // 配置音频会话
-    private func setupAudioSession() {
+    // 配置音频会话（播放高质量优先）
+    private func configureAudioSessionForPlayback() {
         let audioSession = AVAudioSession.sharedInstance()
         do {
-            try audioSession.setCategory(.playback, mode: .default)
+            // 关键点：每次播放前要把 session 拉回 playback（否则可能被录音/通话模式残留影响，导致闷/卡顿）
+            if #available(iOS 10.0, *) {
+                // 注意：notifyOthersOnDeactivation 只应在 setActive(false) 时使用；
+                // playback 下也不要随意叠加不适用的 option，否则可能触发 OSStatus -50
+                try audioSession.setCategory(.playback, mode: .default, options: [.allowAirPlay])
+            } else {
+                try audioSession.setCategory(.playback, mode: .default)
+            }
             try audioSession.setActive(true)
+            
+            #if DEBUG
+            let route = audioSession.currentRoute.outputs.map { "\($0.portType.rawValue)(\($0.portName))" }.joined(separator: ", ")
+            print("🔊 [AudioPlayer] AudioSession ready category=\(audioSession.category.rawValue) mode=\(audioSession.mode.rawValue) route=[\(route)]")
+            #endif
         } catch {
-            print("⚠️ 音频会话配置失败: \(error)")
+            print("⚠️ [AudioPlayer] 音频会话配置失败: \(error)")
+            #if DEBUG
+            let ns = error as NSError
+            print("⚠️ [AudioPlayer] error domain=\(ns.domain) code=\(ns.code) userInfo=\(ns.userInfo)")
+            #endif
         }
     }
     
     // 从 URL 播放音频
     func play(url: URL) {
         stop()
+        // 防止其它模块改写 AudioSession，导致播放音质异常
+        configureAudioSessionForPlayback()
         
         do {
+            #if DEBUG
+            print("🎵 [AudioPlayer] play(url): \(url.absoluteString)")
+            print("🎵 [AudioPlayer] isFileURL=\(url.isFileURL) exists=\(FileManager.default.fileExists(atPath: url.path))")
+            #endif
             audioPlayer = try AVAudioPlayer(contentsOf: url)
             audioPlayer?.delegate = self
             audioPlayer?.prepareToPlay()
@@ -50,13 +72,17 @@ class AudioPlayer: NSObject, ObservableObject {
             
             print("🔊 开始播放音频，时长: \(String(format: "%.1f", duration))秒")
         } catch {
-            print("⚠️ 音频播放失败: \(error)")
+            print("⚠️ [AudioPlayer] 音频播放失败: \(error)")
+            #if DEBUG
+            print("⚠️ [AudioPlayer] url=\(url.absoluteString)")
+            #endif
         }
     }
     
     // 从 Data 播放音频
     func play(data: Data) {
         stop()
+        configureAudioSessionForPlayback()
         
         do {
             audioPlayer = try AVAudioPlayer(data: data)
@@ -104,6 +130,7 @@ class AudioPlayer: NSObject, ObservableObject {
     // 恢复播放
     func resume() {
         guard audioPlayer != nil else { return }
+        configureAudioSessionForPlayback()
         audioPlayer?.play()
         isPlaying = true
         

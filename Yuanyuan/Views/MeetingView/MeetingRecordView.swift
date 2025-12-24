@@ -53,7 +53,9 @@ struct RecordingItem: Identifiable {
             self.createdAt = Date()
         }
         
-        self.duration = remoteItem.duration ?? 0
+        print("🔍 [RecordingItem] 初始化时长: audioDuration=\(String(describing: remoteItem.audioDuration)) (raw duration=\(String(describing: remoteItem.duration)))")
+        self.duration = remoteItem.audioDuration ?? 0
+        print("🔍 [RecordingItem] 设置 self.duration = \(self.duration)")
         self.meetingSummary = remoteItem.summary ?? remoteItem.meetingSummary
         self.title = remoteItem.title ?? "会议录音"
         

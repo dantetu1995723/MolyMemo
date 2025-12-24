@@ -81,7 +81,8 @@ class SpeechRecognizer: ObservableObject {
                     self.isSessionConfigured = true
                 }
                 if !self.isSessionActive {
-                    try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+                    // notifyOthersOnDeactivation 只应在 setActive(false) 时使用；用于激活会导致底层报错/状态异常
+                    try audioSession.setActive(true)
                     self.isSessionActive = true
                 }
             } catch {
@@ -243,9 +244,21 @@ class SpeechRecognizer: ObservableObject {
                 self?.recognitionTask?.finish()
                 self?.recognitionTask = nil
             }
-            
-            // 保持会话活跃，避免下次重新激活导致延迟
-            // 仅在 app 退出录音场景时（如后台/退出）再统一收回
+
+            // 关键修复：停止语音识别后要收回 AudioSession，
+            // 否则会长期占用 playAndRecord/measurement 导致其它播放（会议详情）音质发闷、卡顿、甚至 setCategory 报 -50。
+            do {
+                try AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
+                self.isSessionActive = false
+                self.isSessionConfigured = false
+                #if DEBUG
+                print("🔇 [SpeechRecognizer] AudioSession deactivated")
+                #endif
+            } catch {
+                #if DEBUG
+                print("⚠️ [SpeechRecognizer] AudioSession deactivate failed: \(error)")
+                #endif
+            }
         }
     }
     

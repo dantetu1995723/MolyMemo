@@ -150,6 +150,10 @@ class MeetingMinutesService {
         let date: Date?
         let summary: String
         let transcriptions: [MeetingTranscription]?
+        /// 后端返回的录音时长（秒），对应 audio_duration
+        let audioDuration: Double?
+        /// 后端返回的录音文件 URL（audio_url）
+        let audioUrl: String?
     }
     
     /// 会议纪要列表项
@@ -162,7 +166,9 @@ class MeetingMinutesService {
         /// 兼容不同后端字段：date / meeting_date
         let date: String?
         let meetingDate: String?
+        /// 旧字段（不再使用，仅用于排查后端返回）
         let duration: Double?
+        let audioDuration: Double?
         let audioPath: String?
         /// 兼容不同后端字段：transcriptions / meeting_details
         let transcriptions: [MeetingMinutesResult.TranscriptionItem]?
@@ -171,6 +177,8 @@ class MeetingMinutesService {
         let audioUrl: String?
         let createdAt: String?
         let updatedAt: String?
+        
+        // 注意：按需求“不搞回退机制”，业务上只使用 audio_duration
         
         struct MeetingDetail: Codable {
             let speakerId: String?
@@ -196,6 +204,7 @@ class MeetingMinutesService {
             case date
             case meetingDate = "meeting_date"
             case duration
+            case audioDuration = "audio_duration"
             case audioPath = "audio_path"
             case transcriptions
             case meetingDetails = "meeting_details"
@@ -328,6 +337,10 @@ class MeetingMinutesService {
                     throw MeetingMinutesError.serverError(errorMsg)
                 }
                 let items = result.data ?? []
+                // 🔍 调试：打印每个会议的时长字段
+                for item in items {
+                    print("🔍 [时长调试] id=\(item.id ?? "nil") audioDuration=\(String(describing: item.audioDuration)) (raw duration=\(String(describing: item.duration)))")
+                }
                 print("✅ [MeetingMinutesService] 获取到 \(items.count) 条会议纪要")
                 print("🌐 ========================================\n")
                 return items
@@ -341,6 +354,10 @@ class MeetingMinutesService {
                     throw MeetingMinutesError.serverError(msg)
                 }
                 let items = resultV2.data?.resolvedItems ?? []
+                // 🔍 调试：打印每个会议的时长字段
+                for item in items {
+                    print("🔍 [时长调试] id=\(item.id ?? "nil") audioDuration=\(String(describing: item.audioDuration)) (raw duration=\(String(describing: item.duration)))")
+                }
                 print("✅ [MeetingMinutesService] 获取到 \(items.count) 条会议纪要")
                 print("🌐 ========================================\n")
                 return items
@@ -358,6 +375,10 @@ class MeetingMinutesService {
                     throw MeetingMinutesError.serverError(msg)
                 }
                 let items = env.data ?? []
+                // 🔍 调试：打印每个会议的时长字段
+                for item in items {
+                    print("🔍 [时长调试] id=\(item.id ?? "nil") audioDuration=\(String(describing: item.audioDuration)) (raw duration=\(String(describing: item.duration)))")
+                }
                 print("✅ [MeetingMinutesService] 获取到 \(items.count) 条会议纪要")
                 print("🌐 ========================================\n")
                 return items
@@ -375,6 +396,10 @@ class MeetingMinutesService {
                 throw MeetingMinutesError.serverError(msg)
             }
             let items = envV2.data?.resolvedItems ?? []
+            // 🔍 调试：打印每个会议的时长字段
+            for item in items {
+                print("🔍 [时长调试] id=\(item.id ?? "nil") audioDuration=\(String(describing: item.audioDuration)) (raw duration=\(String(describing: item.duration)))")
+            }
             print("✅ [MeetingMinutesService] 获取到 \(items.count) 条会议纪要")
             print("🌐 ========================================\n")
             return items
@@ -443,6 +468,11 @@ class MeetingMinutesService {
             throw MeetingMinutesError.serverError("HTTP \(httpResponse.statusCode)")
         }
         
+        // 🔍 调试：打印原始 JSON 响应
+        if let jsonString = String(data: data, encoding: .utf8) {
+            print("🔍 [详情原始JSON] \(jsonString)")
+        }
+        
         // 解析响应（兼容：直接 item / 通用包裹）
         let item: MeetingMinutesItem
         if let direct = try? JSONDecoder().decode(MeetingMinutesItem.self, from: data) {
@@ -461,6 +491,7 @@ class MeetingMinutesService {
                     date: direct.date ?? loose.date,
                     meetingDate: direct.meetingDate ?? loose.meetingDate,
                     duration: direct.duration ?? loose.duration,
+                    audioDuration: direct.audioDuration ?? loose.audioDuration,
                     audioPath: direct.audioPath ?? loose.audioPath,
                     transcriptions: direct.transcriptions ?? loose.transcriptions,
                     meetingDetails: direct.meetingDetails ?? loose.meetingDetails,
@@ -492,6 +523,9 @@ class MeetingMinutesService {
                 item = try parseDetailLoose(data: data, fallbackId: id)
             }
         }
+        
+        // 🔍 调试：打印详情的时长字段（业务只用 audio_duration）
+        print("🔍 [详情时长调试] id=\(item.id ?? "nil") audioDuration=\(String(describing: item.audioDuration)) (raw duration=\(String(describing: item.duration)))")
         
         if verbose {
             let sumLen = (item.summary ?? item.meetingSummary)?.count ?? 0
@@ -639,7 +673,7 @@ class MeetingMinutesService {
                     content: content
                 )
             }
-            return GeneratedMinutes(id: nil, title: nil, date: nil, summary: summary, transcriptions: transcriptions)
+            return GeneratedMinutes(id: nil, title: nil, date: nil, summary: summary, transcriptions: transcriptions, audioDuration: nil, audioUrl: nil)
         }
 
         // 2) 异步结构：{ code/message/data: { id, status: pending } }
@@ -695,7 +729,9 @@ class MeetingMinutesService {
             title: (resolvedTitle?.isEmpty == false) ? resolvedTitle : nil,
             date: resolvedDate,
             summary: finalSummary,
-            transcriptions: transcriptions
+            transcriptions: transcriptions,
+            audioDuration: item.audioDuration,
+            audioUrl: item.audioUrl
         )
     }
 
@@ -755,6 +791,12 @@ class MeetingMinutesService {
 
         // 若是 envelope，就优先取 data
         let payload: [String: Any] = (root["data"] as? [String: Any]) ?? root
+        
+        // 🔍 调试：打印 payload 所有字段名和值
+        print("🔍 [parseDetailLoose] payload 所有字段:")
+        for (key, value) in payload {
+            print("   \(key) = \(value)")
+        }
 
         func pickString(_ keys: [String]) -> String? {
             for k in keys {
@@ -818,6 +860,22 @@ class MeetingMinutesService {
         }
 
         // 尽量兼容其它字段，但这里主要为轮询提供 status/summary
+        // 录音时长：只使用 audio_duration（不做回退），但把 raw duration 打印出来便于排查
+        let audioDuration: Double? = {
+            if let d = payload["audio_duration"] as? Double { return d }
+            if let n = payload["audio_duration"] as? NSNumber { return n.doubleValue }
+            if let s = payload["audio_duration"] as? String { return Double(s) }
+            return nil
+        }()
+        let duration: Double? = {
+            if let d = payload["duration"] as? Double { return d }
+            if let n = payload["duration"] as? NSNumber { return n.doubleValue }
+            if let s = payload["duration"] as? String { return Double(s) }
+            return nil
+        }()
+
+        print("🔍 [parseDetailLoose] 提取 audio_duration=\(String(describing: audioDuration)) raw duration=\(String(describing: duration))")
+        
         return MeetingMinutesItem(
             id: id,
             title: title,
@@ -825,7 +883,8 @@ class MeetingMinutesService {
             meetingSummary: pickString(["meeting_summary"]),
             date: pickString(["date"]),
             meetingDate: pickString(["meeting_date"]),
-            duration: payload["duration"] as? Double,
+            duration: duration,
+            audioDuration: audioDuration,
             audioPath: pickString(["audio_path", "audioPath"]),
             transcriptions: transcriptions,
             meetingDetails: meetingDetails,
@@ -845,19 +904,56 @@ class MeetingMinutesService {
     }
 
     private static func parseMeetingDate(item: MeetingMinutesItem) -> Date? {
+        // 目标：日期带时分秒。优先使用 created_at / updated_at（通常为 ISO8601 带时间）
+        // 注意：后端可能返回 6 位微秒（例如 2025-12-24T11:27:54.499000），ISO8601DateFormatter 可能解析失败
+
+        func parseBackendTimestamp(_ raw: String) -> Date? {
+            let s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !s.isEmpty else { return nil }
+
+            // 1) ISO8601（带/不带毫秒）
+            let iso = ISO8601DateFormatter()
+            iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            if let d = iso.date(from: s) { return d }
+            let iso2 = ISO8601DateFormatter()
+            iso2.formatOptions = [.withInternetDateTime]
+            if let d = iso2.date(from: s) { return d }
+
+            // 2) 兜底：无时区、微秒（6位）/毫秒（3位）
+            let df = DateFormatter()
+            df.locale = Locale(identifier: "en_US_POSIX")
+            df.timeZone = TimeZone.current
+
+            df.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSSSS"
+            if let d = df.date(from: s) { return d }
+            df.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSS"
+            if let d = df.date(from: s) { return d }
+            df.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+            if let d = df.date(from: s) { return d }
+
+            return nil
+        }
+
+        if let updatedAt = item.updatedAt, let d = parseBackendTimestamp(updatedAt) {
+            #if DEBUG
+            print("🕒 [parseMeetingDate] 使用 updated_at: \(updatedAt) -> \(d)")
+            #endif
+            return d
+        }
+        if let createdAt = item.createdAt, let d = parseBackendTimestamp(createdAt) {
+            #if DEBUG
+            print("🕒 [parseMeetingDate] 使用 created_at: \(createdAt) -> \(d)")
+            #endif
+            return d
+        }
+
         if let dateString = item.meetingDate ?? item.date {
+            // 有些后端会把完整时间塞进 meeting_date/date
+            if let d = parseBackendTimestamp(dateString) { return d }
             let df = DateFormatter()
             df.locale = Locale(identifier: "zh_CN")
             df.dateFormat = "yyyy-MM-dd"
             if let d = df.date(from: dateString) { return d }
-            let iso = ISO8601DateFormatter()
-            iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            if let d = iso.date(from: dateString) { return d }
-        }
-        if let createdAt = item.createdAt {
-            let iso = ISO8601DateFormatter()
-            iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            return iso.date(from: createdAt)
         }
         return nil
     }

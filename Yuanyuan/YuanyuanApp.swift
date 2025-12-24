@@ -254,10 +254,30 @@ struct YuanyuanApp: App {
                                         meetings[meetingIndex].remoteId = result.id
                                         meetings[meetingIndex].summary = result.summary
                                         meetings[meetingIndex].transcriptions = result.transcriptions
+                                        // 🔍 调试：只用后端 audio_duration 更新卡片时长
+                                        print("🔍 [YuanyuanApp] 生成完成返回 audio_duration=\(String(describing: result.audioDuration))")
+                                        if let d = result.audioDuration {
+                                            meetings[meetingIndex].duration = d
+                                            print("🔍 [YuanyuanApp] 已写入 meetings[\(meetingIndex)].duration=\(d)")
+                                        } else {
+                                            print("⚠️ [YuanyuanApp] result.audioDuration=nil，本次不更新卡片时长")
+                                        }
+                                        // 🔍 调试：写入 audio_url，确保卡片可直接播放/可预下载
+                                        print("🔍 [YuanyuanApp] 生成完成返回 audio_url=\(String(describing: result.audioUrl))")
+                                        if let u = result.audioUrl, !u.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                            meetings[meetingIndex].audioRemoteURL = u
+                                            print("🔍 [YuanyuanApp] 已写入 meetings[\(meetingIndex)].audioRemoteURL=\(u)")
+                                        } else {
+                                            print("⚠️ [YuanyuanApp] result.audioUrl=nil，本次不更新 audioRemoteURL")
+                                        }
                                         meetings[meetingIndex].isGenerating = false
                                         appState.chatMessages[lastIndex].meetings = meetings
                                         appState.saveMessageToStorage(appState.chatMessages[lastIndex], modelContext: modelContainer.mainContext)
                                         print("✅ [YuanyuanApp] 会议卡片已更新")
+
+                                        // 一口气完成：生成完成后立刻预下载（不播放）
+                                        let updated = meetings[meetingIndex]
+                                        RecordingPlaybackController.shared.prefetch(meeting: updated)
                                     }
                                 }
                             }

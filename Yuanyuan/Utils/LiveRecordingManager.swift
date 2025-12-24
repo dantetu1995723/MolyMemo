@@ -282,6 +282,18 @@ class LiveRecordingManager: ObservableObject {
         recognitionTask?.cancel()
         recognitionTask = nil
         recognitionRequest = nil
+
+        // 关键修复：停止录音后收回 AudioSession，避免后续播放音质异常/配置失败（OSStatus -50）
+        do {
+            try AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
+            #if DEBUG
+            print("🔇 [LiveRecordingManager] AudioSession deactivated")
+            #endif
+        } catch {
+            #if DEBUG
+            print("⚠️ [LiveRecordingManager] AudioSession deactivate failed: \(error)")
+            #endif
+        }
         
         print("🎙️ 录音已停止，准备上传到后端...")
         
