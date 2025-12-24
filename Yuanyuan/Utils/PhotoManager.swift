@@ -82,6 +82,35 @@ class PhotoManager {
         // 获取图片
         return await fetchImage(from: asset)
     }
+
+    /// 获取「最近一张截图」（只从截图资源里取，避免拿到相机照片/其他图片）
+    func fetchLatestScreenshot() async -> UIImage? {
+        print("🔍 开始获取相册最近一张截图...")
+
+        // 检查权限（后台 AppIntent 场景也需要）
+        let hasPermission = await requestPhotoLibraryPermission()
+        guard hasPermission else {
+            print("❌ 无相册权限，无法获取截图")
+            return nil
+        }
+
+        let fetchOptions = PHFetchOptions()
+        fetchOptions.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
+        fetchOptions.fetchLimit = 1
+        fetchOptions.predicate = NSPredicate(
+            format: "(mediaSubtype & %d) != 0",
+            PHAssetMediaSubtype.photoScreenshot.rawValue
+        )
+
+        let fetchResult = PHAsset.fetchAssets(with: .image, options: fetchOptions)
+        guard let asset = fetchResult.firstObject else {
+            print("❌ 相册中没有截图")
+            return nil
+        }
+
+        print("✅ 找到最近一张截图，创建时间: \(asset.creationDate ?? Date())")
+        return await fetchImage(from: asset)
+    }
     
     /// 获取最近 N 张照片
     func fetchLatestPhotos(count: Int) async -> [UIImage] {

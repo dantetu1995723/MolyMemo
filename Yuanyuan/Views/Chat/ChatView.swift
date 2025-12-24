@@ -383,8 +383,8 @@ struct ChatView: View {
                 appState.stopGeneration()
             }
             
-            // DEMO: 如果没有消息，添加示例日程消息
-            if appState.chatMessages.isEmpty {
+            // DEMO: 仅在未启用自有后端时注入示例，避免与真实协议输出冲突
+            if !BackendChatConfig.isEnabled, appState.chatMessages.isEmpty {
                 appState.addSampleScheduleMessage()
                 
                 // 延迟一点添加人脉示例，模拟对话流
@@ -665,6 +665,9 @@ struct ChatView: View {
             await SmartModelRouter.sendMessageStream(
                 messages: appState.chatMessages,
                 mode: appState.currentMode,
+                onStructuredOutput: { output in
+                    appState.applyStructuredOutput(output, to: messageId)
+                },
                 onComplete: { finalText in
                     await appState.playResponse(finalText, for: messageId)
                     await MainActor.run {
@@ -1021,6 +1024,9 @@ struct AIBubble: View {
             await SmartModelRouter.sendMessageStream(
                 messages: Array(appState.chatMessages.prefix(currentIndex)), // 只包含当前消息之前的消息
                 mode: appState.currentMode,
+                onStructuredOutput: { output in
+                    appState.applyStructuredOutput(output, to: messageId)
+                },
                 onComplete: { finalText in
                     await appState.playResponse(finalText, for: messageId)
                     await MainActor.run {
@@ -1369,6 +1375,9 @@ struct MessageActionButtons: View {
             await SmartModelRouter.sendMessageStream(
                 messages: Array(appState.chatMessages.prefix(currentIndex)), // 只包含当前消息之前的消息
                 mode: appState.currentMode,
+                onStructuredOutput: { output in
+                    appState.applyStructuredOutput(output, to: messageId)
+                },
                 onComplete: { finalText in
                     await appState.playResponse(finalText, for: messageId)
                     await MainActor.run {

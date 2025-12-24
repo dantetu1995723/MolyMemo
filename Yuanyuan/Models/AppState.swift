@@ -536,6 +536,63 @@ class AppState: ObservableObject {
         }
     }
 
+    /// 后端结构化输出回填：把 card 等结果写入当前 AI 消息的卡片字段
+    func applyStructuredOutput(_ output: BackendChatStructuredOutput, to messageId: UUID) {
+        // 重要：@Published 的数组元素就地修改不会触发 UI 刷新，这里显式发送变更
+        objectWillChange.send()
+        guard let index = chatMessages.firstIndex(where: { $0.id == messageId }) else { return }
+        var msg = chatMessages[index]
+
+#if DEBUG
+        let beforeSchedule = msg.scheduleEvents?.count ?? -1
+        let beforeContacts = msg.contacts?.count ?? -1
+        let beforeInvoices = msg.invoices?.count ?? -1
+        let beforeMeetings = msg.meetings?.count ?? -1
+        print("🧩 [Structured->AppState] apply to msg=\(messageId) BEFORE schedule=\(beforeSchedule) contacts=\(beforeContacts) invoices=\(beforeInvoices) meetings=\(beforeMeetings) textLen=\(msg.content.count)")
+        print("🧩 [Structured->AppState] incoming taskId=\(output.taskId ?? "nil") schedule=\(output.scheduleEvents.count) contacts=\(output.contacts.count) invoices=\(output.invoices.count) meetings=\(output.meetings.count) textLen=\(output.text.count)")
+#endif
+
+        if let taskId = output.taskId, !taskId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            msg.notes = taskId
+        }
+
+        if !output.scheduleEvents.isEmpty {
+            msg.scheduleEvents = mergeReplacingById(existing: msg.scheduleEvents, incoming: output.scheduleEvents)
+        }
+        if !output.contacts.isEmpty {
+            msg.contacts = mergeReplacingById(existing: msg.contacts, incoming: output.contacts)
+        }
+        if !output.invoices.isEmpty {
+            msg.invoices = mergeReplacingById(existing: msg.invoices, incoming: output.invoices)
+        }
+        if !output.meetings.isEmpty {
+            msg.meetings = mergeReplacingById(existing: msg.meetings, incoming: output.meetings)
+        }
+
+        chatMessages[index] = msg
+
+#if DEBUG
+        let after = chatMessages[index]
+        let afterSchedule = after.scheduleEvents?.count ?? -1
+        let afterContacts = after.contacts?.count ?? -1
+        let afterInvoices = after.invoices?.count ?? -1
+        let afterMeetings = after.meetings?.count ?? -1
+        print("🧩 [Structured->AppState] AFTER  schedule=\(afterSchedule) contacts=\(afterContacts) invoices=\(afterInvoices) meetings=\(afterMeetings) notes=\(after.notes ?? "nil")")
+#endif
+    }
+
+    private func mergeReplacingById<T: Identifiable>(existing: [T]?, incoming: [T]) -> [T] where T.ID: Equatable {
+        var result = existing ?? []
+        for item in incoming {
+            if let idx = result.firstIndex(where: { $0.id == item.id }) {
+                result[idx] = item
+            } else {
+                result.append(item)
+            }
+        }
+        return result
+    }
+
     /// 处理流式错误
     func handleStreamingError(_ error: Error, for messageId: UUID) {
         objectWillChange.send()

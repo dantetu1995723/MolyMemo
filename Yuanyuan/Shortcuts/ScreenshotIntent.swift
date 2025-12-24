@@ -61,6 +61,17 @@ struct YuanyuanShortcuts: AppShortcutsProvider {
             shortTitle: "截图分析",
             systemImageName: "photo.on.rectangle.angled"
         )
+
+        AppShortcut(
+            intent: SendLatestScreenshotToChatIntent(),
+            phrases: [
+                "\(.applicationName)发送最新截图",
+                "用\(.applicationName)把截图发到聊天室",
+                "\(.applicationName)截图后发送到聊天室"
+            ],
+            shortTitle: "截图发送",
+            systemImageName: "paperplane.fill"
+        )
         
         AppShortcut(
             intent: StartMeetingRecordingIntent(),

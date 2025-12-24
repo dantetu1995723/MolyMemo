@@ -6,7 +6,6 @@ struct BackendSettingsView: View {
     
     @State private var enabled: Bool = BackendChatConfig.isEnabled
     @State private var baseURL: String = BackendChatConfig.baseURL
-    @State private var path: String = BackendChatConfig.path
     @State private var apiKey: String = BackendChatConfig.apiKey
     @State private var model: String = BackendChatConfig.model
     @State private var shortcut: String = BackendChatConfig.shortcut
@@ -44,7 +43,7 @@ struct BackendSettingsView: View {
                                             .tint(themeColor)
                                     }
                                     
-                                    Text("开启后，聊天会优先走后端接口；未配置会自动回退到内置模型。")
+                                    Text("开启后，聊天会走后端接口（不回退到内置模型）。")
                                         .font(.system(size: 13, weight: .medium))
                                         .foregroundColor(.black.opacity(0.55))
                                 }
@@ -57,7 +56,6 @@ struct BackendSettingsView: View {
                                         .foregroundColor(.black.opacity(0.85))
                                     
                                     field(title: "Base URL", placeholder: "例如：https://api.xxx.com", text: $baseURL, isSecure: false)
-                                    field(title: "Path", placeholder: "/api/v1/chat/mock", text: $path, isSecure: false)
                                     field(title: "API Key（可选）", placeholder: "Bearer Token", text: $apiKey, isSecure: true)
                                     field(title: "Model（可选）", placeholder: "由后端默认可不填", text: $model, isSecure: false)
                                     field(title: "Shortcut（可选）", placeholder: "例如：创建日程", text: $shortcut, isSecure: false)
@@ -66,9 +64,6 @@ struct BackendSettingsView: View {
                                         Button {
                                             HapticFeedback.light()
                                             baseURL = "http://192.168.106.108:8000"
-                                            if path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                                path = "/api/v1/chat/mock"
-                                            }
                                         } label: {
                                             HStack(spacing: 6) {
                                                 Image(systemName: "wand.and.stars")
@@ -84,13 +79,9 @@ struct BackendSettingsView: View {
                                         .buttonStyle(ScaleButtonStyle())
                                         
                                         Spacer()
-                                        
-                                        Text(BackendChatConfig.requestFormat == .contentV1 ? "格式：content" : "格式：OpenAI兼容")
-                                            .font(.system(size: 12, weight: .medium))
-                                            .foregroundColor(.black.opacity(0.45))
                                     }
                                     
-                                    if let url = BackendChatConfig.endpointURL(fromBase: baseURL, path: path) {
+                                    if let url = BackendChatConfig.endpointURL(fromBase: baseURL, path: BackendChatConfig.path) {
                                         Text("最终地址：\(url.absoluteString)")
                                             .font(.system(size: 12, weight: .medium))
                                             .foregroundColor(.black.opacity(0.5))
@@ -197,7 +188,6 @@ struct BackendSettingsView: View {
     private func save() {
         BackendChatConfig.isEnabled = enabled
         BackendChatConfig.baseURL = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        BackendChatConfig.path = path.trimmingCharacters(in: .whitespacesAndNewlines)
         BackendChatConfig.apiKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         BackendChatConfig.model = model.trimmingCharacters(in: .whitespacesAndNewlines)
         BackendChatConfig.shortcut = shortcut.trimmingCharacters(in: .whitespacesAndNewlines)

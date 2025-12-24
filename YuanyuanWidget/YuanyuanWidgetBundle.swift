@@ -6,5 +6,6 @@ struct YuanyuanWidgetBundle: WidgetBundle {
     var body: some Widget {
         MeetingRecordingWidget()
         MeetingRecordingLiveActivity()
+        ScreenshotSendLiveActivity()
     }
 }

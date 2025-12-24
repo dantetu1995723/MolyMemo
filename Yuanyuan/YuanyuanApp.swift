@@ -12,37 +12,25 @@ struct YuanyuanApp: App {
     let modelContainer: ModelContainer
     
     init() {
+        // 让 AppIntent/Widget 也能访问同一份数据：把 store 放进 App Group，并尝试迁移旧 store
+        SharedModelContainer.migrateLegacyStoreIfNeeded()
         do {
-            // 尝试正常初始化
-            let configuration = ModelConfiguration(
-                isStoredInMemoryOnly: false,
-                allowsSave: true
-            )
-            modelContainer = try ModelContainer(
-                for: PersistentChatMessage.self, DailyChatSummary.self, TodoItem.self, Contact.self, Expense.self, CompanyInfo.self, Meeting.self,
-                configurations: configuration
-            )
+            modelContainer = try SharedModelContainer.makeContainer()
             print("✅ SwiftData 容器初始化成功")
         } catch {
             print("❌ 容器初始化失败，尝试删除旧数据库重建: \(error)")
             
             // 如果初始化失败（通常是模型变化导致），删除旧数据库
             do {
-                // 获取默认存储URL
-                if let storeURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?.appendingPathComponent("default.store") {
+                // 优先删除 App Group 位置的 store（新的唯一真实来源）
+                if let groupURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: SharedModelContainer.appGroupId) {
+                    let storeURL = groupURL.appendingPathComponent(SharedModelContainer.storeFilename)
                     try? FileManager.default.removeItem(at: storeURL)
-                    print("🗑️ 已删除旧数据库")
+                    print("🗑️ 已删除 App Group 数据库")
                 }
                 
                 // 重新创建容器
-                let configuration = ModelConfiguration(
-                    isStoredInMemoryOnly: false,
-                    allowsSave: true
-                )
-                modelContainer = try ModelContainer(
-                    for: PersistentChatMessage.self, DailyChatSummary.self, TodoItem.self, Contact.self, Expense.self, CompanyInfo.self, Meeting.self,
-                    configurations: configuration
-                )
+                modelContainer = try SharedModelContainer.makeContainer()
                 print("✅ 重建容器成功")
             } catch {
                 print("❌ 重建容器失败: \(error)")
@@ -394,6 +382,17 @@ struct YuanyuanApp: App {
             // 从剪贴板获取截图并打开聊天室
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 appState.handleScreenshotFromClipboard()
+            }
+        } else if url.host == "chat" || url.path == "/chat" {
+            print("💬 打开聊天室")
+            DispatchQueue.main.async {
+                appState.showSettings = false
+                appState.showTodoList = false
+                appState.showContactList = false
+                appState.showExpenseList = false
+                appState.showLiveRecording = false
+                appState.showMeetingList = false
+                appState.showChatRoom = true
             }
         } else if url.host == "start-recording-widget" || url.path == "/start-recording-widget" {
             print("🎤 Widget触发录音（聊天室模式）")

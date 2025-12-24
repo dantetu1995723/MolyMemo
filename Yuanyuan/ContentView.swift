@@ -1028,6 +1028,9 @@ struct YuanyuanHomeView: View {
             await SmartModelRouter.sendMessageStream(
                 messages: appState.chatMessages,
                 mode: appState.currentMode,
+                onStructuredOutput: { output in
+                    self.appState.applyStructuredOutput(output, to: agentMessageId)
+                },
                 onComplete: { finalText in
                     await self.appState.playResponse(finalText, for: agentMessageId)
                     await MainActor.run {
@@ -1059,6 +1062,9 @@ struct YuanyuanHomeView: View {
             await SmartModelRouter.sendMessageStream(
                 messages: appState.chatMessages,
                 mode: appState.currentMode,
+                onStructuredOutput: { output in
+                    self.appState.applyStructuredOutput(output, to: agentMessageId)
+                },
                 onComplete: { finalText in
                     await self.appState.playResponse(finalText, for: agentMessageId)
                     await MainActor.run {
@@ -1367,6 +1373,9 @@ struct YuanyuanHomeView: View {
             await SmartModelRouter.sendMessageStream(
                 messages: appState.chatMessages,
                 mode: appState.currentMode,
+                onStructuredOutput: { output in
+                    appState.applyStructuredOutput(output, to: messageId)
+                },
                 onComplete: { finalText in
                     await self.appState.playResponse(finalText, for: messageId)
                     await MainActor.run {

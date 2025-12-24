@@ -25,6 +25,7 @@ class SmartModelRouter {
     static func sendMessageStream(
         messages: [ChatMessage],
         mode: AppMode,
+        onStructuredOutput: (@MainActor (BackendChatStructuredOutput) -> Void)? = nil,
         onComplete: @escaping (String) async -> Void,
         onError: @escaping (Error) -> Void
     ) async {
@@ -35,6 +36,7 @@ class SmartModelRouter {
             await BackendChatService.sendMessageStream(
                 messages: messages,
                 mode: mode,
+                onStructuredOutput: onStructuredOutput,
                 onComplete: onComplete,
                 onError: onError
             )

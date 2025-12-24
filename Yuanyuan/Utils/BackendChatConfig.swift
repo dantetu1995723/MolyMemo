@@ -5,7 +5,6 @@ enum BackendChatConfig {
     private enum Keys {
         static let enabled = "backend_chat_enabled"
         static let baseURL = "backend_chat_base_url"
-        static let path = "backend_chat_path"
         static let apiKey = "backend_chat_api_key"
         static let model = "backend_chat_model"
         static let shortcut = "backend_chat_shortcut"
@@ -13,14 +12,10 @@ enum BackendChatConfig {
     
     static var isEnabled: Bool {
         get {
-            // 如果用户从未设置过，Debug 默认开启后端，便于联调；Release 默认关闭避免误连局域网
+            // 正式接入后端：如果用户从未设置过，默认开启（并写入一次）
             if UserDefaults.standard.object(forKey: Keys.enabled) == nil {
-                #if DEBUG
                 UserDefaults.standard.set(true, forKey: Keys.enabled)
                 return true
-                #else
-                return false
-                #endif
             }
             return UserDefaults.standard.bool(forKey: Keys.enabled)
         }
@@ -54,22 +49,8 @@ enum BackendChatConfig {
         set { UserDefaults.standard.set(newValue, forKey: Keys.baseURL) }
     }
     
-    /// 默认按你们后端示例：`/api/v1/chat/mock`
-    static var path: String {
-        get {
-            let existing = UserDefaults.standard.string(forKey: Keys.path)
-            if let existing, !existing.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                return existing
-            }
-            // 保持默认路径，并写入一次，避免 UI 首次展示为空
-            let fallback = "/api/v1/chat/mock"
-            if UserDefaults.standard.object(forKey: Keys.path) == nil {
-                UserDefaults.standard.set(fallback, forKey: Keys.path)
-            }
-            return fallback
-        }
-        set { UserDefaults.standard.set(newValue, forKey: Keys.path) }
-    }
+    /// 正式接口固定为 `/api/v1/chat`（不允许切换，避免误连 mock/兼容接口）
+    static var path: String { "/api/v1/chat" }
     
     static var apiKey: String {
         get { UserDefaults.standard.string(forKey: Keys.apiKey) ?? "" }
@@ -86,17 +67,6 @@ enum BackendChatConfig {
     static var shortcut: String {
         get { UserDefaults.standard.string(forKey: Keys.shortcut) ?? "" }
         set { UserDefaults.standard.set(newValue, forKey: Keys.shortcut) }
-    }
-    
-    enum RequestFormat {
-        case contentV1 // /api/v1/chat/...
-        case openAICompatible // /v1/chat/completions + SSE
-    }
-    
-    static var requestFormat: RequestFormat {
-        let p = path.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if p.contains("/api/v1/chat/") { return .contentV1 }
-        return .openAICompatible
     }
     
     static var isConfigured: Bool {

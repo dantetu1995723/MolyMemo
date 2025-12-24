@@ -211,3 +211,96 @@ struct MeetingRecordingLiveActivity: Widget {
         return String(format: "%02d:%02d", minutes, seconds)
     }
 }
+
+// MARK: - 截图发送灵动岛提示
+struct ScreenshotSendLiveActivity: Widget {
+    var body: some WidgetConfiguration {
+        ActivityConfiguration(for: ScreenshotSendAttributes.self) { context in
+            // 锁屏：简洁提示
+            Link(destination: URL(string: "yuanyuan://chat")!) {
+                HStack(spacing: 12) {
+                    ZStack {
+                        Circle()
+                            .fill(.black)
+                            .frame(width: 32, height: 32)
+
+                        Image(systemName: iconName(for: context.state.status))
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(.white)
+                    }
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(title(for: context.state.status))
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(.black)
+
+                        Text(context.state.message)
+                            .font(.system(size: 12))
+                            .foregroundColor(.black.opacity(0.6))
+                            .lineLimit(1)
+                    }
+
+                    Spacer()
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
+            }
+            .activityBackgroundTint(.white)
+        } dynamicIsland: { context in
+            DynamicIsland {
+                DynamicIslandExpandedRegion(.bottom) {
+                    HStack {
+                        Image(systemName: iconName(for: context.state.status))
+                            .font(.system(size: 28, weight: .bold))
+                            .foregroundColor(.white)
+
+                        Spacer()
+
+                        VStack(spacing: 4) {
+                            Text(title(for: context.state.status))
+                                .font(.system(size: 22, weight: .bold))
+                                .foregroundColor(.white)
+                            Text(context.state.message)
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(.white.opacity(0.8))
+                                .lineLimit(1)
+                        }
+
+                        Spacer()
+                    }
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 14)
+                }
+            } compactLeading: {
+                Image(systemName: iconName(for: context.state.status))
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(.white)
+            } compactTrailing: {
+                Image(systemName: context.state.status == .failed ? "xmark" : "checkmark")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(.white)
+                    .opacity(context.state.status == .sending ? 0 : 1)
+            } minimal: {
+                Image(systemName: iconName(for: context.state.status))
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(.white)
+            }
+        }
+    }
+
+    private func title(for status: ScreenshotSendAttributes.ContentState.Status) -> String {
+        switch status {
+        case .sending: return "发送截图中"
+        case .sent: return "截图已发送"
+        case .failed: return "发送失败"
+        }
+    }
+
+    private func iconName(for status: ScreenshotSendAttributes.ContentState.Status) -> String {
+        switch status {
+        case .sending: return "paperplane.fill"
+        case .sent: return "checkmark.circle.fill"
+        case .failed: return "xmark.octagon.fill"
+        }
+    }
+}
