@@ -37,10 +37,10 @@ struct MeetingRecordingWidgetView: View {
                 Color(red: 0x22 / 255.0, green: 0x22 / 255.0, blue: 0x22 / 255.0)
                 
                 VStack(spacing: 8) {
-                    // 麦克风图标 - 使用更干净的亮绿色
+                    // 麦克风图标 - 使用纯白色
                     Image(systemName: "mic.circle.fill")
                         .font(.system(size: 32, weight: .semibold))
-                        .foregroundColor(Color(red: 0.8, green: 1.0, blue: 0.1))
+                        .foregroundColor(.white)
                     
                     // 标题
                     Text("Moly录音")
@@ -85,114 +85,122 @@ struct MeetingRecordingLiveActivity: Widget {
     
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: MeetingRecordingAttributes.self) { context in
-            // 锁屏视图 - 极简风格，只显示状态和时长
+            // 锁屏视图 - 极简风格，黑白配色
             Link(destination: URL(string: "yuanyuan://meeting-recording")!) {
-                HStack {
+                HStack(spacing: 12) {
                     // 状态图标
                     ZStack {
                         Circle()
-                            .fill(bubbleDark)
-                            .frame(width: 26, height: 26)
+                            .fill(.black)
+                            .frame(width: 32, height: 32)
                         
-                        Image(systemName: context.state.isRecording ? "waveform" : "checkmark")
-                            .font(.system(size: 11, weight: .bold))
+                        Image(systemName: context.state.isRecording ? "mic.fill" : "checkmark")
+                            .font(.system(size: 14, weight: .bold))
                             .foregroundColor(.white)
                     }
                     
-                    Text(context.state.isRecording ? "正在录音" : "录音已保存")
-                        .font(.system(size: 15, weight: .bold, design: .rounded))
-                        .foregroundColor(primaryText)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(context.state.isRecording ? "正在录音" : "录音已保存")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(.black)
+                        
+                        if !context.state.isRecording {
+                            Text("已生成会议卡片")
+                                .font(.system(size: 12))
+                                .foregroundColor(.black.opacity(0.6))
+                        }
+                    }
                     
                     Spacer()
                     
-                    Text(formatDuration(context.state.duration))
-                        .font(.system(size: 15, weight: .bold, design: .rounded))
-                        .monospacedDigit()
-                        .foregroundColor(primaryText)
-                }
-                .padding(16)
-            }
-            .activityBackgroundTint(chatBackground)
-            
-        } dynamicIsland: { context in
-            // 灵动岛 - 彻底放弃黄绿逻辑
-            DynamicIsland {
-                // 展开视图
-                DynamicIslandExpandedRegion(.leading) {
-                    HStack(spacing: 8) {
-                        Image(systemName: context.state.isRecording ? "mic.fill" : "checkmark.circle.fill")
-                            .font(.system(size: 14))
-                            .foregroundColor(context.state.isRecording ? .white : Color(red: 0.8, green: 1.0, blue: 0.1))
-                        Text(context.state.isRecording ? "Moly 录音" : "录音已完成")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundColor(.white)
-                    }
-                    .padding(.leading, 8)
-                }
-                
-                DynamicIslandExpandedRegion(.trailing) {
                     if context.state.isRecording {
                         Text(formatDuration(context.state.duration))
-                            .font(.system(size: 14, weight: .bold))
+                            .font(.system(size: 16, weight: .bold))
                             .monospacedDigit()
-                            .foregroundColor(.white.opacity(0.9))
-                            .padding(.trailing, 8)
-                    } else {
-                        // 完成时显示一个简单的状态
-                        Text("已保存")
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundColor(Color(red: 0.8, green: 1.0, blue: 0.1))
-                            .padding(.trailing, 8)
+                            .foregroundColor(.black)
                     }
                 }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
+            }
+            .activityBackgroundTint(.white)
+            
+        } dynamicIsland: { context in
+            // 灵动岛 - 极简水平布局，所有元素在同一个 HStack 内对齐
+            DynamicIsland {
+                DynamicIslandExpandedRegion(.leading) { EmptyView() }
+                DynamicIslandExpandedRegion(.trailing) { EmptyView() }
+                DynamicIslandExpandedRegion(.center) { EmptyView() }
                 
+                // 全部内容放在 bottom 区域，用 HStack 实现真正的水平对齐
                 DynamicIslandExpandedRegion(.bottom) {
-                    if context.state.isRecording {
-                        // 只保留停止按钮
-                        Button(intent: StopMeetingRecordingIntent()) {
-                            HStack(spacing: 6) {
-                                Image(systemName: "stop.fill")
-                                    .font(.system(size: 12))
-                                Text("停止并生成卡片")
-                                    .font(.system(size: 13, weight: .bold))
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 10)
-                            .background(bubbleWhite)
-                            .foregroundColor(bubbleDark)
-                            .clipShape(Capsule())
-                            .shadow(color: Color.black.opacity(0.2), radius: 4, x: 0, y: 2)
+                    HStack {
+                        // 左：大话筒图标
+                        Image(systemName: "mic.fill")
+                            .font(.system(size: 36, weight: .bold))
+                            .foregroundColor(.white)
+                        
+                        Spacer()
+                        
+                        // 中：计时器或完成文字
+                        if context.state.isRecording {
+                            Text(formatDuration(context.state.duration))
+                                .font(.system(size: 44, weight: .bold, design: .rounded))
+                                .monospacedDigit()
+                                .foregroundColor(.white)
+                        } else {
+                            Text("完成录音")
+                                .font(.system(size: 32, weight: .bold))
+                                .foregroundColor(.white)
                         }
-                        .buttonStyle(.plain)
-                        .padding(.horizontal, 8)
-                        .padding(.bottom, 12)
-                    } else {
-                        // 完成后的状态反馈
-                        Text("正在后台为您生成会议卡片...")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundColor(.white.opacity(0.8))
-                            .padding(.bottom, 12)
+                        
+                        Spacer()
+                        
+                        // 右：停止按钮或完成图标
+                        if context.state.isRecording {
+                            Button(intent: StopMeetingRecordingIntent()) {
+                                ZStack {
+                                    Circle()
+                                        .fill(.white)
+                                        .frame(width: 52, height: 52)
+                                    
+                                    RoundedRectangle(cornerRadius: 4)
+                                        .fill(.black)
+                                        .frame(width: 18, height: 18)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        } else {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 36, weight: .bold))
+                                .foregroundColor(.white)
+                        }
                     }
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 16)
                 }
             } compactLeading: {
-                Image(systemName: context.state.isRecording ? "mic.fill" : "checkmark")
-                    .font(.system(size: 12))
-                    .foregroundColor(context.state.isRecording ? .white : Color(red: 0.8, green: 1.0, blue: 0.1))
+                // 紧凑模式左侧：麦克风小图标
+                Image(systemName: "mic.fill")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(.white)
             } compactTrailing: {
+                // 紧凑模式右侧：数字计时
                 if context.state.isRecording {
                     Text(formatDuration(context.state.duration))
                         .font(.system(size: 12, weight: .bold))
                         .monospacedDigit()
                         .foregroundColor(.white)
                 } else {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 12))
-                        .foregroundColor(Color(red: 0.8, green: 1.0, blue: 0.1))
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(.white)
                 }
             } minimal: {
+                // 最小化模式：仅图标
                 Image(systemName: context.state.isRecording ? "mic.fill" : "checkmark")
-                    .font(.system(size: 10))
-                    .foregroundColor(context.state.isRecording ? .white : Color(red: 0.8, green: 1.0, blue: 0.1))
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(.white)
             }
         }
     }

@@ -13,6 +13,7 @@ class MeetingMinutesService {
     /// API 端点
     private static let generateEndpoint = "/api/v1/meeting-minutes/generate"
     private static let listEndpoint = "/api/v1/meeting-minutes"
+    private static let deleteSuffix = "/delete"
 
     // MARK: - Auth / Headers
 
@@ -128,6 +129,14 @@ class MeetingMinutesService {
         var resolvedItems: [T] {
             items ?? list ?? rows ?? records ?? []
         }
+    }
+
+    private struct EmptyData: Decodable {}
+    private struct SimpleResponse: Decodable {
+        let success: Bool?
+        let code: Int?
+        let message: String?
+        let error: String?
     }
 
     // POST /generate 返回的异步任务信息（你截图里的结构）
@@ -433,6 +442,79 @@ class MeetingMinutesService {
         #else
         return try await getMeetingMinutesDetail(id: id, verbose: false)
         #endif
+    }
+
+    // MARK: - 删除会议纪要
+
+    /// 删除会议纪要（后端接口：POST /api/v1/meeting-minutes/{id}/delete）
+    static func deleteMeetingMinutes(id: String) async throws {
+        let trimmedId = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedId.isEmpty else { throw MeetingMinutesError.serverError("缺少会议ID") }
+
+        let base = try resolvedBaseURL()
+        let urlString = "\(base)\(listEndpoint)/\(trimmedId)\(deleteSuffix)"
+
+        guard let url = URL(string: urlString) else {
+            print("❌ [MeetingMinutesService] URL无效: \(urlString)")
+            throw MeetingMinutesError.invalidURL
+        }
+
+        var request = URLRequest(url: url, timeoutInterval: 30)
+        request.httpMethod = "POST"
+        try applyCommonHeaders(to: &request)
+
+        #if DEBUG
+        print("🗑️ [MeetingMinutesService] 删除会议纪要: \(urlString)")
+        #endif
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw MeetingMinutesError.invalidResponse
+        }
+
+        if let raw = String(data: data, encoding: .utf8), !raw.isEmpty {
+            #if DEBUG
+            print("🗑️ [MeetingMinutesService] delete response status=\(http.statusCode) raw=\(raw)")
+            #endif
+        } else {
+            #if DEBUG
+            print("🗑️ [MeetingMinutesService] delete response status=\(http.statusCode) raw=<empty>")
+            #endif
+        }
+
+        guard (200...299).contains(http.statusCode) else {
+            // 尽量从响应里提取错误信息
+            if let resp = try? JSONDecoder().decode(SimpleResponse.self, from: data) {
+                let msg = resp.error ?? resp.message ?? "HTTP \(http.statusCode)"
+                throw MeetingMinutesError.serverError(msg)
+            }
+            if let env = try? JSONDecoder().decode(APIEnvelope<EmptyData>.self, from: data) {
+                let msg = env.error ?? env.message ?? "HTTP \(http.statusCode)"
+                throw MeetingMinutesError.serverError(msg)
+            }
+            throw MeetingMinutesError.serverError("HTTP \(http.statusCode)")
+        }
+
+        // 兼容业务层 success/code
+        if let resp = try? JSONDecoder().decode(SimpleResponse.self, from: data) {
+            if let success = resp.success, !success {
+                let msg = resp.error ?? resp.message ?? "删除失败"
+                throw MeetingMinutesError.serverError(msg)
+            }
+            if let code = resp.code, !(200...299).contains(code) {
+                let msg = resp.error ?? resp.message ?? "删除失败（code=\(code)）"
+                throw MeetingMinutesError.serverError(msg)
+            }
+        } else if let env = try? JSONDecoder().decode(APIEnvelope<EmptyData>.self, from: data) {
+            if let success = env.success, !success {
+                let msg = env.error ?? env.message ?? "删除失败"
+                throw MeetingMinutesError.serverError(msg)
+            }
+            if let code = env.code, !(200...299).contains(code) {
+                let msg = env.error ?? env.message ?? "删除失败（code=\(code)）"
+                throw MeetingMinutesError.serverError(msg)
+            }
+        }
     }
 
     private static func getMeetingMinutesDetail(id: String, verbose: Bool) async throws -> MeetingMinutesItem {

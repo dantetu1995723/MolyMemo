@@ -32,26 +32,48 @@ struct RecordingItem: Identifiable {
         self.remoteId = remoteItem.id
         self.isFromRemote = true
         
-        // 解析日期
-        if let dateString = remoteItem.meetingDate ?? remoteItem.date {
-            // 兼容 "yyyy-MM-dd" / ISO8601
-            let df = DateFormatter()
-            df.locale = Locale(identifier: "zh_CN")
-            df.dateFormat = "yyyy-MM-dd"
-            if let d = df.date(from: dateString) {
-                self.createdAt = d
-            } else {
-                let iso = ISO8601DateFormatter()
-                iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-                self.createdAt = iso.date(from: dateString) ?? Date()
-            }
-        } else if let createdAt = remoteItem.createdAt {
+        // 解析日期：列表要显示“时分秒/分钟”，优先用 updated_at/created_at（通常带时间），不要用 meeting_date(yyyy-MM-dd) 导致 00:00
+        func parseBackendTimestamp(_ raw: String) -> Date? {
+            let s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !s.isEmpty else { return nil }
             let iso = ISO8601DateFormatter()
             iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            self.createdAt = iso.date(from: createdAt) ?? Date()
+            if let d = iso.date(from: s) { return d }
+            let iso2 = ISO8601DateFormatter()
+            iso2.formatOptions = [.withInternetDateTime]
+            if let d = iso2.date(from: s) { return d }
+            let df = DateFormatter()
+            df.locale = Locale(identifier: "en_US_POSIX")
+            df.timeZone = TimeZone.current
+            df.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSSSS"
+            if let d = df.date(from: s) { return d }
+            df.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSS"
+            if let d = df.date(from: s) { return d }
+            df.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+            if let d = df.date(from: s) { return d }
+            return nil
+        }
+
+        if let updatedAt = remoteItem.updatedAt, let d = parseBackendTimestamp(updatedAt) {
+            self.createdAt = d
+        } else if let createdAt = remoteItem.createdAt, let d = parseBackendTimestamp(createdAt) {
+            self.createdAt = d
+        } else if let dateString = remoteItem.meetingDate ?? remoteItem.date {
+            // 最后才用 meeting_date/date（可能只有 yyyy-MM-dd）
+            if let d = parseBackendTimestamp(dateString) {
+                self.createdAt = d
+            } else {
+                let df = DateFormatter()
+                df.locale = Locale(identifier: "zh_CN")
+                df.dateFormat = "yyyy-MM-dd"
+                self.createdAt = df.date(from: dateString) ?? Date()
+            }
         } else {
             self.createdAt = Date()
         }
+
+        // 🔍 调试：打印列表 JSON 里的时间字段
+        print("🕒 [RecordingItem] 时间字段: id=\(remoteItem.id ?? "nil") meeting_date=\(remoteItem.meetingDate ?? remoteItem.date ?? "nil") created_at=\(remoteItem.createdAt ?? "nil") updated_at=\(remoteItem.updatedAt ?? "nil") -> createdAt=\(self.createdAt)")
         
         print("🔍 [RecordingItem] 初始化时长: audioDuration=\(String(describing: remoteItem.audioDuration)) (raw duration=\(String(describing: remoteItem.duration)))")
         self.duration = remoteItem.audioDuration ?? 0
@@ -147,6 +169,10 @@ struct MeetingRecordView: View {
     @State private var isLoading = false
     @State private var loadError: String?
     @State private var searchText: String = ""
+
+    // 删除提示
+    @State private var showDeleteAlert: Bool = false
+    @State private var deleteAlertMessage: String = ""
     
     // UI动画状态
     @State private var showContent = false
@@ -254,6 +280,11 @@ struct MeetingRecordView: View {
                 }
             }
         }
+        .alert("删除失败", isPresented: $showDeleteAlert) {
+            Button("知道了", role: .cancel) {}
+        } message: {
+            Text(deleteAlertMessage)
+        }
         .safeAreaInset(edge: .top) {
             ModuleNavigationBar(
                 title: "会议纪要",
@@ -356,6 +387,10 @@ struct MeetingRecordView: View {
             let elapsed = Date().timeIntervalSince(startTime)
             print("📡 [MeetingRecordView] 请求耗时: \(String(format: "%.2f", elapsed))秒")
             print("📡 [MeetingRecordView] 返回数据条数: \(remoteItems.count)")
+            // 🔍 调试：确认列表接口是否返回 created_at/updated_at（带时间）
+            for it in remoteItems.prefix(8) {
+                print("🕒 [MeetingRecordView] list item id=\(it.id ?? "nil") meeting_date=\(it.meetingDate ?? it.date ?? "nil") created_at=\(it.createdAt ?? "nil") updated_at=\(it.updatedAt ?? "nil")")
+            }
             
             // 转换为 RecordingItem
             recordingItems = remoteItems.map { remoteItem in
@@ -378,18 +413,42 @@ struct MeetingRecordView: View {
     
     private func deleteRecording(_ item: RecordingItem) {
         HapticFeedback.medium()
-        
-        // 删除本地音频文件（如果存在）
-        if let audioURL = item.audioURL {
-            try? FileManager.default.removeItem(at: audioURL)
-        }
-        
-        // 从列表中移除
+
+        guard let index = recordingItems.firstIndex(where: { $0.id == item.id }) else { return }
+
+        // 先做 UI 乐观更新：立即从列表移除
         withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-            recordingItems.removeAll { $0.id == item.id }
+            recordingItems.remove(at: index)
         }
-        
-        print("✅ 已删除录音文件")
+
+        Task {
+            do {
+                // 远程会议纪要：调用后端删除
+                if let remoteId = item.remoteId?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   !remoteId.isEmpty {
+                    try await MeetingMinutesService.deleteMeetingMinutes(id: remoteId)
+                }
+
+                // 本地音频文件：仅在 fileURL 时才删除
+                if let audioURL = item.audioURL, audioURL.isFileURL {
+                    try? FileManager.default.removeItem(at: audioURL)
+                }
+
+                #if DEBUG
+                print("✅ [MeetingRecordView] 删除成功 remoteId=\(item.remoteId ?? "nil")")
+                #endif
+            } catch {
+                // 失败回滚：把条目插回去，并弹窗提示
+                await MainActor.run {
+                    let insertIndex = min(index, recordingItems.count)
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                        recordingItems.insert(item, at: insertIndex)
+                    }
+                    deleteAlertMessage = error.localizedDescription
+                    showDeleteAlert = true
+                }
+            }
+        }
     }
     
 }
