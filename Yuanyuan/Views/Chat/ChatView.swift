@@ -25,6 +25,9 @@ struct ChatView: View {
     @State private var contentHeight: CGFloat = 0
     /// 卡片横向翻页时，临时禁用外层聊天上下滚动，避免手势冲突
     @State private var isCardHorizontalPaging: Bool = false
+
+    /// 用于实现“先上方文字流式输出 -> 再渲染卡片 -> 再输出卡片下方文字”的顺序控制
+    @State private var completedTopBubbleMessageIds: Set<UUID> = []
     
     // 删除确认弹窗状态
     @State private var showDeleteConfirmation: Bool = false
@@ -69,15 +72,56 @@ struct ChatView: View {
     private let bubbleWhite = Color.white
     private let userBubbleColor = Color(hex: "222222") // 深黑色用户气泡
 
+    // MARK: - Helpers (Text splitting for cards)
+    /// 将 AI 文本按“第一段 + 其余段”拆分，用于把卡片插到两段文字中间。
+    /// 规则：仅在存在至少一个有效的双换行分隔时拆分；否则返回原文 + nil。
+    private func splitAITextForCardInsertion(_ text: String) -> (before: String, after: String?) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return (text, nil) }
+
+        // 找第一个段落分隔（\n\n），保持原有换行风格
+        guard let range = text.range(of: "\n\n") else { return (text, nil) }
+        let beforeRaw = String(text[..<range.lowerBound])
+        let afterRaw = String(text[range.upperBound...])
+
+        let before = beforeRaw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let after = afterRaw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !before.isEmpty, !after.isEmpty else { return (text, nil) }
+        return (beforeRaw, afterRaw)
+    }
+
     // MARK: - Helpers (Chat Card -> SwiftData Model)
     private func findOrCreateContact(from card: ContactCard) -> Contact {
         // 先尝试根据 id 查找（如果之前创建时同步了 id，可命中）
         if let existing = allContacts.first(where: { $0.id == card.id }) {
+            // 将 impression 写入联系人备注（不覆盖用户已有备注；必要时追加）
+            let imp = (card.impression ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !imp.isEmpty {
+                let current = (existing.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                if current.isEmpty {
+                    existing.notes = imp
+                    try? modelContext.save()
+                } else if !current.contains(imp) {
+                    existing.notes = current + "\n\n" + imp
+                    try? modelContext.save()
+                }
+            }
             return existing
         }
         // 再尝试根据名字 + 电话查找
         if let phone = card.phone, !phone.isEmpty,
            let existing = allContacts.first(where: { $0.name == card.name && $0.phoneNumber == phone }) {
+            let imp = (card.impression ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !imp.isEmpty {
+                let current = (existing.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                if current.isEmpty {
+                    existing.notes = imp
+                    try? modelContext.save()
+                } else if !current.contains(imp) {
+                    existing.notes = current + "\n\n" + imp
+                    try? modelContext.save()
+                }
+            }
             return existing
         }
         // 创建新的 SwiftData Contact（保持 UI 不变，只是为了复用现有详情页）
@@ -86,6 +130,12 @@ struct ChatView: View {
             phoneNumber: card.phone,
             company: card.company,
             identity: card.title,
+            notes: {
+                let imp = (card.impression ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                if !imp.isEmpty { return imp }
+                let n = (card.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                return n.isEmpty ? nil : n
+            }(),
             avatarData: card.avatarData
         )
         // 关键：让 id 跟卡片 id 对齐，后续能稳定复用同一联系人
@@ -489,19 +539,36 @@ struct ChatView: View {
                         .id(message.id)
                 } else {
                     VStack(alignment: .leading, spacing: 12) {
-                        // 文字部分：如果有卡片，不显示操作按钮；如果没有卡片，显示操作按钮
+                        // 文字部分：若存在「日程/人脉」卡片且文本为多段，则把卡片插到第一段与后续段之间
+                        let fullText = (message.content.isEmpty && appState.isAgentTyping) ? "正在思考..." : message.content
+                        let hasContactCards = (message.contacts?.isEmpty == false)
+                        let hasScheduleCards = (message.scheduleEvents?.isEmpty == false)
+                        let hasInsertableCards = hasContactCards || hasScheduleCards
+                        let split = hasInsertableCards ? splitAITextForCardInsertion(fullText) : (before: fullText, after: nil)
+                        let showButtonsInBubble = (message.scheduleEvents == nil || message.scheduleEvents?.isEmpty == true) &&
+                                                 (message.contacts == nil || message.contacts?.isEmpty == true) &&
+                                                 (message.invoices == nil || message.invoices?.isEmpty == true) &&
+                                                 (message.meetings == nil || message.meetings?.isEmpty == true)
+                        let hasRealText = !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        let shouldRevealInsertedCards = hasInsertableCards && hasRealText && completedTopBubbleMessageIds.contains(message.id)
+
                         AIBubble(
-                            text: message.content.isEmpty && appState.isAgentTyping ? "正在思考..." : message.content,
+                            text: split.before,
                             messageId: message.id,
-                            showActionButtons: (message.scheduleEvents == nil || message.scheduleEvents?.isEmpty == true) && 
-                                             (message.contacts == nil || message.contacts?.isEmpty == true) &&
-                                             (message.invoices == nil || message.invoices?.isEmpty == true) &&
-                                             (message.meetings == nil || message.meetings?.isEmpty == true),
-                            isInterrupted: message.isInterrupted
+                            showActionButtons: showButtonsInBubble,
+                            isInterrupted: message.isInterrupted,
+                            showAvatar: true,
+                            onTypingCompleted: {
+                                // 仅用于顺序控制：上方文字完成后，允许渲染卡片
+                                if hasInsertableCards {
+                                    completedTopBubbleMessageIds.insert(message.id)
+                                }
+                            }
                         )
                         
                         // 卡片部分
-                        if let _ = message.scheduleEvents, 
+                        if let _ = message.scheduleEvents,
+                           shouldRevealInsertedCards,
                            let index = appState.chatMessages.firstIndex(where: { $0.id == message.id }) {
                             ScheduleCardStackView(events: Binding(
                                 get: { appState.chatMessages[index].scheduleEvents ?? [] },
@@ -517,17 +584,6 @@ struct ChatView: View {
                             })
                             .frame(maxWidth: .infinity)
                             .padding(.top, -10) // Slight adjustment to bring it closer to text
-                            
-                            // 操作按钮：当有卡片时，显示在卡片下方，与文字左对齐
-                            HStack(alignment: .center, spacing: 0) {
-                                // 与头像宽度对齐的占位，使按钮和文字左对齐
-                                Spacer()
-                                    .frame(width: agentAvatarSize + 12) // 头像宽度 + spacing
-                                
-                                // 操作按钮
-                                MessageActionButtons(messageId: message.id)
-                            }
-                            .padding(.top, 4)
                         }
                         
                         // 会议纪要卡片部分
@@ -558,7 +614,9 @@ struct ChatView: View {
                         }
                         
                         // 人脉卡片部分
+                        // 优化流式体验：当正在生成且还没收到任何真实文字时，先不显示卡片，避免“卡片先于文字出现”
                         if let _ = message.contacts,
+                           shouldRevealInsertedCards,
                            let index = appState.chatMessages.firstIndex(where: { $0.id == message.id }) {
                             ContactCardStackView(contacts: Binding(
                                 get: { appState.chatMessages[index].contacts ?? [] },
@@ -574,8 +632,24 @@ struct ChatView: View {
                             })
                             .frame(maxWidth: .infinity)
                             .padding(.top, -10)
-                            
-                            // 操作按钮
+                        }
+
+                        // 卡片后的续写文本（例如“已创建日程…” / “xxx 已添加为联系人…” / impression）
+                        // 只在「插入卡片」出现后再展示，确保顺序：上段文字 -> 卡片 -> 下段文字
+                        if shouldRevealInsertedCards,
+                           let after = split.after,
+                           !after.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            AIBubble(
+                                text: after,
+                                messageId: nil, // 避免把“续写”当作一条可重新生成的独立消息
+                                showActionButtons: false,
+                                isInterrupted: false,
+                                showAvatar: false
+                            )
+                        }
+
+                        // 统一的操作按钮（仅针对「日程/人脉」插入卡片场景放在最底部，避免夹在中间破坏顺序）
+                        if shouldRevealInsertedCards && (hasScheduleCards || hasContactCards) {
                             HStack(alignment: .center, spacing: 0) {
                                 Spacer()
                                     .frame(width: agentAvatarSize + 12)
@@ -611,6 +685,17 @@ struct ChatView: View {
                         }
                     }
                     .id(message.id)
+                    // 重要：当消息从“正在思考...”切换为真实内容时，重置顺序控制状态，避免卡片提前放出
+                    .onChange(of: message.content) { oldValue, newValue in
+                        let oldTrim = oldValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                        let newTrim = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if oldTrim.isEmpty && !newTrim.isEmpty {
+                            completedTopBubbleMessageIds.remove(message.id)
+                        }
+                        if newTrim.isEmpty {
+                            completedTopBubbleMessageIds.remove(message.id)
+                        }
+                    }
                 }
             }
             
@@ -901,6 +986,8 @@ struct AIBubble: View {
     let messageId: UUID?
     var showActionButtons: Bool = true // 控制是否显示操作按钮
     var isInterrupted: Bool = false // 是否被中断
+    var showAvatar: Bool = true // 是否显示头像（用于“卡片后的续写文本”不重复头像）
+    var onTypingCompleted: (() -> Void)? = nil
     
     @EnvironmentObject var appState: AppState
     @Environment(\.modelContext) private var modelContext
@@ -911,8 +998,13 @@ struct AIBubble: View {
     
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            // 头像
-            AvatarVideoView(videoName: "Agent", size: agentAvatarSize)
+            // 头像（或占位，确保对齐一致）
+            if showAvatar {
+                AvatarVideoView(videoName: "Agent", size: agentAvatarSize)
+            } else {
+                Color.clear
+                    .frame(width: agentAvatarSize, height: agentAvatarSize)
+            }
             
             VStack(alignment: .leading, spacing: 12) {
                 // 内容文字（打字机效果）
@@ -971,6 +1063,7 @@ struct AIBubble: View {
             if isInterrupted {
                 isCompleted = true
                 displayedText = text
+                onTypingCompleted?()
             } else {
             startTypewriter()
             }
@@ -981,6 +1074,7 @@ struct AIBubble: View {
                 timer = nil
                 isCompleted = true
                 displayedText = text
+                onTypingCompleted?()
             }
         }
         .onChange(of: text) { oldValue, newValue in
@@ -1048,6 +1142,7 @@ struct AIBubble: View {
         if isInterrupted {
             isCompleted = true
             displayedText = text
+            onTypingCompleted?()
             return
         }
         
@@ -1057,6 +1152,7 @@ struct AIBubble: View {
         if displayedText == text {
             isCompleted = true
             displayedText = text
+            onTypingCompleted?()
             return
         }
         
@@ -1088,6 +1184,7 @@ struct AIBubble: View {
                     timer.invalidate()
                     self.isCompleted = true
                     self.timer = nil
+                    self.onTypingCompleted?()
                 }
             }
         }

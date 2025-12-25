@@ -154,6 +154,10 @@ struct ContactCard: Identifiable, Equatable, Codable {
     var title: String? // 职位
     var phone: String?
     var email: String?
+    /// 后端可选：备注（用户/系统输入）
+    var notes: String? = nil
+    /// 后端可选：AI 画像/印象，期望落到联系人详情的“备注”里
+    var impression: String? = nil
     var avatarData: Data? // 头像
     var rawImage: Data? // 原始截图
 }
@@ -556,11 +560,21 @@ class AppState: ObservableObject {
             msg.notes = taskId
         }
 
+        // 流式阶段：结构化输出里往往已包含 markdown 文本（按 chunk 累积）。
+        // 如果等到 onComplete 再一次性设置，会导致“卡片先出现、文字后打字”的视觉错序。
+        // 这里做最小策略：仅当新文本更长且非空时更新 content（避免回退/抖动）。
+        let incomingText = output.text
+        if !incomingText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           incomingText.count >= msg.content.count {
+            msg.content = incomingText
+        }
+
         if !output.scheduleEvents.isEmpty {
             msg.scheduleEvents = mergeReplacingById(existing: msg.scheduleEvents, incoming: output.scheduleEvents)
         }
         if !output.contacts.isEmpty {
-            msg.contacts = mergeReplacingById(existing: msg.contacts, incoming: output.contacts)
+            // 联系人卡片需要“字段级合并”：避免后续 card chunk 覆盖掉 tool observation 里带回的 impression/notes
+            msg.contacts = mergeContactsPreservingImpression(existing: msg.contacts, incoming: output.contacts)
         }
         if !output.invoices.isEmpty {
             msg.invoices = mergeReplacingById(existing: msg.invoices, incoming: output.invoices)
@@ -586,6 +600,31 @@ class AppState: ObservableObject {
         for item in incoming {
             if let idx = result.firstIndex(where: { $0.id == item.id }) {
                 result[idx] = item
+            } else {
+                result.append(item)
+            }
+        }
+        return result
+    }
+
+    private func mergeContactsPreservingImpression(existing: [ContactCard]?, incoming: [ContactCard]) -> [ContactCard] {
+        var result = existing ?? []
+        func trimmed(_ s: String?) -> String { (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
+
+        for item in incoming {
+            if let idx = result.firstIndex(where: { $0.id == item.id }) {
+                let old = result[idx]
+                var merged = item
+
+                // 关键：tool observation 的 impression/notes 优先保留（除非新值非空）
+                if trimmed(merged.impression).isEmpty { merged.impression = old.impression }
+                if trimmed(merged.notes).isEmpty { merged.notes = old.notes }
+
+                // 其它可选字段尽量不丢
+                if merged.avatarData == nil { merged.avatarData = old.avatarData }
+                if merged.rawImage == nil { merged.rawImage = old.rawImage }
+
+                result[idx] = merged
             } else {
                 result.append(item)
             }

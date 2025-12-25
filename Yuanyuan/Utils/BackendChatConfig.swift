@@ -11,6 +11,10 @@ enum BackendChatConfig {
         static let apiKey = "backend_chat_api_key"
         static let model = "backend_chat_model"
         static let shortcut = "backend_chat_shortcut"
+#if DEBUG
+        static let debugFullResponseLog = "backend_chat_debug_full_response_log"
+        static let debugDumpResponseToFile = "backend_chat_debug_dump_response_to_file"
+#endif
     }
     
     /// 规范化 baseURL：
@@ -130,6 +134,27 @@ enum BackendChatConfig {
         
         return URL(string: normalizedBase + normalizedPath)
     }
+
+#if DEBUG
+    /// Debug：是否在控制台打印完整后端响应（可能很长，默认关闭）
+    static var debugLogFullResponse: Bool {
+        get { UserDefaults.standard.bool(forKey: Keys.debugFullResponseLog) }
+        set { UserDefaults.standard.set(newValue, forKey: Keys.debugFullResponseLog) }
+    }
+
+    /// Debug：是否将完整后端响应落盘到 Documents（避免 Xcode 控制台截断，默认开启）
+    static var debugDumpResponseToFile: Bool {
+        get {
+            // 如果从未设置过，默认 true
+            if UserDefaults.standard.object(forKey: Keys.debugDumpResponseToFile) == nil {
+                UserDefaults.standard.set(true, forKey: Keys.debugDumpResponseToFile)
+                return true
+            }
+            return UserDefaults.standard.bool(forKey: Keys.debugDumpResponseToFile)
+        }
+        set { UserDefaults.standard.set(newValue, forKey: Keys.debugDumpResponseToFile) }
+    }
+#endif
 }
 
 

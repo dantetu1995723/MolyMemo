@@ -196,12 +196,34 @@ private struct ContactCardBatchList: View {
     private func findOrCreateContact(from card: ContactCard) -> Contact {
         // 先尝试根据 ID 查找
         if let existing = allContacts.first(where: { $0.id == card.id }) {
+            let imp = (card.impression ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !imp.isEmpty {
+                let current = (existing.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                if current.isEmpty {
+                    existing.notes = imp
+                    try? modelContext.save()
+                } else if !current.contains(imp) {
+                    existing.notes = current + "\n\n" + imp
+                    try? modelContext.save()
+                }
+            }
             return existing
         }
         
         // 如果找不到，尝试根据名字和电话查找
         if let phone = card.phone, !phone.isEmpty,
            let existing = allContacts.first(where: { $0.name == card.name && $0.phoneNumber == phone }) {
+            let imp = (card.impression ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !imp.isEmpty {
+                let current = (existing.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                if current.isEmpty {
+                    existing.notes = imp
+                    try? modelContext.save()
+                } else if !current.contains(imp) {
+                    existing.notes = current + "\n\n" + imp
+                    try? modelContext.save()
+                }
+            }
             return existing
         }
         
@@ -211,6 +233,12 @@ private struct ContactCardBatchList: View {
             phoneNumber: card.phone,
             company: card.company,
             identity: card.title,
+            notes: {
+                let imp = (card.impression ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                if !imp.isEmpty { return imp }
+                let n = (card.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                return n.isEmpty ? nil : n
+            }(),
             avatarData: card.avatarData
         )
         

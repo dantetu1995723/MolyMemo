@@ -9,6 +9,11 @@ struct BackendSettingsView: View {
     @State private var apiKey: String = BackendChatConfig.apiKey
     @State private var model: String = BackendChatConfig.model
     @State private var shortcut: String = BackendChatConfig.shortcut
+
+#if DEBUG
+    @State private var debugLogFullResponse: Bool = BackendChatConfig.debugLogFullResponse
+    @State private var debugDumpResponseToFile: Bool = BackendChatConfig.debugDumpResponseToFile
+#endif
     
     @State private var showSavedToast: Bool = false
     
@@ -93,6 +98,40 @@ struct BackendSettingsView: View {
                                     }
                                 }
                             }
+
+#if DEBUG
+                            LiquidGlassCard {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    Text("调试日志（Debug）")
+                                        .font(.system(size: 17, weight: .bold, design: .rounded))
+                                        .foregroundColor(.black.opacity(0.85))
+
+                                    Toggle(isOn: $debugLogFullResponse) {
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text("控制台输出全量响应")
+                                                .font(.system(size: 14, weight: .semibold))
+                                                .foregroundColor(.black.opacity(0.7))
+                                            Text("打开后将把后端响应 body 分块完整打印到控制台（可能非常长）。")
+                                                .font(.system(size: 12, weight: .medium))
+                                                .foregroundColor(.black.opacity(0.5))
+                                        }
+                                    }
+                                    .tint(themeColor)
+
+                                    Toggle(isOn: $debugDumpResponseToFile) {
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text("同时落盘保存全量响应")
+                                                .font(.system(size: 14, weight: .semibold))
+                                                .foregroundColor(.black.opacity(0.7))
+                                            Text("保存到 Documents，并在控制台打印文件路径。")
+                                                .font(.system(size: 12, weight: .medium))
+                                                .foregroundColor(.black.opacity(0.5))
+                                        }
+                                    }
+                                    .tint(themeColor)
+                                }
+                            }
+#endif // DEBUG
                             
                             Button {
                                 HapticFeedback.medium()
@@ -191,6 +230,11 @@ struct BackendSettingsView: View {
         BackendChatConfig.apiKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         BackendChatConfig.model = model.trimmingCharacters(in: .whitespacesAndNewlines)
         BackendChatConfig.shortcut = shortcut.trimmingCharacters(in: .whitespacesAndNewlines)
+
+#if DEBUG
+        BackendChatConfig.debugLogFullResponse = debugLogFullResponse
+        BackendChatConfig.debugDumpResponseToFile = debugDumpResponseToFile
+#endif
     }
 }
 

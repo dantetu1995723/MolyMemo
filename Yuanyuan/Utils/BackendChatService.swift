@@ -70,7 +70,7 @@ final class BackendChatService {
                 print("Status: \(httpResponse.statusCode)")
                 debugPrintHTTPHeaders(httpResponse)
                 print("Body(\(raw.count)):")
-                print(truncate(raw, limit: 1200))
+                debugPrintResponseBody(raw)
                 print("===========================================================\n")
                 throw BackendChatError.httpError(statusCode: httpResponse.statusCode, message: raw)
             }
@@ -79,7 +79,7 @@ final class BackendChatService {
             print("Status: \(httpResponse.statusCode)")
             debugPrintHTTPHeaders(httpResponse)
             print("Body(\(raw.count)):")
-            print(truncate(raw, limit: 1200))
+            debugPrintResponseBody(raw)
             debugPrintJSONKeys(data)
             print("===========================================================\n")
 
@@ -266,6 +266,40 @@ final class BackendChatService {
             }
             return
         }
+
+        // 兜底：联系人创建/更新（把 observation.data 中的 impression 落到 ContactCard）
+        if name == "contacts_create" || name == "contacts_update" {
+            if let data = obsObj["data"] as? [String: Any] {
+                if let card = parseContactFromToolData(data) {
+                    output.contacts.append(card)
+                }
+            }
+            return
+        }
+    }
+
+    private static func parseContactFromToolData(_ dict: [String: Any]) -> ContactCard? {
+        let name = (dict["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !name.isEmpty else { return nil }
+
+        var card = ContactCard(
+            name: name,
+            englishName: dict.string(forAnyOf: ["english_name", "englishName"]),
+            company: dict.string(forAnyOf: ["company"]),
+            title: dict.string(forAnyOf: ["position", "title", "job_title"]),
+            phone: dict.string(forAnyOf: ["phone", "phone_number", "mobile"]),
+            email: dict.string(forAnyOf: ["email"]),
+            notes: dict.string(forAnyOf: ["notes", "note", "remark"]),
+            impression: dict.string(forAnyOf: ["impression"]),
+            avatarData: nil,
+            rawImage: nil
+        )
+
+        // tool 返回 id 通常是 uuid string
+        if let idString = dict["id"] as? String, let id = UUID(uuidString: idString) {
+            card.id = id
+        }
+        return card
     }
 
     private static func parseScheduleEventFromToolData(_ dict: [String: Any]) -> ScheduleEvent? {
@@ -380,6 +414,8 @@ final class BackendChatService {
             title: dict.string(forAnyOf: ["title", "position", "job_title"]),
             phone: dict.string(forAnyOf: ["phone", "phone_number", "mobile"]),
             email: dict.string(forAnyOf: ["email"]),
+            notes: dict.string(forAnyOf: ["notes", "note", "remark"]),
+            impression: dict.string(forAnyOf: ["impression"]),
             avatarData: nil,
             rawImage: nil
         )
@@ -624,6 +660,58 @@ final class BackendChatService {
         if s.count <= limit { return s }
         return String(s.prefix(limit)) + " ...<truncated>"
     }
+
+    /// Debug：输出后端响应 body（可完整打印/落盘），避免控制台被 `...<truncated>` 截断。
+    private static func debugPrintResponseBody(_ raw: String) {
+#if DEBUG
+        if BackendChatConfig.debugDumpResponseToFile {
+            if let path = dumpStringToDocuments(raw, prefix: "yy_backend_response") {
+                print("📄 [BackendChat] full response saved: \(path)")
+            }
+        }
+
+        if BackendChatConfig.debugLogFullResponse {
+            printLongString(raw, chunkSize: 900)
+            return
+        }
+#endif
+        // 默认：仍保持截断，避免刷爆控制台
+        print(truncate(raw, limit: 1200))
+    }
+
+#if DEBUG
+    private static func printLongString(_ s: String, chunkSize: Int) {
+        guard chunkSize > 0 else {
+            print(s)
+            return
+        }
+        let chars = Array(s)
+        if chars.isEmpty {
+            print("")
+            return
+        }
+        var i = 0
+        while i < chars.count {
+            let end = min(i + chunkSize, chars.count)
+            print(String(chars[i..<end]))
+            i = end
+        }
+    }
+
+    private static func dumpStringToDocuments(_ s: String, prefix: String) -> String? {
+        let fm = FileManager.default
+        guard let dir = fm.urls(for: .documentDirectory, in: .userDomainMask).first else { return nil }
+        let ts = Int(Date().timeIntervalSince1970)
+        let fileURL = dir.appendingPathComponent("\(prefix)_\(ts).txt")
+        do {
+            try s.write(to: fileURL, atomically: true, encoding: .utf8)
+            return fileURL.path
+        } catch {
+            print("⚠️ [BackendChat] dump response failed: \(error)")
+            return nil
+        }
+    }
+#endif
     
     private static func redactBase64(_ s: String) -> String {
         // 把 data:*;base64,xxxxx 大段替换掉，避免控制台爆炸
