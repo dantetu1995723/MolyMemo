@@ -29,10 +29,8 @@ enum AuthService {
     }
     
     static func login(baseURL: String, phone: String, verificationCode: String) async throws -> String {
-        let trimmedBase = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedBase.isEmpty else { throw AuthError.invalidBaseURL }
-        
-        let normalizedBase = trimmedBase.hasSuffix("/") ? String(trimmedBase.dropLast()) : trimmedBase
+        let normalizedBase = BackendChatConfig.normalizeBaseURL(baseURL)
+        guard !normalizedBase.isEmpty else { throw AuthError.invalidBaseURL }
         guard let url = URL(string: normalizedBase + "/api/v1/auth/login") else {
             throw AuthError.invalidBaseURL
         }
@@ -81,10 +79,8 @@ enum AuthService {
     }
 
     static func logout(baseURL: String, sessionId: String) async throws {
-        let trimmedBase = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedBase.isEmpty else { throw AuthError.invalidBaseURL }
-        
-        let normalizedBase = trimmedBase.hasSuffix("/") ? String(trimmedBase.dropLast()) : trimmedBase
+        let normalizedBase = BackendChatConfig.normalizeBaseURL(baseURL)
+        guard !normalizedBase.isEmpty else { throw AuthError.invalidBaseURL }
         guard let url = URL(string: normalizedBase + "/api/v1/auth/logout") else {
             throw AuthError.invalidBaseURL
         }

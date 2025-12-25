@@ -8,7 +8,7 @@ class MeetingMinutesService {
     
     /// 后端服务器地址
     /// 优先使用「聊天后端」配置的 baseURL（与登录一致），否则回退到默认值
-    private static let fallbackBaseURL = "http://192.168.106.108:8000"
+    private static let fallbackBaseURL = BackendChatConfig.defaultBaseURL
     
     /// API 端点
     private static let generateEndpoint = "/api/v1/meeting-minutes/generate"
@@ -24,7 +24,7 @@ class MeetingMinutesService {
     private static func resolvedBaseURL() throws -> String {
         let candidate = BackendChatConfig.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
         let base = candidate.isEmpty ? fallbackBaseURL : candidate
-        return base.hasSuffix("/") ? String(base.dropLast()) : base
+        return BackendChatConfig.normalizeBaseURL(base)
     }
 
     private static func currentSessionId() -> String? {

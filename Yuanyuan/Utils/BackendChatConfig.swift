@@ -2,6 +2,9 @@ import Foundation
 
 /// 自有后端聊天配置（存储在 UserDefaults，避免引入额外依赖/复杂度）
 enum BackendChatConfig {
+    /// 当前后端默认地址（统一入口，避免散落多处导致漏改）
+    static let defaultBaseURL = "http://110.16.193.170:58000"
+
     private enum Keys {
         static let enabled = "backend_chat_enabled"
         static let baseURL = "backend_chat_base_url"
@@ -10,6 +13,42 @@ enum BackendChatConfig {
         static let shortcut = "backend_chat_shortcut"
     }
     
+    /// 规范化 baseURL：
+    /// - 自动补全 scheme（默认 http://）
+    /// - 自动消除重复 scheme（例如 http://http://xx）
+    /// - 统一去掉结尾的 `/`
+    static func normalizeBaseURL(_ raw: String) -> String {
+        var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !s.isEmpty else { return "" }
+
+        // 常见手滑：粘贴成 http://http://...
+        while s.hasPrefix("http://http://") || s.hasPrefix("https://https://") {
+            if s.hasPrefix("http://http://") {
+                s = "http://" + String(s.dropFirst("http://http://".count))
+            } else {
+                s = "https://" + String(s.dropFirst("https://https://".count))
+            }
+        }
+
+        // 如果像 http://https://... 或 https://http://... 这种重复 scheme，保留后一个（更贴近用户最后一次输入）
+        if s.hasPrefix("http://https://") {
+            s = "https://" + String(s.dropFirst("http://https://".count))
+        } else if s.hasPrefix("https://http://") {
+            s = "http://" + String(s.dropFirst("https://http://".count))
+        }
+
+        // 没有 scheme 的情况：自动补 http://
+        if !s.contains("://") {
+            s = "http://" + s
+        }
+
+        // 统一去掉结尾 /
+        if s.hasSuffix("/") {
+            s = String(s.dropLast())
+        }
+        return s
+    }
+
     static var isEnabled: Bool {
         get {
             // 正式接入后端：如果用户从未设置过，默认开启（并写入一次）
@@ -28,25 +67,33 @@ enum BackendChatConfig {
             if !existing.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 #if DEBUG
                 // 如果之前自动写入过旧的联调地址，这里自动迁移到新的联调地址，避免每次手动改
-                if existing == "http://192.168.2.12:8000" || existing == "http://192.168.2.12:8000/" {
-                    let migrated = "http://192.168.106.108:8000"
+                if existing == "http://192.168.2.12:8000"
+                    || existing == "http://192.168.2.12:8000/"
+                    || existing == "http://192.168.106.108:8000"
+                    || existing == "http://192.168.106.108:8000/"
+                {
+                    let migrated = defaultBaseURL
                     UserDefaults.standard.set(migrated, forKey: Keys.baseURL)
                     return migrated
                 }
                 #endif
-                return existing
+                let normalized = normalizeBaseURL(existing)
+                if normalized != existing {
+                    UserDefaults.standard.set(normalized, forKey: Keys.baseURL)
+                }
+                return normalized
             }
             
             // 默认指向你提供的本地服务地址；用户之后可在设置里覆盖
             if UserDefaults.standard.object(forKey: Keys.baseURL) == nil || existing.isEmpty {
-                let fallback = "http://192.168.106.108:8000/"
+                let fallback = defaultBaseURL
                 UserDefaults.standard.set(fallback, forKey: Keys.baseURL)
                 return fallback
             }
             
             return existing
         }
-        set { UserDefaults.standard.set(newValue, forKey: Keys.baseURL) }
+        set { UserDefaults.standard.set(normalizeBaseURL(newValue), forKey: Keys.baseURL) }
     }
     
     /// 正式接口固定为 `/api/v1/chat`（不允许切换，避免误连 mock/兼容接口）
@@ -75,9 +122,9 @@ enum BackendChatConfig {
     
     static func endpointURL() -> URL? {
         let trimmedBase = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedBase.isEmpty else { return nil }
+        let normalizedBase = normalizeBaseURL(trimmedBase)
+        guard !normalizedBase.isEmpty else { return nil }
         
-        let normalizedBase = trimmedBase.hasSuffix("/") ? String(trimmedBase.dropLast()) : trimmedBase
         let p = path.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedPath = p.hasPrefix("/") ? p : "/" + p
         

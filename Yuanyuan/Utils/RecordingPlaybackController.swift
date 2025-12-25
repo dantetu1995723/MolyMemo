@@ -277,8 +277,8 @@ final class RecordingPlaybackController: ObservableObject {
 
         // 2) 相对路径：拼 baseURL
         let baseCandidate = BackendChatConfig.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        let base = baseCandidate.isEmpty ? "http://192.168.106.108:8000" : baseCandidate
-        let normalizedBase = base.hasSuffix("/") ? String(base.dropLast()) : base
+        let base = baseCandidate.isEmpty ? BackendChatConfig.defaultBaseURL : baseCandidate
+        let normalizedBase = BackendChatConfig.normalizeBaseURL(base)
         let path = trimmed.hasPrefix("/") ? trimmed : "/" + trimmed
         let final = normalizedBase + path
         #if DEBUG

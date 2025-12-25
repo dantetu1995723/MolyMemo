@@ -63,7 +63,7 @@ struct BackendSettingsView: View {
                                     HStack(spacing: 10) {
                                         Button {
                                             HapticFeedback.light()
-                                            baseURL = "http://192.168.106.108:8000"
+                                            baseURL = BackendChatConfig.defaultBaseURL
                                         } label: {
                                             HStack(spacing: 6) {
                                                 Image(systemName: "wand.and.stars")
@@ -197,9 +197,9 @@ struct BackendSettingsView: View {
 private extension BackendChatConfig {
     static func endpointURL(fromBase base: String, path: String) -> URL? {
         let trimmedBase = base.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedBase.isEmpty else { return nil }
+        let normalizedBase = BackendChatConfig.normalizeBaseURL(trimmedBase)
+        guard !normalizedBase.isEmpty else { return nil }
         
-        let normalizedBase = trimmedBase.hasSuffix("/") ? String(trimmedBase.dropLast()) : trimmedBase
         let p = path.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedPath = p.isEmpty ? "" : (p.hasPrefix("/") ? p : "/" + p)
         
