@@ -12,9 +12,17 @@ struct TodoVoiceParseResult {
 
 // 待办事项语音解析服务
 class TodoVoiceParser {
-    static let apiKey = "sk-141e3f6730b5449fb614e2888afd6c69"
-    static let model = "qwen-plus-latest"
-    static let apiURL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+    enum ParserError: LocalizedError {
+        case emptyResponse
+        case invalidJSON
+        
+        var errorDescription: String? {
+            switch self {
+            case .emptyResponse: return "解析失败：后端返回空内容"
+            case .invalidJSON: return "解析失败：未返回有效 JSON"
+            }
+        }
+    }
     
     /// 解析语音指令，提取待办事项字段
     /// - Parameters:
@@ -30,11 +38,6 @@ class TodoVoiceParser {
         existingReminderTime: Date? = nil,
         existingSyncToCalendar: Bool = true
     ) async throws -> TodoVoiceParseResult {
-        var request = URLRequest(url: URL(string: apiURL)!)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        
         let now = Date()
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
@@ -50,7 +53,7 @@ class TodoVoiceParser {
         let existingEndStr = existingEndTime.map { dateFormatter.string(from: $0) } ?? "无"
         let existingReminderStr = existingReminderTime.map { dateFormatter.string(from: $0) } ?? "无"
         
-        let systemPrompt = """
+        let instruction = """
         你是专业的待办事项助手。分析用户的语音指令，提取待办事项的各个字段。
         
         当前时间：\(currentTimeStr)
@@ -141,48 +144,24 @@ class TodoVoiceParser {
         
         - 只返回需要更新的字段，没有提到的字段设为null
         """
-        
-        let apiMessages: [[String: Any]] = [
-            ["role": "system", "content": systemPrompt],
-            ["role": "user", "content": voiceText]
-        ]
-        
-        let payload: [String: Any] = [
-            "model": model,
-            "messages": apiMessages,
-            "temperature": 0.3,
-            "max_tokens": 800,
-            "stream": false
-        ]
-        
-        request.httpBody = try JSONSerialization.data(withJSONObject: payload)
-        
+
         print("🎤 解析待办语音指令: \(voiceText.prefix(50))...")
+
+        let prompt = """
+        \(instruction)
+
+        用户语音：
+        \(voiceText)
+        """
         
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let content = try await BackendAIService.generateText(prompt: prompt, mode: .work)
+        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw ParserError.emptyResponse }
         
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw APIError.invalidResponse
-        }
-        
-        guard httpResponse.statusCode == 200 else {
-            let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
-            throw APIError.httpError(statusCode: httpResponse.statusCode, message: errorMessage)
-        }
-        
-        // 解析响应
-        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-        guard let choices = json?["choices"] as? [[String: Any]],
-              let firstChoice = choices.first,
-              let message = firstChoice["message"] as? [String: Any],
-              let content = message["content"] as? String else {
-            throw APIError.emptyResponse
-        }
-        
-        print("📥 AI解析响应: \(content)")
+        print("📥 解析响应: \(trimmed)")
         
         // 清理markdown代码块
-        var cleanedContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        var cleanedContent = trimmed
         if cleanedContent.hasPrefix("```") {
             if let firstNewline = cleanedContent.firstIndex(of: "\n") {
                 cleanedContent = String(cleanedContent[cleanedContent.index(after: firstNewline)...])
@@ -192,12 +171,19 @@ class TodoVoiceParser {
             }
             cleanedContent = cleanedContent.trimmingCharacters(in: .whitespacesAndNewlines)
         }
+
+        // 提取 JSON（兼容模型偶尔加的解释文字）
+        if let s = cleanedContent.range(of: "{"),
+           let e = cleanedContent.range(of: "}", options: .backwards),
+           s.lowerBound < e.upperBound {
+            cleanedContent = String(cleanedContent[s.lowerBound..<e.upperBound])
+        }
         
         // 解析JSON结果
         guard let jsonData = cleanedContent.data(using: .utf8),
               let result = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else {
             print("⚠️ 无法解析AI返回的JSON")
-            return TodoVoiceParseResult()
+            throw ParserError.invalidJSON
         }
         
         // 解析各个字段

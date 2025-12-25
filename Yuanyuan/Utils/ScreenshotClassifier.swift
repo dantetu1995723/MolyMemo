@@ -15,13 +15,8 @@ struct ClassificationResult {
 /// 在 Intent 阶段快速判断截图属于哪个模块（待办/报销/人脉）
 struct ScreenshotClassifier {
     
-    private static let apiKey = "sk-141e3f6730b5449fb614e2888afd6c69"
-    private static let model = "qwen-vl-max-latest"
-    private static let apiURL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
-    
     enum ClassifierError: Error {
         case invalidResponse
-        case httpError(statusCode: Int, message: String)
         case parseError
     }
     
@@ -30,14 +25,9 @@ struct ScreenshotClassifier {
     /// - Returns: 分类结果（包含置信度）
     static func classifyScreenshot(image: UIImage) async throws -> ClassificationResult {
         print("🔍 开始快速分类截图...")
-        
-        var request = URLRequest(url: URL(string: apiURL)!)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        
-        // 系统提示词 - 快速分类（包含置信度）
-        let systemPrompt = """
+
+        // 提示词 - 快速分类（包含置信度）
+        let prompt = """
         你是一个图片分类专家，需要快速判断截图属于以下哪个类别：
         
         1. 待办 (todo) - 包含任务、日程、会议、提醒等信息
@@ -59,61 +49,19 @@ struct ScreenshotClassifier {
         
         // 压缩图片
         let resizedImage = resizeImage(image, maxSize: 1024)  // 使用较小尺寸加快速度
-        guard let imageData = resizedImage.jpegData(compressionQuality: 0.8) else {
-            throw ClassifierError.invalidResponse
-        }
-        let base64String = imageData.base64EncodedString()
-        
-        let contentArray: [[String: Any]] = [
-            [
-                "type": "text",
-                "text": "请快速判断这张截图属于哪个类别"
-            ],
-            [
-                "type": "image_url",
-                "image_url": ["url": "data:image/jpeg;base64,\(base64String)"]
-            ]
-        ]
-        
-        let apiMessages: [[String: Any]] = [
-            ["role": "system", "content": systemPrompt],
-            ["role": "user", "content": contentArray]
-        ]
-        
-        let payload: [String: Any] = [
-            "model": model,
-            "messages": apiMessages,
-            "temperature": 0.1,  // 低温度，更确定的结果
-            "max_tokens": 10,    // 只需要一个单词
-            "stream": false
-        ]
-        
-        request.httpBody = try JSONSerialization.data(withJSONObject: payload)
-        
-        let (data, response) = try await URLSession.shared.data(for: request)
-        
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw ClassifierError.invalidResponse
-        }
-        
-        guard httpResponse.statusCode == 200 else {
-            let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
-            throw ClassifierError.httpError(statusCode: httpResponse.statusCode, message: errorMessage)
-        }
-        
-        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let choices = json["choices"] as? [[String: Any]],
-              let firstChoice = choices.first,
-              let message = firstChoice["message"] as? [String: Any],
-              let content = message["content"] as? String else {
-            throw ClassifierError.parseError
-        }
-        
+
+        let raw = try await BackendAIService.generateText(
+            prompt: prompt,
+            images: [resizedImage],
+            mode: .work
+        )
+
         // 解析分类结果（格式：category|confidence）
-        let trimmedContent = content.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let trimmedContent = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         print("📊 AI分类结果: \(trimmedContent)")
         
         let components = trimmedContent.split(separator: "|")
+        guard !components.isEmpty else { throw ClassifierError.parseError }
         let categoryString = String(components.first ?? "unknown")
         let confidenceString = components.count > 1 ? String(components[1]) : "0.5"
         let confidence = Double(confidenceString) ?? 0.5

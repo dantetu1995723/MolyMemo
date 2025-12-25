@@ -260,6 +260,7 @@ struct ChatMessage: Identifiable, Equatable {
     var invoices: [InvoiceCard]? = nil // 发票卡片列表
     var meetings: [MeetingCard]? = nil // 会议纪要卡片列表
     var notes: String? = nil  // 临时存储数据（如待处理的报销信息）
+    var isContactToolRunning: Bool = false // tool 中间态：用于联系人创建 loading
     var showIntentSelection: Bool = false  // 是否显示意图选择器
     var isWrongClassification: Bool = false  // 是否是错误识别（用于"识别错了"按钮）
     var showReclassifyBubble: Bool = false  // 是否显示重新分类气泡
@@ -319,6 +320,7 @@ struct ChatMessage: Identifiable, Equatable {
         lhs.contacts == rhs.contacts &&
         lhs.invoices == rhs.invoices &&
         lhs.meetings == rhs.meetings &&
+        lhs.isContactToolRunning == rhs.isContactToolRunning &&
         lhs.showIntentSelection == rhs.showIntentSelection &&
         lhs.isWrongClassification == rhs.isWrongClassification &&
         lhs.showReclassifyBubble == rhs.showReclassifyBubble &&
@@ -560,6 +562,9 @@ class AppState: ObservableObject {
             msg.notes = taskId
         }
 
+        // tool 中间态（用于 loading 卡片）
+        msg.isContactToolRunning = output.isContactToolRunning
+
         // 流式阶段：结构化输出里往往已包含 markdown 文本（按 chunk 累积）。
         // 如果等到 onComplete 再一次性设置，会导致“卡片先出现、文字后打字”的视觉错序。
         // 这里做最小策略：仅当新文本更长且非空时更新 content（避免回退/抖动）。
@@ -799,10 +804,7 @@ class AppState: ObservableObject {
         
         do {
             // 调用API生成总结
-            let summaryText = try await QwenAPIService.generateDailySummary(
-                messages: todayMessages,
-                date: today
-            )
+            let summaryText = try await BackendAIService.generateChatSummary(messages: todayMessages, date: today)
             
             // 保存到数据库
             await MainActor.run {
@@ -871,10 +873,7 @@ class AppState: ObservableObject {
         Task {
             do {
                 // 调用API生成总结
-                let summaryText = try await QwenAPIService.generateDailySummary(
-                    messages: sessionMessages,
-                    date: Date()
-                )
+                let summaryText = try await BackendAIService.generateChatSummary(messages: sessionMessages, date: Date())
                 
                 // 保存到数据库（复用DailyChatSummary，用当前时间作为key）
                 await MainActor.run {

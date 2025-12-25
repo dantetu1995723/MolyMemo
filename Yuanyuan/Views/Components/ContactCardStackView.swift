@@ -1,5 +1,6 @@
 import SwiftUI
 import Combine
+import Foundation
 
 struct ContactCardStackView: View {
     @Binding var contacts: [ContactCard]
@@ -219,6 +220,144 @@ struct ContactCardStackView: View {
         } else {
             return Double(contacts.count - relativeIndex)
         }
+    }
+}
+
+// MARK: - Loading (Skeleton) Card
+/// 与正式联系人卡片同规格的 loading 卡片，用于工具调用期间占位（避免展示 raw tool 文本）
+struct ContactCardLoadingStackView: View {
+    var title: String = "创建联系人"
+    var subtitle: String = "正在保存联系人信息…"
+    
+    /// 横向翻页时，用于通知外层 ScrollView 临时禁用上下滚动，避免手势冲突（与正式卡片保持签名一致，方便替换）
+    @Binding var isParentScrollDisabled: Bool
+    
+    // 与 ContactCardStackView 保持一致
+    private let cardHeight: CGFloat = 220
+    private let cardWidth: CGFloat = 300
+    
+    init(
+        title: String = "创建联系人",
+        subtitle: String = "正在保存联系人信息…",
+        isParentScrollDisabled: Binding<Bool>
+    ) {
+        self.title = title
+        self.subtitle = subtitle
+        self._isParentScrollDisabled = isParentScrollDisabled
+    }
+    
+    var body: some View {
+        VStack(spacing: 8) {
+            ZStack {
+                ContactCardLoadingView(title: title, subtitle: subtitle)
+                    .frame(width: cardWidth, height: cardHeight)
+                    .shadow(color: Color.black.opacity(0.10), radius: 10, x: 0, y: 5)
+            }
+            .frame(height: cardHeight + 20)
+            .padding(.horizontal)
+            // loading 卡片不需要翻页，但要与外层手势保持一致：一旦横向拖动，仍禁用外层滚动
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 20)
+                    .onChanged { value in
+                        let dx = value.translation.width
+                        let dy = value.translation.height
+                        guard abs(dx) > abs(dy) else { return }
+                        isParentScrollDisabled = true
+                    }
+                    .onEnded { _ in
+                        isParentScrollDisabled = false
+                    }
+            )
+        }
+    }
+}
+
+struct ContactCardLoadingView: View {
+    let title: String
+    let subtitle: String
+    
+    private let primaryText = Color(red: 0.2, green: 0.2, blue: 0.2)
+    private let skeleton = Color.black.opacity(0.06)
+    private let skeletonStrong = Color.black.opacity(0.10)
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Header: Title + spinner
+            HStack(alignment: .lastTextBaseline, spacing: 10) {
+                Text(title)
+                    .font(.custom("SourceHanSerifSC-Bold", size: 24))
+                    .foregroundColor(primaryText)
+                
+                Spacer()
+                
+                ProgressView()
+                    .progressViewStyle(.circular)
+            }
+            .padding(.bottom, 8)
+            
+            Text(subtitle)
+                .font(.system(size: 14))
+                .foregroundColor(.gray)
+                .padding(.bottom, 14)
+            
+            // Skeleton lines（对齐正式卡片的 company/title 区域）
+            RoundedRectangle(cornerRadius: 6)
+                .fill(skeletonStrong)
+                .frame(width: 160, height: 16)
+                .padding(.bottom, 8)
+            
+            RoundedRectangle(cornerRadius: 6)
+                .fill(skeleton)
+                .frame(width: 110, height: 14)
+                .padding(.bottom, 20)
+            
+            // Divider（保持一致）
+            HStack(spacing: 6) {
+                Rectangle()
+                    .fill(Color(hex: "EEEEEE"))
+                    .frame(height: 1)
+                
+                Circle()
+                    .stroke(Color(hex: "E5E5E5"), lineWidth: 1)
+                    .background(Circle().fill(Color.white))
+                    .frame(width: 7, height: 7)
+            }
+            .padding(.bottom, 20)
+            
+            // Phone skeleton row
+            HStack(spacing: 6) {
+                Image(systemName: "phone")
+                    .font(.system(size: 14))
+                    .foregroundColor(.gray.opacity(0.7))
+                    .frame(width: 20)
+                
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(skeleton)
+                    .frame(width: 140, height: 14)
+            }
+            .padding(.bottom, 10)
+            
+            // Email skeleton row
+            HStack(spacing: 6) {
+                Image(systemName: "envelope")
+                    .font(.system(size: 14))
+                    .foregroundColor(.gray.opacity(0.7))
+                    .frame(width: 20)
+                
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(skeleton)
+                    .frame(width: 180, height: 14)
+            }
+            
+            Spacer()
+        }
+        .padding(14)
+        .background(Color.white)
+        .cornerRadius(24)
+        .overlay(
+            RoundedRectangle(cornerRadius: 24)
+                .stroke(Color.gray.opacity(0.1), lineWidth: 1)
+        )
     }
 }
 

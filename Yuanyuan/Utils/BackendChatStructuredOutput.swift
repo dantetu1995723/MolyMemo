@@ -10,13 +10,17 @@ struct BackendChatStructuredOutput: Equatable {
     var invoices: [InvoiceCard] = []
     var meetings: [MeetingCard] = []
 
+    /// tool 中间态：用于前端在没有卡片产出前展示 loading（例如 contacts_create start）
+    var isContactToolRunning: Bool = false
+
     var isEmpty: Bool {
         text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
         (taskId?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) &&
         scheduleEvents.isEmpty &&
         contacts.isEmpty &&
         invoices.isEmpty &&
-        meetings.isEmpty
+        meetings.isEmpty &&
+        !isContactToolRunning
     }
 }
 

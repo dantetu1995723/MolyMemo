@@ -16,7 +16,7 @@ class SmartModelRouter {
         return !lastUserMessage.images.isEmpty
     }
     
-    /// 智能发送消息 - 自动选择 qwen-max 或 qwen-omni
+    /// 统一发送消息：仅使用自有后端（Qwen 已弃用）
     /// - Parameters:
     ///   - messages: 聊天消息数组
     ///   - mode: 应用模式（工作/情感）
@@ -30,41 +30,21 @@ class SmartModelRouter {
         onError: @escaping (Error) -> Void
     ) async {
         
-        // 全量调试阶段：只要启用后端，就始终走后端；配置缺失则直接报错，不回退到内置模型
-        if BackendChatConfig.isEnabled {
-            print("🌐 使用自有后端聊天接口（已启用，禁止回退）")
-            await BackendChatService.sendMessageStream(
-                messages: messages,
-                mode: mode,
-                onStructuredOutput: onStructuredOutput,
-                onComplete: onComplete,
-                onError: onError
-            )
+        guard BackendChatConfig.isEnabled else {
+            await MainActor.run {
+                onError(BackendChatError.invalidConfig("当前已移除 Qwen 回退，请在设置中启用自有后端"))
+            }
             return
         }
         
-        // 判断是否需要使用多模态模型
-        let hasImages = containsImages(in: messages)
-        
-        if hasImages {
-            // 有图片 -> 使用 qwen-omni（多模态模型）
-            print("🎨 检测到图片，使用 qwen-omni 模型（支持多模态 + 联网搜索）")
-            await QwenOmniService.sendMessageStream(
-                messages: messages,
-                mode: mode,
-                onComplete: onComplete,
-                onError: onError
-            )
-        } else {
-            // 纯文本 -> 使用 qwen-plus-latest（更强的文本能力 + 联网搜索）
-            print("📝 纯文本对话，使用 qwen-plus-latest 模型（支持联网搜索）")
-            await QwenMaxService.sendMessageStream(
-                messages: messages,
-                mode: mode,
-                onComplete: onComplete,
-                onError: onError
-            )
-        }
+        print("🌐 使用自有后端聊天接口")
+        await BackendChatService.sendMessageStream(
+            messages: messages,
+            mode: mode,
+            onStructuredOutput: onStructuredOutput,
+            onComplete: onComplete,
+            onError: onError
+        )
     }
 }
 

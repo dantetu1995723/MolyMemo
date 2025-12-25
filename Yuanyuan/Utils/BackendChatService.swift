@@ -59,64 +59,177 @@ final class BackendChatService {
             debugPrintBody(request)
             print("===========================================================\n")
 
-            let (data, response) = try await URLSession.shared.data(for: request)
+            // ✅ 真流式：边收边解析（SSE / NDJSON），每个 chunk 解析完立即 onStructuredOutput -> UI 渲染
+            let (bytes, response) = try await URLSession.shared.bytes(for: request)
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw BackendChatError.invalidResponse
-            }
-
-            let raw = String(data: data, encoding: .utf8) ?? ""
-            if httpResponse.statusCode != 200 {
-                print("\n========== ❌ Backend Chat Response (/api/v1/chat) ==========")
-                print("Status: \(httpResponse.statusCode)")
-                debugPrintHTTPHeaders(httpResponse)
-                print("Body(\(raw.count)):")
-                debugPrintResponseBody(raw)
-                print("===========================================================\n")
-                throw BackendChatError.httpError(statusCode: httpResponse.statusCode, message: raw)
             }
 
             print("\n========== 📥 Backend Chat Response (/api/v1/chat) ==========")
             print("Status: \(httpResponse.statusCode)")
             debugPrintHTTPHeaders(httpResponse)
-            print("Body(\(raw.count)):")
-            debugPrintResponseBody(raw)
-            debugPrintJSONKeys(data)
             print("===========================================================\n")
 
-            if let structured = parseStructuredOutput(from: data) {
+            // 非 200：读完整 body 作为错误信息（不做流式）
+            if httpResponse.statusCode != 200 {
+                var errorData = Data()
+                for try await b in bytes {
+                    errorData.append(b)
+                }
+                let raw = String(data: errorData, encoding: .utf8) ?? ""
+                print("\n========== ❌ Backend Chat Error Body (/api/v1/chat) ==========")
+                print("Body(\(raw.count)):")
+                debugPrintResponseBody(raw)
+                print("=============================================================\n")
+                throw BackendChatError.httpError(statusCode: httpResponse.statusCode, message: raw)
+            }
+
+            enum StreamFormat { case unknown, sse, ndjson }
+            var format: StreamFormat = .unknown
+            var sseDataLines: [String] = []
+            var parsedChunks: [[String: Any]] = []
+            var rawFallbackLines: [String] = [] // 兜底：如果解析不出 chunk，最后当整包再 parse
+            var latestStructured: BackendChatStructuredOutput? = nil
+
+            func emitChunk(_ obj: [String: Any]) async {
+                parsedChunks.append(obj)
+                let structured = reduceChunks(parsedChunks)
+                latestStructured = structured
                 await MainActor.run {
                     onStructuredOutput?(structured)
                 }
+            }
+
+            func flushSSEEventIfNeeded() async {
+                guard !sseDataLines.isEmpty else { return }
+                let joined = sseDataLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+                sseDataLines.removeAll(keepingCapacity: true)
+                guard !joined.isEmpty else { return }
+                if joined == "[DONE]" { return }
+                guard let d = joined.data(using: .utf8),
+                      let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any]
+                else {
+#if DEBUG
+                    if BackendChatConfig.debugLogChunkSummary {
+                        print("⚠️ [BackendChat] SSE event json parse failed preview: \(truncate(joined, limit: 220))")
+                    }
+#endif
+                    return
+                }
+                await emitChunk(o)
+            }
+
+            do {
+                for try await line in bytes.lines {
+                    if Task.isCancelled { throw CancellationError() }
+
+                    let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !trimmedLine.isEmpty {
+                        rawFallbackLines.append(trimmedLine)
+                    }
+
+                    // 自动探测格式：先看到 data: 就按 SSE；否则按 NDJSON（每行一个 json）
+                    if format == .unknown, trimmedLine.hasPrefix("data:") {
+                        format = .sse
+                    } else if format == .unknown, trimmedLine.hasPrefix("{") {
+                        format = .ndjson
+                    }
+
+                    switch format {
+                    case .sse:
+                        // 空行：一个 event 结束
+                        if trimmedLine.isEmpty {
+                            await flushSSEEventIfNeeded()
+                            continue
+                        }
+                        // data 行：可能是一行 json，也可能多行拼起来
+                        if trimmedLine.hasPrefix("data:") {
+                            let payload = trimmedLine
+                                .dropFirst("data:".count)
+                                .trimmingCharacters(in: .whitespacesAndNewlines)
+                            guard !payload.isEmpty else { continue }
+
+#if DEBUG
+                            if BackendChatConfig.debugLogStreamEvents {
+                                print("📡 [SSE data] \(truncate(redactBase64(payload), limit: 520))")
+                            }
+#endif
+
+                            sseDataLines.append(payload)
+
+                            // 常见情况：单行就是完整 json，尽快 flush 以实现“输出完就渲染”
+                            if sseDataLines.count == 1 {
+                                let s = payload
+                                if let d = s.data(using: .utf8),
+                                   (try? JSONSerialization.jsonObject(with: d) as? [String: Any]) != nil {
+                                    await flushSSEEventIfNeeded()
+                                }
+                            }
+                        }
+                        // 其它 SSE meta 行（event/id/retry等）忽略
+
+                    case .ndjson:
+                        guard !trimmedLine.isEmpty else { continue }
+
+#if DEBUG
+                        if BackendChatConfig.debugLogStreamEvents {
+                            print("🧱 [NDJSON line] \(truncate(redactBase64(trimmedLine), limit: 520))")
+                        }
+#endif
+
+                        guard let d = trimmedLine.data(using: .utf8),
+                              let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any]
+                        else {
+#if DEBUG
+                            if BackendChatConfig.debugLogChunkSummary {
+                                print("⚠️ [BackendChat] NDJSON json parse failed preview: \(truncate(trimmedLine, limit: 220))")
+                            }
+#endif
+                            continue
+                        }
+                        await emitChunk(o)
+
+                    case .unknown:
+                        // 还没判断出来：继续收集，最后用整包 parseStructuredOutput 兜底
+                        continue
+                    }
+                }
+
+                // 结束时再 flush 一次（防止最后一个 event 没有空行）
+                if format == .sse {
+                    await flushSSEEventIfNeeded()
+                }
+            } catch is CancellationError {
+                // 用户中止：不回调 onError，交给上层 stopGeneration 处理 UI
+                return
+            }
+
+            // 最终：如果流式解析成功，直接用最新结构化结果完成；否则兜底整包解析
+            if let structured = latestStructured, !structured.isEmpty {
                 let cleaned = removeMarkdownFormatting(structured.text).trimmingCharacters(in: .whitespacesAndNewlines)
-                if cleaned.isEmpty, structured.scheduleEvents.isEmpty, structured.contacts.isEmpty, structured.invoices.isEmpty, structured.meetings.isEmpty {
+                if cleaned.isEmpty, structured.scheduleEvents.isEmpty, structured.contacts.isEmpty, structured.invoices.isEmpty, structured.meetings.isEmpty, !structured.isContactToolRunning {
                     throw BackendChatError.emptyResponse
                 }
-#if DEBUG
-                if !structured.scheduleEvents.isEmpty {
-                    for e in structured.scheduleEvents.prefix(5) {
-                        print("🧩 [BackendChat->Structured] schedule title=\(e.title) start=\(e.startTime) end=\(e.endTime) id=\(e.id)")
-                    }
+                print("✅ [BackendChat] streamingComplete text(\(cleaned.count)) cards(schedule:\(structured.scheduleEvents.count), contact:\(structured.contacts.count), invoice:\(structured.invoices.count), meeting:\(structured.meetings.count)) tool(contactRunning:\(structured.isContactToolRunning))")
+                await onComplete(cleaned)
+                return
+            }
+
+            let rawFallback = rawFallbackLines.joined(separator: "\n")
+            let fallbackData = rawFallback.data(using: .utf8) ?? Data()
+            if let structured = parseStructuredOutput(from: fallbackData) {
+                await MainActor.run { onStructuredOutput?(structured) }
+                let cleaned = removeMarkdownFormatting(structured.text).trimmingCharacters(in: .whitespacesAndNewlines)
+                if cleaned.isEmpty, structured.scheduleEvents.isEmpty, structured.contacts.isEmpty, structured.invoices.isEmpty, structured.meetings.isEmpty, !structured.isContactToolRunning {
+                    throw BackendChatError.emptyResponse
                 }
-                if !structured.contacts.isEmpty {
-                    for c in structured.contacts.prefix(3) {
-                        print("🧩 [BackendChat->Structured] contact name=\(c.name) phone=\(c.phone ?? "") id=\(c.id)")
-                    }
-                }
-                if !structured.invoices.isEmpty {
-                    for i in structured.invoices.prefix(3) {
-                        print("🧩 [BackendChat->Structured] invoice merchant=\(i.merchantName) amount=\(i.amount) date=\(i.date) id=\(i.id)")
-                    }
-                }
-#endif
-                print("✅ [BackendChat] parsedStructured text(\(cleaned.count)) cards(schedule:\(structured.scheduleEvents.count), contact:\(structured.contacts.count), invoice:\(structured.invoices.count), meeting:\(structured.meetings.count))")
+                print("✅ [BackendChat] fallbackParsedStructured text(\(cleaned.count))")
                 await onComplete(cleaned)
             } else {
-                let text = extractTextFromResponseData(data)
+                let text = extractTextFromResponseData(fallbackData)
                 let cleaned = removeMarkdownFormatting(text).trimmingCharacters(in: .whitespacesAndNewlines)
-                if cleaned.isEmpty {
-                    throw BackendChatError.emptyResponse
-                }
-                print("✅ [BackendChat] parsedText(\(cleaned.count)) preview: \(truncate(cleaned, limit: 200))")
+                if cleaned.isEmpty { throw BackendChatError.emptyResponse }
+                print("✅ [BackendChat] fallbackParsedText(\(cleaned.count)) preview: \(truncate(cleaned, limit: 200))")
                 await onComplete(cleaned)
             }
         } catch {
@@ -137,9 +250,19 @@ final class BackendChatService {
         guard !data.isEmpty else { return nil }
         let raw = String(data: data, encoding: .utf8) ?? ""
 
+#if DEBUG
+        if BackendChatConfig.debugLogChunkSummary {
+            let preview = truncate(redactBase64(raw), limit: 420)
+            print("🔎 [BackendChat] parseStructuredOutput raw(\(raw.count)) preview: \(preview)")
+        }
+#endif
+
         // 先尝试：顶层就是 JSON（数组/对象）
         if let obj = try? JSONSerialization.jsonObject(with: data) {
             if let array = obj as? [[String: Any]] {
+#if DEBUG
+                debugPrintChunkTypeSummary(array, source: "top-level array")
+#endif
                 let out = reduceChunks(array)
                 return out.isEmpty ? nil : out
             }
@@ -147,18 +270,30 @@ final class BackendChatService {
                 // 有些后端会包一层 data/messages
                 if let inner = dict["data"] as? [String: Any] {
                     if let items = inner["items"] as? [[String: Any]] {
+#if DEBUG
+                        debugPrintChunkTypeSummary(items, source: "dict.data.items")
+#endif
                         let out = reduceChunks(items)
                         return out.isEmpty ? nil : out
                     }
                     if let chunks = inner["chunks"] as? [[String: Any]] {
+#if DEBUG
+                        debugPrintChunkTypeSummary(chunks, source: "dict.data.chunks")
+#endif
                         let out = reduceChunks(chunks)
                         return out.isEmpty ? nil : out
                     }
                 }
                 if let messages = dict["messages"] as? [[String: Any]] {
+#if DEBUG
+                    debugPrintChunkTypeSummary(messages, source: "dict.messages")
+#endif
                     let out = reduceChunks(messages)
                     return out.isEmpty ? nil : out
                 }
+#if DEBUG
+                debugPrintChunkTypeSummary([dict], source: "top-level dict")
+#endif
                 let out = reduceChunks([dict])
                 return out.isEmpty ? nil : out
             }
@@ -166,37 +301,95 @@ final class BackendChatService {
 
         // 再尝试：SSE
         if raw.contains("\ndata:") || raw.hasPrefix("data:") {
-            let events = raw
-                .components(separatedBy: "\n\n")
-                .flatMap { block -> [[String: Any]] in
-                    let lines = block.split(separator: "\n")
-                    let dataLines = lines.compactMap { line -> String? in
-                        let s = String(line)
-                        guard s.hasPrefix("data:") else { return nil }
-                        return s.dropFirst("data:".count).trimmingCharacters(in: .whitespaces)
+            var events: [[String: Any]] = []
+            let blocks = raw.components(separatedBy: "\n\n")
+#if DEBUG
+            if BackendChatConfig.debugLogChunkSummary {
+                print("📡 [BackendChat] detected SSE blocks=\(blocks.count)")
+            }
+#endif
+
+            for (bIndex, block) in blocks.enumerated() {
+                let lines = block.split(separator: "\n")
+                for lineSub in lines {
+                    let line = String(lineSub)
+                    guard line.hasPrefix("data:") else { continue }
+                    let jsonString = line.dropFirst("data:".count).trimmingCharacters(in: .whitespaces)
+                    guard !jsonString.isEmpty else { continue }
+
+#if DEBUG
+                    if BackendChatConfig.debugLogStreamEvents {
+                        let s = truncate(redactBase64(jsonString), limit: 520)
+                        print("📡 [SSE data] block=\(bIndex) \(s)")
                     }
-                    return dataLines.compactMap { jsonString in
-                        guard let d = jsonString.data(using: .utf8),
-                              let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any]
-                        else { return nil }
-                        return o
+#endif
+
+                    guard let d = jsonString.data(using: .utf8),
+                          let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any]
+                    else {
+#if DEBUG
+                        if BackendChatConfig.debugLogChunkSummary {
+                            print("⚠️ [BackendChat] SSE json parse failed at block=\(bIndex) preview: \(truncate(jsonString, limit: 220))")
+                        }
+#endif
+                        continue
                     }
+
+#if DEBUG
+                    debugPrintSingleChunkSummary(o, source: "sse", index: events.count)
+                    // 某些后端会把 event/type 打在 SSE event 行里，这里顺手打印一下，便于对照
+                    if BackendChatConfig.debugLogStreamEvents, line.contains("event:") {
+                        print("📡 [SSE meta] block=\(bIndex) line=\(truncate(line, limit: 220))")
+                    }
+#endif
+                    events.append(o)
                 }
+            }
+
+#if DEBUG
+            debugPrintChunkTypeSummary(events, source: "sse aggregated")
+#endif
             let out = reduceChunks(events)
             return out.isEmpty ? nil : out
         }
 
         // 最后尝试：NDJSON
-        let ndjsonObjects: [[String: Any]] = raw
-            .split(separator: "\n")
-            .compactMap { line in
-                let s = line.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !s.isEmpty else { return nil }
-                guard let d = s.data(using: .utf8),
-                      let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any]
-                else { return nil }
-                return o
+        var ndjsonObjects: [[String: Any]] = []
+        let ndLines = raw.split(separator: "\n")
+#if DEBUG
+        if BackendChatConfig.debugLogChunkSummary {
+            print("🧱 [BackendChat] detected NDJSON lines=\(ndLines.count)")
+        }
+#endif
+        for (i, lineSub) in ndLines.enumerated() {
+            let s = String(lineSub).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !s.isEmpty else { continue }
+
+#if DEBUG
+            if BackendChatConfig.debugLogStreamEvents {
+                print("🧱 [NDJSON line] \(i): \(truncate(redactBase64(s), limit: 520))")
             }
+#endif
+
+            guard let d = s.data(using: .utf8),
+                  let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any]
+            else {
+#if DEBUG
+                if BackendChatConfig.debugLogChunkSummary {
+                    print("⚠️ [BackendChat] NDJSON json parse failed at line=\(i) preview: \(truncate(s, limit: 220))")
+                }
+#endif
+                continue
+            }
+#if DEBUG
+            debugPrintSingleChunkSummary(o, source: "ndjson", index: ndjsonObjects.count)
+#endif
+            ndjsonObjects.append(o)
+        }
+
+#if DEBUG
+        debugPrintChunkTypeSummary(ndjsonObjects, source: "ndjson aggregated")
+#endif
         let out = reduceChunks(ndjsonObjects)
         return out.isEmpty ? nil : out
     }
@@ -205,8 +398,13 @@ final class BackendChatService {
         var output = BackendChatStructuredOutput()
         var textParts: [String] = []
 
-        for chunk in chunks {
+        for (idx, chunk) in chunks.enumerated() {
             guard let type = chunk["type"] as? String else { continue }
+#if DEBUG
+            if BackendChatConfig.debugLogChunkSummary {
+                debugPrintSingleChunkSummary(chunk, source: "reduce", index: idx)
+            }
+#endif
             switch type {
             case "task_id":
                 if let taskId = chunk["task_id"] as? String, !taskId.isEmpty {
@@ -225,6 +423,16 @@ final class BackendChatService {
                 // 正式 UI 默认不展示 tool chunk（避免刷屏）
                 // 但：部分后端会把“创建/更新日程”的结构化结果放在 observation 里，这里兜底解析成卡片
                 if let tool = chunk["content"] as? [String: Any] {
+                    // tool 中间态：用于前端展示 loading（不依赖 raw tool 文本）
+                    let toolName = (tool["name"] as? String)?.lowercased() ?? ""
+                    let toolStatus = (tool["status"] as? String)?.lowercased() ?? ""
+                    if toolName == "contacts_create" || toolName == "contacts_update" {
+                        if toolStatus == "start" {
+                            output.isContactToolRunning = true
+                        } else if toolStatus == "success" || toolStatus == "error" || toolStatus == "failed" {
+                            output.isContactToolRunning = false
+                        }
+                    }
                     applyTool(tool, into: &output)
                 }
                 continue
@@ -249,6 +457,12 @@ final class BackendChatService {
     private static func applyTool(_ tool: [String: Any], into output: inout BackendChatStructuredOutput) {
         let name = (tool["name"] as? String)?.lowercased() ?? ""
         let status = (tool["status"] as? String)?.lowercased() ?? ""
+#if DEBUG
+        if BackendChatConfig.debugLogChunkSummary {
+            let obsLen = (tool["observation"] as? String)?.count ?? 0
+            print("🛠️ [BackendChat->Tool] name=\(name) status=\(status) observationLen=\(obsLen)")
+        }
+#endif
         guard status == "success" else { return }
 
         // 后端常见：observation 是一个 JSON 字符串
@@ -272,6 +486,11 @@ final class BackendChatService {
             if let data = obsObj["data"] as? [String: Any] {
                 if let card = parseContactFromToolData(data) {
                     output.contacts.append(card)
+#if DEBUG
+                    if BackendChatConfig.debugLogChunkSummary {
+                        print("🧩 [BackendChat->ToolContact] parsed name=\(card.name) company=\(card.company ?? "") id=\(card.id)")
+                    }
+#endif
                 }
             }
             return
@@ -728,7 +947,7 @@ final class BackendChatService {
         return "\(short) (\(build))"
     }
     
-    /// 复用 QwenMaxService 的清理逻辑（保持输出一致），这里做最小实现以免跨文件依赖
+    /// 清理 markdown 格式（保持输出一致），做最小实现以免跨文件依赖
     private static func removeMarkdownFormatting(_ text: String) -> String {
         var result = text
         
@@ -761,6 +980,45 @@ final class BackendChatService {
         
         return cleanedLines.joined(separator: "\n")
     }
+
+#if DEBUG
+    private static func debugPrintChunkTypeSummary(_ chunks: [[String: Any]], source: String) {
+        guard BackendChatConfig.debugLogChunkSummary else { return }
+        var counts: [String: Int] = [:]
+        for c in chunks {
+            let t = (c["type"] as? String) ?? "<nil>"
+            counts[t, default: 0] += 1
+        }
+        let summary = counts
+            .sorted(by: { $0.key < $1.key })
+            .map { "\($0.key)=\($0.value)" }
+            .joined(separator: ", ")
+        print("📊 [BackendChat] chunkSummary(\(source)) total=\(chunks.count) \(summary)")
+    }
+
+    private static func debugPrintSingleChunkSummary(_ chunk: [String: Any], source: String, index: Int) {
+        guard BackendChatConfig.debugLogChunkSummary else { return }
+        let type = (chunk["type"] as? String) ?? "<nil>"
+        let role = (chunk["role"] as? String) ?? ""
+
+        var extra: String = ""
+        if type == "tool", let c = chunk["content"] as? [String: Any] {
+            let name = (c["name"] as? String) ?? ""
+            let status = (c["status"] as? String) ?? ""
+            let msgId = (c["message_id"] as? String) ?? ""
+            extra = " name=\(name) status=\(status)\(msgId.isEmpty ? "" : " message_id=\(msgId)")"
+        } else if type == "card", let c = chunk["content"] as? [String: Any] {
+            let cardType = (c["card_type"] as? String) ?? ""
+            let cardId = (c["card_id"] as? String) ?? ""
+            extra = " card_type=\(cardType)\(cardId.isEmpty ? "" : " card_id=\(cardId)")"
+        } else if type == "markdown", let s = chunk["content"] as? String {
+            extra = " contentLen=\(s.count) preview=\(truncate(s, limit: 80))"
+        }
+
+        let rolePart = role.isEmpty ? "" : " role=\(role)"
+        print("🧱 [BackendChat] chunk[\(source)#\(index)] type=\(type)\(rolePart)\(extra)")
+    }
+#endif
 }
 
 // MARK: - Small helpers

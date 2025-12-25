@@ -90,6 +90,8 @@ struct ChatView: View {
         return (beforeRaw, afterRaw)
     }
 
+    // 联系人创建 loading 由结构化输出的 tool 中间态驱动，不再依赖把 raw JSON 当文本刷出来
+
     // MARK: - Helpers (Chat Card -> SwiftData Model)
     private func findOrCreateContact(from card: ContactCard) -> Contact {
         // 先尝试根据 id 查找（如果之前创建时同步了 id，可命中）
@@ -433,23 +435,12 @@ struct ChatView: View {
                 appState.stopGeneration()
             }
             
-            // DEMO: 仅在未启用自有后端时注入示例，避免与真实协议输出冲突
-            if !BackendChatConfig.isEnabled, appState.chatMessages.isEmpty {
+            // DEMO: 注入示例卡片，方便调试查看（改为 true 启用）
+            if false, appState.chatMessages.isEmpty {
                 appState.addSampleScheduleMessage()
                 
-                // 延迟一点添加人脉示例，模拟对话流
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                     appState.addSampleContactMessage()
-                    
-                    // 再延迟一点添加发票示例
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                        appState.addSampleInvoiceMessage()
-                        
-                        // 最后延迟一点添加会议纪要示例
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                            appState.addSampleMeetingMessage()
-                        }
-                    }
                 }
             }
         }
@@ -540,7 +531,18 @@ struct ChatView: View {
                 } else {
                     VStack(alignment: .leading, spacing: 12) {
                         // 文字部分：若存在「日程/人脉」卡片且文本为多段，则把卡片插到第一段与后续段之间
-                        let fullText = (message.content.isEmpty && appState.isAgentTyping) ? "正在思考..." : message.content
+                        // 注意：该中间态不一定发生在 streaming 状态（可能是“识别→最终生成”间的过渡），
+                        // 因此这里不依赖 streamingState，只要命中 tool start 且还没产出联系人卡片就展示 loading
+                        let isContactToolLoading =
+                        (message.contacts?.isEmpty ?? true) &&
+                        message.isContactToolRunning
+                        
+                        // 避免把后端 raw tool chunk 直接展示在气泡里；此处只替换中间态文案，不影响最终输出
+                        let fullText: String = {
+                            if isContactToolLoading { return "正在创建联系人…" }
+                            if message.content.isEmpty && appState.isAgentTyping { return "正在思考..." }
+                            return message.content
+                        }()
                         let hasContactCards = (message.contacts?.isEmpty == false)
                         let hasScheduleCards = (message.scheduleEvents?.isEmpty == false)
                         let hasInsertableCards = hasContactCards || hasScheduleCards
@@ -565,6 +567,17 @@ struct ChatView: View {
                                 }
                             }
                         )
+                        
+                        // 人脉创建 loading 卡片：在“识别/工具调用中间态”展示，完成后由正式联系人卡片替换
+                        if isContactToolLoading {
+                            ContactCardLoadingStackView(
+                                title: "创建联系人",
+                                subtitle: "正在保存联系人信息…",
+                                isParentScrollDisabled: $isCardHorizontalPaging
+                            )
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, -10)
+                        }
                         
                         // 卡片部分
                         if let _ = message.scheduleEvents,

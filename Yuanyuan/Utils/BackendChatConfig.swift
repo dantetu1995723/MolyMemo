@@ -14,6 +14,8 @@ enum BackendChatConfig {
 #if DEBUG
         static let debugFullResponseLog = "backend_chat_debug_full_response_log"
         static let debugDumpResponseToFile = "backend_chat_debug_dump_response_to_file"
+        static let debugLogStreamEvents = "backend_chat_debug_log_stream_events"
+        static let debugLogChunkSummary = "backend_chat_debug_log_chunk_summary"
 #endif
     }
     
@@ -153,6 +155,24 @@ enum BackendChatConfig {
             return UserDefaults.standard.bool(forKey: Keys.debugDumpResponseToFile)
         }
         set { UserDefaults.standard.set(newValue, forKey: Keys.debugDumpResponseToFile) }
+    }
+
+    /// Debug：是否打印 SSE/NDJSON 的每一个 data chunk（很吵，默认关闭）
+    static var debugLogStreamEvents: Bool {
+        get { UserDefaults.standard.bool(forKey: Keys.debugLogStreamEvents) }
+        set { UserDefaults.standard.set(newValue, forKey: Keys.debugLogStreamEvents) }
+    }
+
+    /// Debug：是否打印解析后的 chunk 摘要（比 fullResponse 更轻，默认开启）
+    static var debugLogChunkSummary: Bool {
+        get {
+            if UserDefaults.standard.object(forKey: Keys.debugLogChunkSummary) == nil {
+                UserDefaults.standard.set(true, forKey: Keys.debugLogChunkSummary)
+                return true
+            }
+            return UserDefaults.standard.bool(forKey: Keys.debugLogChunkSummary)
+        }
+        set { UserDefaults.standard.set(newValue, forKey: Keys.debugLogChunkSummary) }
     }
 #endif
 }

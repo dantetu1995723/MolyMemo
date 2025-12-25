@@ -251,70 +251,11 @@ class AIFormFillerService {
     
     // 调用AI分析表单
     private static func analyzeFormWithAI(screenshot: UIImage, prompt: String) async throws -> String {
-        // 直接调用通义千问视觉模型分析表单
-        let apiKey = "sk-141e3f6730b5449fb614e2888afd6c69"
-        let model = "qwen-vl-max-latest"
-        let apiURL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
-        
-        var request = URLRequest(url: URL(string: apiURL)!)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        
-        // 压缩图片
+        // Qwen 已弃用：统一走自有后端做视觉分析
         let resizedImage = resizeImage(screenshot, maxSize: 2048)
-        guard let imageData = resizedImage.jpegData(compressionQuality: 0.9) else {
-            throw NSError(domain: "AIFormFiller", code: -1, userInfo: [NSLocalizedDescriptionKey: "图片压缩失败"])
-        }
-        let base64String = imageData.base64EncodedString()
-        
-        let contentArray: [[String: Any]] = [
-            [
-                "type": "text",
-                "text": prompt
-            ],
-            [
-                "type": "image_url",
-                "image_url": ["url": "data:image/jpeg;base64,\(base64String)"]
-            ]
-        ]
-        
-        let apiMessages: [[String: Any]] = [
-            ["role": "system", "content": "你是专业的网页表单分析专家，擅长识别表单字段并提供精确的CSS选择器。"],
-            ["role": "user", "content": contentArray]
-        ]
-        
-        let payload: [String: Any] = [
-            "model": model,
-            "messages": apiMessages,
-            "temperature": 0.3,
-            "max_tokens": 1000,
-            "stream": false
-        ]
-        
-        request.httpBody = try JSONSerialization.data(withJSONObject: payload)
-        
-        let (data, response) = try await URLSession.shared.data(for: request)
-        
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw NSError(domain: "AIFormFiller", code: -1, userInfo: [NSLocalizedDescriptionKey: "无效的响应"])
-        }
-        
-        guard httpResponse.statusCode == 200 else {
-            let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
-            throw NSError(domain: "AIFormFiller", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: errorMessage])
-        }
-        
-        // 解析响应
-        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-        guard let choices = json?["choices"] as? [[String: Any]],
-              let firstChoice = choices.first,
-              let message = firstChoice["message"] as? [String: Any],
-              let content = message["content"] as? String else {
-            throw NSError(domain: "AIFormFiller", code: -1, userInfo: [NSLocalizedDescriptionKey: "AI返回空内容"])
-        }
-        
-        return content
+        let instruction = "你是专业的网页表单分析专家，擅长识别表单字段并提供精确的CSS选择器。"
+        let fullPrompt = instruction + "\n\n" + prompt
+        return try await BackendAIService.generateText(prompt: fullPrompt, images: [resizedImage], mode: .work)
     }
     
     // 压缩图片

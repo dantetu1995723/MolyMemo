@@ -35,6 +35,12 @@ struct ScheduleDetailSheet: View {
     
     private let silenceGate: Float = 0.12
     
+    // 颜色定义
+    private let bgColor = Color(red: 0.97, green: 0.97, blue: 0.97)
+    private let primaryTextColor = Color(hex: "333333")
+    private let secondaryTextColor = Color(hex: "999999")
+    private let iconColor = Color(hex: "CCCCCC")
+    
     init(event: Binding<ScheduleEvent>, onDelete: @escaping () -> Void, onSave: @escaping (ScheduleEvent) -> Void) {
         self._event = event
         self.onDelete = onDelete
@@ -51,10 +57,11 @@ struct ScheduleDetailSheet: View {
                         Button(action: { dismiss() }) {
                             Image(systemName: "xmark")
                                 .font(.system(size: 18, weight: .medium))
-                                .foregroundColor(Color(hex: "999999"))
+                                .foregroundColor(secondaryTextColor)
                                 .frame(width: 44, height: 44)
                                 .background(Circle().fill(Color.secondary.opacity(0.15)))
                         }
+                        
                         Spacer()
                         
                         HStack(spacing: 12) {
@@ -65,7 +72,7 @@ struct ScheduleDetailSheet: View {
                             }) {
                                 Image(systemName: "ellipsis")
                                     .font(.system(size: 18, weight: .medium))
-                                    .foregroundColor(Color(hex: "333333"))
+                                    .foregroundColor(primaryTextColor)
                                     .frame(width: 44, height: 44)
                                     .background(Circle().fill(Color.white).shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 2))
                             }
@@ -76,7 +83,7 @@ struct ScheduleDetailSheet: View {
                             }) {
                                 Image(systemName: "checkmark")
                                     .font(.system(size: 18, weight: .medium))
-                                    .foregroundColor(Color(hex: "333333"))
+                                    .foregroundColor(primaryTextColor)
                                     .frame(width: 44, height: 44)
                                     .background(Circle().fill(Color.white).shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 2))
                             }
@@ -85,8 +92,8 @@ struct ScheduleDetailSheet: View {
                     
                     Text("日程详情")
                         .font(.system(size: 17, weight: .bold))
-                        .foregroundColor(Color(hex: "333333"))
-
+                        .foregroundColor(primaryTextColor)
+                    
                     if showDeleteMenu {
                         TopDeletePillButton(
                             onDelete: {
@@ -107,35 +114,19 @@ struct ScheduleDetailSheet: View {
                 .padding(.horizontal, 20)
                 .padding(.top, 20)
                 .padding(.bottom, 20)
-                .overlay(alignment: .trailing) {
-                    if showDeleteMenu {
-                        TopDeletePillButton(
-                            onDelete: {
-                                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                                    showDeleteMenu = false
-                                }
-                                HapticFeedback.medium()
-                                onDelete()
-                                dismiss()
-                            }
-                        )
-                        .padding(.trailing, 20 + 44 + 10)
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                    }
-                }
                 .zIndex(100)
                 
                 ZStack {
-                    ScrollView {
-                        VStack(spacing: 18) {
-                            // Title（居中大标题 + 右侧冲突标签）
+                    ScrollView(showsIndicators: false) {
+                        VStack(spacing: 20) {
+                            // 标题区域
                             ZStack {
                                 TextField("日程标题", text: $editedEvent.title)
                                     .font(.system(size: 34, weight: .bold))
                                     .multilineTextAlignment(.center)
-                                    .foregroundColor(Color(hex: "333333"))
+                                    .foregroundColor(primaryTextColor)
                                     .lineLimit(1)
-                                    .padding(.horizontal, 64) // 给右侧标签留空间
+                                    .padding(.horizontal, 64)
                             }
                             .frame(maxWidth: .infinity)
                             .overlay(alignment: .trailing) {
@@ -152,21 +143,22 @@ struct ScheduleDetailSheet: View {
                                         .padding(.trailing, 20)
                                 }
                             }
+                            .padding(.top, 10)
                             
-                            // Time Display
+                            // 时间区域
                             HStack(alignment: .center, spacing: 0) {
-                                // Start Date/Time
+                                // 开始时间
                                 Button(action: {
                                     withAnimation(.spring()) { activeDatePicker = .start }
                                 }) {
                                     VStack(alignment: .center, spacing: 4) {
                                         Text(formatDate(editedEvent.startTime))
                                             .font(.system(size: 16, weight: .regular))
-                                            .foregroundColor(activeDatePicker == .start ? .blue : Color(hex: "999999"))
+                                            .foregroundColor(activeDatePicker == .start ? .blue : secondaryTextColor)
                                         
                                         Text(formatTime(editedEvent.startTime))
                                             .font(.system(size: 36, weight: .bold))
-                                            .foregroundColor(activeDatePicker == .start ? .blue : Color(hex: "333333"))
+                                            .foregroundColor(activeDatePicker == .start ? .blue : primaryTextColor)
                                     }
                                 }
                                 .frame(maxWidth: .infinity)
@@ -177,118 +169,151 @@ struct ScheduleDetailSheet: View {
                                     .foregroundColor(Color(hex: "E0E0E0"))
                                     .offset(y: 12)
                                 
-                                // End Date/Time
+                                // 结束时间
                                 Button(action: {
                                     withAnimation(.spring()) { activeDatePicker = .end }
                                 }) {
                                     VStack(alignment: .center, spacing: 4) {
                                         Text(formatDate(editedEvent.endTime))
                                             .font(.system(size: 16, weight: .regular))
-                                            .foregroundColor(activeDatePicker == .end ? .blue : Color(hex: "999999"))
+                                            .foregroundColor(activeDatePicker == .end ? .blue : secondaryTextColor)
                                         
                                         Text(formatTime(editedEvent.endTime))
                                             .font(.system(size: 36, weight: .bold))
-                                            .foregroundColor(activeDatePicker == .end ? .blue : Color(hex: "333333"))
+                                            .foregroundColor(activeDatePicker == .end ? .blue : primaryTextColor)
                                     }
                                 }
                                 .frame(maxWidth: .infinity)
                                 .modifier(GlobalFrameReporter(frame: $endTimeAreaFrame))
                             }
-                            .padding(.top, 2)
                             .padding(.horizontal, 20)
                             
-                            Divider().padding(.horizontal, 20)
+                            // 第一条分割线
+                            Divider()
+                                .padding(.horizontal, 20)
+                                .padding(.vertical, 8)
                             
-                            // Options
-                            VStack(spacing: 0) {
-                                settingsRow(
-                                    icon: "sun.max",
-                                    title: "全天",
-                                    trailing: AnyView(
-                                        Toggle("", isOn: $uiAllDay)
-                                            .labelsHidden()
-                                            .tint(Color(hex: "CFCFCF"))
-                                    )
-                                )
-                                
-                                rowDivider
-                                
-                                settingsRow(
-                                    icon: "bell",
-                                    title: "提醒时间",
-                                    trailing: AnyView(
-                                        HStack(spacing: 6) {
-                                            Text(uiReminderText)
-                                                .foregroundColor(Color(hex: "999999"))
-                                            Image(systemName: "chevron.up.chevron.down")
-                                                .font(.system(size: 12, weight: .medium))
-                                                .foregroundColor(Color(hex: "CCCCCC"))
-                                        }
-                                    )
-                                )
-                                
-                                rowDivider
-                                
-                                settingsRow(
-                                    icon: "calendar",
-                                    title: "日程分类",
-                                    trailing: AnyView(
-                                        HStack(spacing: 10) {
-                                            Circle()
-                                                .fill(uiCategoryColor)
-                                                .frame(width: 12, height: 12)
-                                            Text(uiCategoryName)
-                                                .foregroundColor(Color(hex: "333333"))
-                                            Image(systemName: "chevron.up.chevron.down")
-                                                .font(.system(size: 12, weight: .medium))
-                                                .foregroundColor(Color(hex: "CCCCCC"))
-                                        }
-                                    )
-                                )
-                                
-                                rowDivider
-                                
-                                Button(action: {}) {
-                                    HStack(spacing: 12) {
-                                        Image(systemName: "mappin.and.ellipse")
-                                            .foregroundColor(Color(hex: "CCCCCC"))
-                                            .frame(width: 24)
-                                        Text("地点")
-                                            .font(.system(size: 16))
-                                            .foregroundColor(Color(hex: "333333"))
-                                        Spacer()
-                                        Image(systemName: "chevron.right")
-                                            .font(.system(size: 14))
-                                            .foregroundColor(Color(hex: "CCCCCC"))
-                                    }
-                                    .frame(height: 56)
-                                    .contentShape(Rectangle())
-                                }
-                                
-                                rowDivider
-                                
-                                HStack(alignment: .firstTextBaseline, spacing: 12) {
-                                    Image(systemName: "doc.text")
-                                        .foregroundColor(Color(hex: "CCCCCC"))
+                            // 设置选项区域（全天、提醒时间、日程分类、地点）
+                            VStack(spacing: 20) {
+                                // 全天
+                                HStack(spacing: 16) {
+                                    Image(systemName: "sun.max")
+                                        .font(.system(size: 18))
+                                        .foregroundColor(iconColor)
                                         .frame(width: 24)
                                     
-                                    TextField("添加备注", text: $editedEvent.description, axis: .vertical)
+                                    Text("全天")
                                         .font(.system(size: 16))
-                                        .foregroundColor(Color(hex: "333333"))
-                                        .lineLimit(4...10)
+                                        .foregroundColor(primaryTextColor)
+                                    
+                                    Spacer()
+                                    
+                                    Toggle("", isOn: $uiAllDay)
+                                        .labelsHidden()
+                                        .tint(.blue)
                                 }
-                                .padding(.vertical, 16)
+                                
+                                // 提醒时间
+                                HStack(spacing: 16) {
+                                    Image(systemName: "bell")
+                                        .font(.system(size: 18))
+                                        .foregroundColor(iconColor)
+                                        .frame(width: 24)
+                                    
+                                    Text("提醒时间")
+                                        .font(.system(size: 16))
+                                        .foregroundColor(primaryTextColor)
+                                    
+                                    Spacer()
+                                    
+                                    HStack(spacing: 6) {
+                                        Text(uiReminderText)
+                                            .font(.system(size: 16))
+                                            .foregroundColor(secondaryTextColor)
+                                        Image(systemName: "chevron.up.chevron.down")
+                                            .font(.system(size: 12, weight: .medium))
+                                            .foregroundColor(iconColor)
+                                    }
+                                }
+                                
+                                // 日程分类
+                                HStack(spacing: 16) {
+                                    Image(systemName: "calendar")
+                                        .font(.system(size: 18))
+                                        .foregroundColor(iconColor)
+                                        .frame(width: 24)
+                                    
+                                    Text("日程分类")
+                                        .font(.system(size: 16))
+                                        .foregroundColor(primaryTextColor)
+                                    
+                                    Spacer()
+                                    
+                                    HStack(spacing: 10) {
+                                        Circle()
+                                            .fill(uiCategoryColor)
+                                            .frame(width: 12, height: 12)
+                                        Text(uiCategoryName)
+                                            .font(.system(size: 16))
+                                            .foregroundColor(primaryTextColor)
+                                        Image(systemName: "chevron.up.chevron.down")
+                                            .font(.system(size: 12, weight: .medium))
+                                            .foregroundColor(iconColor)
+                                    }
+                                }
+                                
+                                // 地点
+                                Button(action: {}) {
+                                    HStack(spacing: 16) {
+                                        Image(systemName: "mappin.and.ellipse")
+                                            .font(.system(size: 18))
+                                            .foregroundColor(iconColor)
+                                            .frame(width: 24)
+                                        
+                                        Text("地点")
+                                            .font(.system(size: 16))
+                                            .foregroundColor(primaryTextColor)
+                                        
+                                        Spacer()
+                                        
+                                        Image(systemName: "chevron.right")
+                                            .font(.system(size: 14))
+                                            .foregroundColor(iconColor)
+                                    }
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
                             }
                             .padding(.horizontal, 20)
+                            
+                            // 第二条分割线
+                            Divider()
+                                .padding(.horizontal, 20)
+                                .padding(.vertical, 8)
+                            
+                            // 备注描述
+                            HStack(alignment: .top, spacing: 16) {
+                                Image(systemName: "doc.text")
+                                    .font(.system(size: 18))
+                                    .foregroundColor(iconColor)
+                                    .frame(width: 24)
+                                
+                                TextField("添加备注", text: $editedEvent.description, axis: .vertical)
+                                    .font(.system(size: 16))
+                                    .foregroundColor(primaryTextColor)
+                                    .lineLimit(4...10)
+                                    .lineSpacing(6)
+                            }
+                            .padding(.horizontal, 20)
+                            
+                            Spacer(minLength: 120)
                         }
-                        .padding(.bottom, 120)
                     }
                     
                     // 弹出式 DatePicker
                     if let type = activeDatePicker {
                         Color.black.opacity(0.001)
                             .ignoresSafeArea()
-                            // 逻辑：当开始/结束日历打开时，点击另一侧时间区域应直接切换，不要先关闭
                             .simultaneousGesture(
                                 SpatialTapGesture(coordinateSpace: .global).onEnded { value in
                                     let p = value.location
@@ -312,7 +337,6 @@ struct ScheduleDetailSheet: View {
                             )
                             .datePickerStyle(.graphical)
                             .environment(\.locale, Locale(identifier: "zh_CN"))
-                            // 竖向留白收紧：避免月日历弹层显得“太长”
                             .padding(.horizontal, 12)
                             .padding(.vertical, 6)
                         }
@@ -332,15 +356,22 @@ struct ScheduleDetailSheet: View {
             
             // Voice Button
             ZStack {
-                Capsule().stroke(Color(hex: "E5E5E5"), lineWidth: 1).background(Capsule().fill(Color.white)).frame(height: 56)
+                Capsule()
+                    .stroke(Color(hex: "E5E5E5"), lineWidth: 1)
+                    .background(Capsule().fill(Color.white))
+                    .frame(height: 56)
                     .background(GeometryReader { geo in Color.clear.onAppear { buttonFrame = geo.frame(in: .named("ScheduleDetailSheetSpace")) } })
+                
                 HStack(spacing: 8) {
-                    Image(systemName: isRecording ? "mic.fill" : "mic").foregroundColor(isRecording ? .red : .gray)
-                    Text(isRecording ? "正在听..." : "长按可语音编辑").foregroundColor(Color(hex: "666666"))
+                    Image(systemName: isRecording ? "mic.fill" : "mic")
+                        .foregroundColor(isRecording ? .red : .gray)
+                    Text(isRecording ? "正在听..." : "长按可语音编辑")
+                        .foregroundColor(Color(hex: "666666"))
                 }
             }
             .opacity(isRecording ? 0 : 1)
-            .padding(.horizontal, 20).padding(.bottom, 20)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 20)
             .simultaneousGesture(DragGesture(minimumDistance: 0).onChanged { handleDragChanged($0) }.onEnded { handleDragEnded($0) })
             
             if isRecording || isAnimatingRecordingExit {
@@ -360,10 +391,9 @@ struct ScheduleDetailSheet: View {
             }
         }
         .coordinateSpace(name: "ScheduleDetailSheetSpace")
-        .background(Color(red: 0.97, green: 0.97, blue: 0.97))
+        .background(bgColor)
         .onAppear { speechRecognizer.requestAuthorization() }
         .onReceive(speechRecognizer.$audioLevel) { self.audioPower = mapAudioLevelToPower($0) }
-        // 逻辑校验：结束时间不能早于开始时间（仅改逻辑，不改 UI）
         .onChange(of: editedEvent.startTime) { _, newStart in
             if editedEvent.endTime < newStart {
                 editedEvent.endTime = newStart
@@ -375,45 +405,110 @@ struct ScheduleDetailSheet: View {
             }
         }
     }
-
-    private var rowDivider: some View {
-        Divider().padding(.leading, 36)
-    }
     
-    @ViewBuilder
-    private func settingsRow(icon: String, title: String, trailing: AnyView) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: icon)
-                .foregroundColor(Color(hex: "CCCCCC"))
-                .frame(width: 24)
-            Text(title)
-                .font(.system(size: 16))
-                .foregroundColor(Color(hex: "333333"))
-            Spacer()
-            trailing
-        }
-        .frame(height: 56)
-        .contentShape(Rectangle())
-    }
+    // MARK: - 辅助方法
     
-    // Logic Methods ... (Same as before)
     private func handleDragChanged(_ value: DragGesture.Value) {
-        if !isPressing { isPressing = true; pressStartTime = Date()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { if isPressing, let s = pressStartTime, Date().timeIntervalSince(s) >= 0.3 { if !isRecording { HapticFeedback.medium(); startVoiceInput() } } }
+        if !isPressing {
+            isPressing = true
+            pressStartTime = Date()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                if isPressing, let s = pressStartTime, Date().timeIntervalSince(s) >= 0.3 {
+                    if !isRecording {
+                        HapticFeedback.medium()
+                        startVoiceInput()
+                    }
+                }
+            }
         }
-        if isRecording { if value.translation.height < -50 { if !isCanceling { withAnimation { isCanceling = true } } } else { if isCanceling { withAnimation { isCanceling = false } } } }
+        if isRecording {
+            if value.translation.height < -50 {
+                if !isCanceling { withAnimation { isCanceling = true } }
+            } else {
+                if isCanceling { withAnimation { isCanceling = false } }
+            }
+        }
     }
-    private func handleDragEnded(_ value: DragGesture.Value) { isPressing = false; pressStartTime = nil; if isRecording { stopVoiceInput() } }
-    private func mapAudioLevelToPower(_ level: Float) -> CGFloat { let c = max(0, min(level, 1)); guard c >= silenceGate else { return 0 }; return CGFloat(pow((c - silenceGate) / max(0.0001, 1 - silenceGate), 0.6)) }
-    private func startVoiceInput() { isAnimatingRecordingExit = false; isRecording = true; isCanceling = false; recordingTranscript = "正在聆听..."; speechRecognizer.startRecording { t in let tr = t.trimmingCharacters(in: .whitespacesAndNewlines); self.recordingTranscript = tr.isEmpty ? "正在聆听..." : tr } }
-    private func stopVoiceInput() { speechRecognizer.stopRecording(); if !isCanceling { let t = recordingTranscript.trimmingCharacters(in: .whitespacesAndNewlines); if !t.isEmpty, t != "正在聆听..." { parseVoiceCommand(voiceText: t) } }; audioPower = 0; withAnimation(.easeInOut(duration: 0.2)) { isAnimatingRecordingExit = true } }
-    private func finishRecordingOverlayDismissal() { isRecording = false; isAnimatingRecordingExit = false; isCanceling = false; audioPower = 0 }
-    private func parseVoiceCommand(voiceText: String) { Task { do { let r = try await TodoVoiceParser.parseVoiceCommand(voiceText: voiceText, existingTitle: editedEvent.title, existingDescription: editedEvent.description, existingStartTime: editedEvent.startTime, existingEndTime: editedEvent.endTime, existingReminderTime: editedEvent.startTime.addingTimeInterval(-1800), existingSyncToCalendar: true); await MainActor.run { if let t = r.title { editedEvent.title = t }; if let d = r.taskDescription { editedEvent.description = d }; if let s = r.startTime { editedEvent.startTime = s }; if let e = r.endTime { editedEvent.endTime = e }; HapticFeedback.success() } } catch {} } }
-    private func formatDate(_ date: Date) -> String { let f = DateFormatter(); f.dateFormat = "yyyy.MM.dd"; return f.string(from: date) }
-    private func formatTime(_ date: Date) -> String { let f = DateFormatter(); f.dateFormat = "HH:mm"; return f.string(from: date) }
+    
+    private func handleDragEnded(_ value: DragGesture.Value) {
+        isPressing = false
+        pressStartTime = nil
+        if isRecording { stopVoiceInput() }
+    }
+    
+    private func mapAudioLevelToPower(_ level: Float) -> CGFloat {
+        let c = max(0, min(level, 1))
+        guard c >= silenceGate else { return 0 }
+        return CGFloat(pow((c - silenceGate) / max(0.0001, 1 - silenceGate), 0.6))
+    }
+    
+    private func startVoiceInput() {
+        isAnimatingRecordingExit = false
+        isRecording = true
+        isCanceling = false
+        recordingTranscript = "正在聆听..."
+        speechRecognizer.startRecording { t in
+            let tr = t.trimmingCharacters(in: .whitespacesAndNewlines)
+            self.recordingTranscript = tr.isEmpty ? "正在聆听..." : tr
+        }
+    }
+    
+    private func stopVoiceInput() {
+        speechRecognizer.stopRecording()
+        if !isCanceling {
+            let t = recordingTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !t.isEmpty, t != "正在聆听..." {
+                parseVoiceCommand(voiceText: t)
+            }
+        }
+        audioPower = 0
+        withAnimation(.easeInOut(duration: 0.2)) { isAnimatingRecordingExit = true }
+    }
+    
+    private func finishRecordingOverlayDismissal() {
+        isRecording = false
+        isAnimatingRecordingExit = false
+        isCanceling = false
+        audioPower = 0
+    }
+    
+    private func parseVoiceCommand(voiceText: String) {
+        Task {
+            do {
+                let r = try await TodoVoiceParser.parseVoiceCommand(
+                    voiceText: voiceText,
+                    existingTitle: editedEvent.title,
+                    existingDescription: editedEvent.description,
+                    existingStartTime: editedEvent.startTime,
+                    existingEndTime: editedEvent.endTime,
+                    existingReminderTime: editedEvent.startTime.addingTimeInterval(-1800),
+                    existingSyncToCalendar: true
+                )
+                await MainActor.run {
+                    if let t = r.title { editedEvent.title = t }
+                    if let d = r.taskDescription { editedEvent.description = d }
+                    if let s = r.startTime { editedEvent.startTime = s }
+                    if let e = r.endTime { editedEvent.endTime = e }
+                    HapticFeedback.success()
+                }
+            } catch {}
+        }
+    }
+    
+    private func formatDate(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy.MM.dd"
+        return f.string(from: date)
+    }
+    
+    private func formatTime(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm"
+        return f.string(from: date)
+    }
 }
 
-// MARK: - Global frame reporter (逻辑用，不影响 UI)
+// MARK: - Global frame reporter
 private struct GlobalFrameReporter: ViewModifier {
     @Binding var frame: CGRect
     
@@ -437,13 +532,20 @@ struct TopDeletePillButton: View {
     var body: some View {
         Button(action: onDelete) {
             HStack(spacing: 8) {
-                Image(systemName: "trash").font(.system(size: 14, weight: .medium)).foregroundColor(Color(hex: "FF3B30"))
-                Text("删除日程").foregroundColor(Color(hex: "FF3B30")).font(.system(size: 15, weight: .medium))
+                Image(systemName: "trash")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(Color(hex: "FF3B30"))
+                Text("删除日程")
+                    .foregroundColor(Color(hex: "FF3B30"))
+                    .font(.system(size: 15, weight: .medium))
                 Spacer(minLength: 0)
             }
-            .padding(.leading, 20).padding(.trailing, 16).frame(width: 200, height: 52)
+            .padding(.leading, 20)
+            .padding(.trailing, 16)
+            .frame(width: 200, height: 52)
             .modifier(ConditionalCapsuleBackground(showRescanMenu: false))
             .contentShape(Capsule())
-        }.buttonStyle(.plain)
+        }
+        .buttonStyle(.plain)
     }
 }
