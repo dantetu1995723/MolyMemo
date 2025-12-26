@@ -10,6 +10,120 @@ private struct TodoListScrollOffsetKey: PreferenceKey {
     }
 }
 
+// MARK: - 后端日程行样式（轻量）
+private struct RemoteScheduleRow: View {
+    let event: ScheduleEvent
+    
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            timePill()
+            
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(event.title)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.black.opacity(0.88))
+                        .lineLimit(1)
+                    
+                    Spacer(minLength: 0)
+                    
+                    if !event.endTimeProvided {
+                        Text("未设置结束")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(.black.opacity(0.45))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.black.opacity(0.04))
+                            .clipShape(Capsule())
+                    }
+                }
+                
+                if !event.description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text(event.description)
+                        .font(.system(size: 13))
+                        .foregroundColor(.black.opacity(0.55))
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .padding(.vertical, 14)
+        .padding(.horizontal, 14)
+        .background(cardBackground())
+        .overlay(cardBorder())
+    }
+    
+    private func timePill() -> some View {
+        VStack(spacing: 4) {
+            Text(formatTime(event.startTime))
+                .font(.system(size: 14, weight: .bold, design: .rounded))
+                .foregroundColor(.black.opacity(0.88))
+            
+            if let end = displayEndTime() {
+                Text(end)
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundColor(.black.opacity(0.5))
+            } else {
+                Text("开始")
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .foregroundColor(.black.opacity(0.45))
+            }
+        }
+        .frame(width: 66)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [Color.white.opacity(0.9), Color.black.opacity(0.02)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color.black.opacity(0.06), lineWidth: 1)
+        )
+    }
+    
+    private func cardBackground() -> some View {
+        RoundedRectangle(cornerRadius: 18, style: .continuous)
+            .fill(.ultraThinMaterial)
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(Color.white.opacity(0.55))
+            )
+            .shadow(color: Color.black.opacity(0.06), radius: 10, x: 0, y: 5)
+    }
+    
+    private func cardBorder() -> some View {
+        RoundedRectangle(cornerRadius: 18, style: .continuous)
+            .stroke(
+                LinearGradient(
+                    colors: [Color.white.opacity(0.9), Color.black.opacity(0.06)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                lineWidth: 1
+            )
+    }
+    
+    private func displayEndTime() -> String? {
+        guard event.endTimeProvided else { return nil }
+        // end==start 也不展示，避免 “11:09~11:09”
+        if abs(event.endTime.timeIntervalSince(event.startTime)) < 1 { return nil }
+        return formatTime(event.endTime)
+    }
+    
+    private func formatTime(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "zh_CN")
+        f.dateFormat = "HH:mm"
+        return f.string(from: date)
+    }
+}
+
 // 待办事项列表主界面 - 全新设计
 struct TodoListView: View {
     @Environment(\.modelContext) private var modelContext
@@ -36,6 +150,12 @@ struct TodoListView: View {
     // 拖拽临时状态
     @State private var dragStartProgress: CGFloat?
     @State private var didInitialize = false
+    
+    // MARK: - 后端日程（/api/v1/schedules）
+    @State private var remoteEvents: [ScheduleEvent] = []
+    @State private var remoteIsLoading: Bool = false
+    @State private var remoteErrorText: String? = nil
+    @State private var remoteDetailSelection: ScheduleEvent? = nil
     
     init(showAddSheet: Binding<Bool> = .constant(false)) {
         self._showAddSheet = showAddSheet
@@ -129,7 +249,8 @@ struct TodoListView: View {
                 // 这样在月视图下，手指滑动会优先触发日历折叠
                 .scrollDisabled(calendarProgress < 1.0 && listScrollOffset >= 0)
             }
-            // 整体手势监听（优先级提升，保证周视图可顺利展开）
+            // 整体手势监听：只在「日历未完全折叠 & 列表在顶」时拦截，
+            // 否则把滚动手势交还给 ScrollView（这样上滑就能正常滚动列表）
             .highPriorityGesture(
                 DragGesture()
                     .onChanged { value in
@@ -137,7 +258,8 @@ struct TodoListView: View {
                     }
                     .onEnded { value in
                         handleDragEnd(value)
-                    }
+                    },
+                including: (calendarProgress < 1.0 && listScrollOffset >= 0) ? .all : .subviews
             )
             
             // 底部操作栏（选中事项时显示）
@@ -193,6 +315,26 @@ struct TodoListView: View {
             withAnimation(.spring(response: 0.5, dampingFraction: 0.75).delay(0.1)) {
                 showContent = true
             }
+
+            // 进入工具箱「日程」页即自动刷新（无需按钮）
+            Task { await reloadRemoteSchedulesForSelectedDate() }
+        }
+        .onChange(of: selectedDate) { _, _ in
+            // 切换日期时自动刷新对应日程
+            Task { await reloadRemoteSchedulesForSelectedDate() }
+        }
+        .sheet(item: $remoteDetailSelection) { _ in
+            RemoteScheduleDetailLoaderSheet(
+                event: $remoteDetailSelection,
+                onCommittedSave: { updated in
+                    applyRemoteEventUpdate(updated)
+                },
+                onCommittedDelete: { deleted in
+                    applyRemoteEventDelete(deleted)
+                }
+            )
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
         }
     }
     
@@ -253,6 +395,34 @@ struct TodoListView: View {
         
         withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
             calendarProgress = targetProgress
+        }
+    }
+    
+    // MARK: - 远端日程（回写列表）
+    
+    private func isSameRemote(_ a: ScheduleEvent, _ b: ScheduleEvent) -> Bool {
+        let ra = (a.remoteId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let rb = (b.remoteId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !ra.isEmpty, !rb.isEmpty { return ra == rb }
+        return a.id == b.id
+    }
+    
+    @MainActor
+    private func applyRemoteEventUpdate(_ updated: ScheduleEvent) {
+        if let idx = remoteEvents.firstIndex(where: { isSameRemote($0, updated) }) {
+            remoteEvents[idx] = updated
+        } else {
+            remoteEvents.append(updated)
+        }
+        remoteEvents.sort(by: { $0.startTime < $1.startTime })
+        remoteDetailSelection = updated
+    }
+    
+    @MainActor
+    private func applyRemoteEventDelete(_ deleted: ScheduleEvent) {
+        remoteEvents.removeAll(where: { isSameRemote($0, deleted) })
+        if let current = remoteDetailSelection, isSameRemote(current, deleted) {
+            remoteDetailSelection = nil
         }
     }
     
@@ -320,52 +490,141 @@ struct TodoListView: View {
     // MARK: - 行程列表内容
     private func scheduleListSectionContent() -> some View {
         LazyVStack(spacing: 12) {
-            // 全天事项
-            ForEach(allDayTodos) { todo in
-                SwipeToDeleteCard(
-                    onTap: { presentEditor(for: todo) },
-                    onDelete: { promptDelete(for: todo) }
-                ) {
-                    UnifiedScheduleRow(
-                        todo: todo,
-                        isSelected: selectedTodo?.id == todo.id,
-                        isAllDay: true,
-                        accentColor: scheduleAccentColor,
-                        backgroundColor: scheduleBackgroundColor,
-                        glowColor: scheduleGlowColor
-                    )
+            // 后端加载态/错误提示（无需按钮刷新）
+            if remoteIsLoading {
+                HStack(spacing: 10) {
+                    ProgressView()
+                        .scaleEffect(0.9)
+                    Text("正在从后端获取日程…")
+                        .font(.system(size: 13))
+                        .foregroundColor(.secondary)
+                    Spacer()
                 }
+                .padding(.horizontal, 4)
+                .padding(.vertical, 6)
             }
             
-            // 带时间的事项
-            let items = timedTodos
-            ForEach(Array(items.enumerated()), id: \.element.id) { index, todo in
-                // 检测重叠：如果上一项的结束时间晚于当前项的开始时间
-                let isOverlapping = index > 0 && items[index - 1].endTime > todo.startTime
+            if let remoteErrorText {
+                Text(remoteErrorText)
+                    .font(.system(size: 13))
+                    .foregroundColor(.red)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 4)
+            }
+            
+            if remoteErrorText == nil {
+                if !remoteEvents.isEmpty {
+                    ForEach(remoteEvents) { e in
+                        Button {
+                            remoteDetailSelection = e
+                        } label: {
+                            RemoteScheduleRow(event: e)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                } else if !remoteIsLoading {
+                    Text("暂无后端日程")
+                        .font(.system(size: 13))
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 4)
+                        .padding(.top, 10)
+                }
+            } else {
+                // 后端失败兜底：展示本地日程（避免空白）
                 
-                SwipeToDeleteCard(
-                    onTap: { presentEditor(for: todo) },
-                    onDelete: { promptDelete(for: todo) }
-                ) {
-                    UnifiedScheduleRow(
-                        todo: todo,
-                        isSelected: selectedTodo?.id == todo.id,
-                        accentColor: scheduleAccentColor,
-                        backgroundColor: scheduleBackgroundColor,
-                        glowColor: scheduleGlowColor,
-                        isOverlapping: isOverlapping
-                    )
+                // 全天事项
+                ForEach(allDayTodos) { todo in
+                    SwipeToDeleteCard(
+                        onTap: { presentEditor(for: todo) },
+                        onDelete: { promptDelete(for: todo) }
+                    ) {
+                        UnifiedScheduleRow(
+                            todo: todo,
+                            isSelected: selectedTodo?.id == todo.id,
+                            isAllDay: true,
+                            accentColor: scheduleAccentColor,
+                            backgroundColor: scheduleBackgroundColor,
+                            glowColor: scheduleGlowColor
+                        )
+                    }
                 }
-            }
-            
-            // 空状态
-            if currentDayTodos.isEmpty {
-                EmptyScheduleView()
-                    .padding(.top, 40)
+                
+                // 带时间的事项
+                let items = timedTodos
+                ForEach(Array(items.enumerated()), id: \.element.id) { index, todo in
+                    // 检测重叠：如果上一项的结束时间晚于当前项的开始时间
+                    let isOverlapping = index > 0 && items[index - 1].endTime > todo.startTime
+                    
+                    SwipeToDeleteCard(
+                        onTap: { presentEditor(for: todo) },
+                        onDelete: { promptDelete(for: todo) }
+                    ) {
+                        UnifiedScheduleRow(
+                            todo: todo,
+                            isSelected: selectedTodo?.id == todo.id,
+                            accentColor: scheduleAccentColor,
+                            backgroundColor: scheduleBackgroundColor,
+                            glowColor: scheduleGlowColor,
+                            isOverlapping: isOverlapping
+                        )
+                    }
+                }
+                
+                // 空状态（仅兜底分支）
+                if currentDayTodos.isEmpty {
+                    EmptyScheduleView()
+                        .padding(.top, 40)
+                }
             }
         }
         .padding(.horizontal, 16) // 统一水平内边距
         .padding(.bottom, 160)
+    }
+
+    // MARK: - 后端拉取（按当前选中日期过滤）
+    @MainActor
+    private func reloadRemoteSchedulesForSelectedDate() async {
+        remoteIsLoading = true
+        remoteErrorText = nil
+        defer { remoteIsLoading = false }
+
+        do {
+            // 先拉全量（自动翻页），再在前端按选中日期过滤：
+            // - 避免后端 start_date/end_date 格式/时区导致返回空
+            // - 同时可直接对照后端“确实有数据”
+            var all: [ScheduleEvent] = []
+            let pageSize = 100 // 后端校验：<= 100
+            for page in 1...5 { // 简单上限，避免异常情况下无限请求
+                let list = try await ScheduleService.fetchScheduleList(
+                    params: .init(
+                        page: page,
+                        pageSize: pageSize,
+                        startDate: nil,
+                        endDate: nil,
+                        search: nil,
+                        category: nil,
+                        relatedMeetingId: nil
+                    )
+                )
+                all.append(contentsOf: list)
+                if list.count < pageSize { break }
+            }
+            
+            let cal = Calendar.current
+            let filtered = all.filter { cal.isDate($0.startTime, inSameDayAs: selectedDate) }
+            remoteEvents = filtered.sorted(by: { $0.startTime < $1.startTime })
+        } catch {
+            remoteEvents = []
+            remoteErrorText = "后端日程获取失败：\(error.localizedDescription)"
+        }
+    }
+
+    private func formatYMD(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "zh_CN")
+        f.dateFormat = "yyyy-MM-dd"
+        return f.string(from: date)
     }
     
     // MARK: - 底部操作栏

@@ -29,6 +29,8 @@ struct ContactEditView: View {
 
     // 图片选择相关状态
     @State private var selectedImageIndices: Set<Int> = []
+    @State private var isSubmitting: Bool = false
+    @State private var alertMessage: String? = nil
     
     // 主题色 - 统一灰色
     private let themeColor = Color(white: 0.55)
@@ -245,7 +247,7 @@ struct ContactEditView: View {
                 
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: {
-                        saveContact()
+                        Task { await submitSave() }
                     }) {
                         Text("保存")
                             .font(.system(size: 16, weight: .bold, design: .rounded))
@@ -258,7 +260,7 @@ struct ContactEditView: View {
                             )
                     }
                     .buttonStyle(ScaleButtonStyle())
-                    .disabled(name.isEmpty)
+                    .disabled(name.isEmpty || isSubmitting)
                     .opacity(name.isEmpty ? 0.5 : 1.0)
                 }
             }
@@ -294,6 +296,17 @@ struct ContactEditView: View {
             .onAppear {
                 loadContactData()
             }
+            .alert(
+                "保存失败",
+                isPresented: Binding(
+                    get: { alertMessage != nil },
+                    set: { if !$0 { alertMessage = nil } }
+                )
+            ) {
+                Button("好", role: .cancel) {}
+            } message: {
+                Text(alertMessage ?? "")
+            }
         }
     }
     
@@ -311,25 +324,73 @@ struct ContactEditView: View {
         textAttachments = contact.textAttachments ?? []
     }
     
-    private func saveContact() {
+    @MainActor
+    private func submitSave() async {
         guard !name.isEmpty else { return }
+        guard !isSubmitting else { return }
         
-        HapticFeedback.success()
+        isSubmitting = true
+        defer { isSubmitting = false }
         
-        if let existingContact = contact {
-            // 编辑现有联系人
-            existingContact.name = name
-            existingContact.phoneNumber = phoneNumber.isEmpty ? nil : phoneNumber
-            existingContact.company = company.isEmpty ? nil : company
-            existingContact.identity = identity.isEmpty ? nil : identity
-            existingContact.hobbies = hobbies.isEmpty ? nil : hobbies
-            existingContact.relationship = relationship.isEmpty ? nil : relationship
-            existingContact.avatarData = avatarData
-            existingContact.imageData = imageData.isEmpty ? nil : imageData
-            existingContact.textAttachments = textAttachments.isEmpty ? nil : textAttachments
-            existingContact.lastModified = Date()
-        } else {
-            // 创建新联系人
+        do {
+            HapticFeedback.success()
+            
+            if let existingContact = contact {
+                // 先本地更新（UI 即时反馈）
+                existingContact.name = name
+                existingContact.phoneNumber = phoneNumber.isEmpty ? nil : phoneNumber
+                existingContact.company = company.isEmpty ? nil : company
+                existingContact.identity = identity.isEmpty ? nil : identity
+                existingContact.hobbies = hobbies.isEmpty ? nil : hobbies
+                existingContact.relationship = relationship.isEmpty ? nil : relationship
+                existingContact.avatarData = avatarData
+                existingContact.imageData = imageData.isEmpty ? nil : imageData
+                existingContact.textAttachments = textAttachments.isEmpty ? nil : textAttachments
+                existingContact.lastModified = Date()
+                
+                // 有 remoteId 才走后端更新（后端没有 create 接口时，避免误调用）
+                let rid = (existingContact.remoteId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                if !rid.isEmpty {
+                    var payload: [String: Any] = ["name": name]
+                    if !company.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { payload["company"] = company }
+                    if !identity.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { payload["position"] = identity }
+                    if !phoneNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { payload["phone"] = phoneNumber }
+                    if let email = existingContact.email?.trimmingCharacters(in: .whitespacesAndNewlines), !email.isEmpty {
+                        payload["email"] = email
+                    }
+                    if !relationship.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { payload["relationship_type"] = relationship }
+                    if let notes = existingContact.notes?.trimmingCharacters(in: .whitespacesAndNewlines), !notes.isEmpty {
+                        payload["notes"] = notes
+                    }
+                    
+                    if let updated = try await ContactService.updateContact(remoteId: rid, payload: payload, keepLocalId: existingContact.id) {
+                        existingContact.remoteId = updated.remoteId ?? rid
+                        existingContact.name = updated.name
+                        if let v = updated.company?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty { existingContact.company = v }
+                        if let v = updated.title?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty { existingContact.identity = v }
+                        if let v = updated.phone?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty { existingContact.phoneNumber = v }
+                        if let v = updated.email?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty { existingContact.email = v }
+                        let imp = (updated.impression ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                        let n = (updated.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                        let candidate = !imp.isEmpty ? imp : (n.isEmpty ? nil : n)
+                        if let candidate {
+                            let current = (existingContact.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                            if current.isEmpty {
+                                existingContact.notes = candidate
+                            } else if !current.contains(candidate) {
+                                existingContact.notes = current + "\n\n" + candidate
+                            }
+                        }
+                        existingContact.lastModified = Date()
+                    }
+                }
+                
+                try? modelContext.save()
+                dismiss()
+                return
+            }
+            
+            // 新建：只做本地保存（后端创建通常由聊天 tool 完成）
             let newContact = Contact(
                 name: name,
                 phoneNumber: phoneNumber.isEmpty ? nil : phoneNumber,
@@ -342,10 +403,11 @@ struct ContactEditView: View {
                 textAttachments: textAttachments.isEmpty ? nil : textAttachments
             )
             modelContext.insert(newContact)
+            try? modelContext.save()
+            dismiss()
+        } catch {
+            alertMessage = error.localizedDescription
         }
-        
-        try? modelContext.save()
-        dismiss()
     }
     
     private func deleteSelectedImages() {

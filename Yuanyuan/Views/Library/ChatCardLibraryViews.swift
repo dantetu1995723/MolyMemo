@@ -196,6 +196,13 @@ private struct ContactCardBatchList: View {
     private func findOrCreateContact(from card: ContactCard) -> Contact {
         // 先尝试根据 ID 查找
         if let existing = allContacts.first(where: { $0.id == card.id }) {
+            // 绑定远端 id（用于后续详情/更新/删除）
+            if let rid = card.remoteId?.trimmingCharacters(in: .whitespacesAndNewlines), !rid.isEmpty {
+                if (existing.remoteId ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    existing.remoteId = rid
+                    try? modelContext.save()
+                }
+            }
             let imp = (card.impression ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             if !imp.isEmpty {
                 let current = (existing.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -213,6 +220,12 @@ private struct ContactCardBatchList: View {
         // 如果找不到，尝试根据名字和电话查找
         if let phone = card.phone, !phone.isEmpty,
            let existing = allContacts.first(where: { $0.name == card.name && $0.phoneNumber == phone }) {
+            if let rid = card.remoteId?.trimmingCharacters(in: .whitespacesAndNewlines), !rid.isEmpty {
+                if (existing.remoteId ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    existing.remoteId = rid
+                    try? modelContext.save()
+                }
+            }
             let imp = (card.impression ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             if !imp.isEmpty {
                 let current = (existing.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -230,6 +243,10 @@ private struct ContactCardBatchList: View {
         // 如果都找不到，创建一个新的 Contact
         let newContact = Contact(
             name: card.name,
+            remoteId: {
+                let rid = (card.remoteId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                return rid.isEmpty ? nil : rid
+            }(),
             phoneNumber: card.phone,
             company: card.company,
             identity: card.title,

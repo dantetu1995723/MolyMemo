@@ -104,10 +104,15 @@ struct TodoPreviewData: Equatable {
 // 日程卡片数据
 struct ScheduleEvent: Identifiable, Equatable, Codable {
     var id = UUID()
+    /// 后端 schedule id（字符串/数字/uuid 都可能）；用于拉取详情 `/api/v1/schedules/{id}`
+    var remoteId: String? = nil
     var title: String
     var description: String
     var startTime: Date
     var endTime: Date
+    /// 是否由后端明确给出结束时间（end_time 不为 null 且可解析）
+    /// - 用于列表展示：避免 end_time=null 时误显示 “+1h”
+    var endTimeProvided: Bool = true
     var isSynced: Bool = false
     var hasConflict: Bool = false
     
@@ -148,6 +153,8 @@ struct ScheduleEvent: Identifiable, Equatable, Codable {
 // 人脉卡片数据
 struct ContactCard: Identifiable, Equatable, Codable {
     var id = UUID()
+    /// 后端 contact id（字符串/数字/uuid 都可能）；用于拉取详情 `/api/v1/contacts/{id}` 与更新/删除
+    var remoteId: String? = nil
     var name: String
     var englishName: String?
     var company: String?

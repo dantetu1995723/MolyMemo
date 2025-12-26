@@ -96,6 +96,13 @@ struct ChatView: View {
     private func findOrCreateContact(from card: ContactCard) -> Contact {
         // 先尝试根据 id 查找（如果之前创建时同步了 id，可命中）
         if let existing = allContacts.first(where: { $0.id == card.id }) {
+            // 绑定远端 id（用于后续详情/更新/删除）
+            if let rid = card.remoteId?.trimmingCharacters(in: .whitespacesAndNewlines), !rid.isEmpty {
+                if (existing.remoteId ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    existing.remoteId = rid
+                    try? modelContext.save()
+                }
+            }
             // 将 impression 写入联系人备注（不覆盖用户已有备注；必要时追加）
             let imp = (card.impression ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             if !imp.isEmpty {
@@ -113,6 +120,12 @@ struct ChatView: View {
         // 再尝试根据名字 + 电话查找
         if let phone = card.phone, !phone.isEmpty,
            let existing = allContacts.first(where: { $0.name == card.name && $0.phoneNumber == phone }) {
+            if let rid = card.remoteId?.trimmingCharacters(in: .whitespacesAndNewlines), !rid.isEmpty {
+                if (existing.remoteId ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    existing.remoteId = rid
+                    try? modelContext.save()
+                }
+            }
             let imp = (card.impression ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             if !imp.isEmpty {
                 let current = (existing.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -129,6 +142,10 @@ struct ChatView: View {
         // 创建新的 SwiftData Contact（保持 UI 不变，只是为了复用现有详情页）
         let newContact = Contact(
             name: card.name,
+            remoteId: {
+                let rid = (card.remoteId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                return rid.isEmpty ? nil : rid
+            }(),
             phoneNumber: card.phone,
             company: card.company,
             identity: card.title,
@@ -593,7 +610,46 @@ struct ChatView: View {
                                     self.showDeleteConfirmation = true
                                 }
                             }, onOpenDetail: { event in
-                                scheduleDetailSelection = ScheduleDetailSelection(messageId: message.id, eventId: event.id)
+                                // 若有 remoteId：先拉取后端详情（打印原始响应/错误），再打开详情页
+                                Task {
+                                    let localEventId = event.id
+                                    let msgId = message.id
+                                    
+                                    // 再查一次 index，避免闭包捕获导致的越界
+                                    guard let msgIndex = appState.chatMessages.firstIndex(where: { $0.id == msgId }) else {
+                                        await MainActor.run {
+                                            scheduleDetailSelection = ScheduleDetailSelection(messageId: msgId, eventId: localEventId)
+                                        }
+                                        return
+                                    }
+                                    guard let eIndex = appState.chatMessages[msgIndex].scheduleEvents?.firstIndex(where: { $0.id == localEventId }) else {
+                                        await MainActor.run {
+                                            scheduleDetailSelection = ScheduleDetailSelection(messageId: msgId, eventId: localEventId)
+                                        }
+                                        return
+                                    }
+                                    
+                                    let rid = appState.chatMessages[msgIndex].scheduleEvents?[eIndex].remoteId
+                                    if let rid, !rid.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                        do {
+                                            let detail = try await ScheduleService.fetchScheduleDetail(remoteId: rid, keepLocalId: localEventId)
+                                            await MainActor.run {
+                                                appState.chatMessages[msgIndex].scheduleEvents?[eIndex] = detail
+                                                appState.saveMessageToStorage(appState.chatMessages[msgIndex], modelContext: modelContext)
+                                                scheduleDetailSelection = ScheduleDetailSelection(messageId: msgId, eventId: localEventId)
+                                            }
+                                        } catch {
+                                            print("❌ [ChatView] fetch schedule detail failed rid=\(rid) error=\(error)")
+                                            await MainActor.run {
+                                                scheduleDetailSelection = ScheduleDetailSelection(messageId: msgId, eventId: localEventId)
+                                            }
+                                        }
+                                    } else {
+                                        await MainActor.run {
+                                            scheduleDetailSelection = ScheduleDetailSelection(messageId: msgId, eventId: localEventId)
+                                        }
+                                    }
+                                }
                             })
                             .frame(maxWidth: .infinity)
                             .padding(.top, -10) // Slight adjustment to bring it closer to text

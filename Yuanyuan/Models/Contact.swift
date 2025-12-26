@@ -6,6 +6,8 @@ import Foundation
 @Model
 final class Contact {
     var id: UUID
+    /// 后端 contact id（字符串/数字/uuid 都可能）；用于与后端详情/更新/删除对齐
+    var remoteId: String?
     var name: String  // 名字（昵称）- 必填
     var phoneNumber: String?  // 手机号
     var company: String?  // 公司
@@ -29,6 +31,7 @@ final class Contact {
     
     init(
         name: String,
+        remoteId: String? = nil,
         phoneNumber: String? = nil,
         company: String? = nil,
         identity: String? = nil,
@@ -45,6 +48,7 @@ final class Contact {
         textAttachments: [String]? = nil
     ) {
         self.id = UUID()
+        self.remoteId = remoteId
         self.name = name
         self.phoneNumber = phoneNumber
         self.company = company

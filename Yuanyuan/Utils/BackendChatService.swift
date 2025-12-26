@@ -514,9 +514,15 @@ final class BackendChatService {
             rawImage: nil
         )
 
-        // tool 返回 id 通常是 uuid string
-        if let idString = dict["id"] as? String, let id = UUID(uuidString: idString) {
-            card.id = id
+        // tool 返回 id：可能是 uuid / 数字 / 字符串；remoteId 用于后续详情/更新/删除
+        if let idString = dict["id"] as? String {
+            let trimmed = idString.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { card.remoteId = trimmed }
+            if let id = UUID(uuidString: trimmed) { card.id = id }
+        } else if let idInt = dict["id"] as? Int {
+            card.remoteId = String(idInt)
+        } else if let idDouble = dict["id"] as? Double {
+            card.remoteId = String(Int(idDouble))
         }
         return card
     }
@@ -532,11 +538,20 @@ final class BackendChatService {
 #endif
             return nil
         }
-        let end = parseISODate(dict["end_time"]) ?? start.addingTimeInterval(3600)
+        // end_time 可能为 null：不要默认 +1h 误导展示
+        let parsedEnd = parseISODate(dict["end_time"])
+        let end = parsedEnd ?? start
 
         var event = ScheduleEvent(title: title, description: description, startTime: start, endTime: end)
-        if let idString = dict["id"] as? String, let id = UUID(uuidString: idString) {
-            event.id = id
+        event.endTimeProvided = (parsedEnd != nil)
+        if let idString = dict["id"] as? String {
+            let trimmed = idString.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { event.remoteId = trimmed }
+            if let id = UUID(uuidString: trimmed) { event.id = id }
+        } else if let idInt = dict["id"] as? Int {
+            event.remoteId = String(idInt)
+        } else if let idDouble = dict["id"] as? Double {
+            event.remoteId = String(Int(idDouble))
         }
 #if DEBUG
         print("🧩 [BackendChat->ToolSchedule] parsed schedule id=\(event.id) title=\(event.title) start=\(event.startTime) end=\(event.endTime)")
@@ -615,9 +630,22 @@ final class BackendChatService {
         guard !title.isEmpty else { return nil }
 
         guard let start = parseISODate(dict["start_time"]) else { return nil }
-        let end = parseISODate(dict["end_time"]) ?? start.addingTimeInterval(3600) // 后端可能返回 null，前端需要一个合理的 endTime
+        // end_time 可能返回 null：不要默认 +1h 误导展示
+        let parsedEnd = parseISODate(dict["end_time"])
+        let end = parsedEnd ?? start
 
         var event = ScheduleEvent(title: title, description: description, startTime: start, endTime: end)
+        event.endTimeProvided = (parsedEnd != nil)
+        // remoteId：尽量从后端字段拿到，用于后续拉详情
+        if let rid = dict.string(forAnyOf: ["id", "schedule_id", "remote_id", "remoteId"])?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !rid.isEmpty
+        {
+            event.remoteId = rid
+            // 若后端 id 本身是 UUID，且外部没有强制本地 id，则用它来稳定映射
+            if forceId == nil, let u = UUID(uuidString: rid) {
+                event.id = u
+            }
+        }
         if let id = forceId { event.id = id }
         return event
     }
@@ -639,6 +667,21 @@ final class BackendChatService {
             rawImage: nil
         )
         if let id = forceId { card.id = id }
+        
+        // remoteId：尽量从后端字段拿到（用于后续拉详情/更新/删除）
+        if let rid = dict.string(forAnyOf: ["id", "contact_id", "remote_id", "remoteId"])?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !rid.isEmpty
+        {
+            card.remoteId = rid
+            // 若后端 id 本身是 UUID，且外部没有强制本地 id，则用它来稳定映射
+            if forceId == nil, let u = UUID(uuidString: rid) {
+                card.id = u
+            }
+        } else if let idInt = dict["id"] as? Int {
+            card.remoteId = String(idInt)
+        } else if let idDouble = dict["id"] as? Double {
+            card.remoteId = String(Int(idDouble))
+        }
         // avatar/rawImage 若后端给 base64，后续再接；这里先不猜测字段，避免误解析造成崩溃/内存暴涨
         return card
     }

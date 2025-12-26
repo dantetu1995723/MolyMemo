@@ -45,7 +45,8 @@ struct ModuleContainerView: View {
                         // 保留原有日历日程界面
                         TodoListView(showAddSheet: $showAddSheet)
                     case .contact:
-                        ContactCardLibraryView(showAddSheet: $showAddSheet)
+                        // 联系人模块：与「日程」一致，进入即从后端拉取列表；失败则展示本地缓存
+                        ContactListView(showAddSheet: $showAddSheet)
                     case .expense:
                         InvoiceCardLibraryView(showAddSheet: $showAddSheet)
                     case .meeting:

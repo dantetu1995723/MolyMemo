@@ -8,14 +8,32 @@ struct ContactDetailView: View {
     @Bindable var contact: Contact
     
     @State private var selectedTab = 0 // 0: 基础信息, 1: 时间线
-    @State private var showEditSheet = false
     @State private var showDeleteMenu = false
+    @State private var isLoadingDetail: Bool = false
+    @State private var isSubmitting: Bool = false
+    @State private var submittingAction: SubmittingAction? = nil
+    @State private var alertMessage: String? = nil
+    
+    // 与「日程详情」一致：用 edited 草稿承载编辑态，✅ 提交保存后再写回 contact
+    @State private var editedName: String = ""
+    @State private var editedCompany: String = ""
+    @State private var editedIdentity: String = ""
+    @State private var editedPhone: String = ""
+    @State private var editedEmail: String = ""
+    @State private var editedNotes: String = ""
+    @State private var didInitDraft: Bool = false
+    @State private var hasUserEdited: Bool = false
     
     // 颜色定义
     private let bgColor = Color(red: 0.97, green: 0.97, blue: 0.97)
     private let primaryTextColor = Color(hex: "333333")
     private let secondaryTextColor = Color(hex: "999999")
     private let iconColor = Color(hex: "CCCCCC")
+    
+    private enum SubmittingAction {
+        case save
+        case delete
+    }
     
     // 语音输入相关
     @StateObject private var speechRecognizer = SpeechRecognizer()
@@ -58,14 +76,26 @@ struct ContactDetailView: View {
                                     .frame(width: 44, height: 44)
                                     .background(Circle().fill(Color.white).shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 2))
                             }
+                            .disabled(isSubmitting)
                             
-                            Button(action: { dismiss() }) {
-                                Image(systemName: "checkmark")
-                                    .font(.system(size: 18, weight: .medium))
-                                    .foregroundColor(primaryTextColor)
-                                    .frame(width: 44, height: 44)
-                                    .background(Circle().fill(Color.white).shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 2))
+                            Button(action: {
+                                Task { await submitSave() }
+                            }) {
+                                ZStack {
+                                    if isSubmitting, submittingAction == .save {
+                                        ProgressView()
+                                            .progressViewStyle(.circular)
+                                            .tint(primaryTextColor)
+                                    } else {
+                                        Image(systemName: "checkmark")
+                                            .font(.system(size: 18, weight: .medium))
+                                            .foregroundColor(primaryTextColor)
+                                    }
+                                }
+                                .frame(width: 44, height: 44)
+                                .background(Circle().fill(Color.white).shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 2))
                             }
+                            .disabled(isSubmitting)
                         }
                     }
                     
@@ -74,16 +104,11 @@ struct ContactDetailView: View {
                         .foregroundColor(primaryTextColor)
                     
                     if showDeleteMenu {
-                        ContactDeletePillButton(
-                            onDelete: {
-                                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                                    showDeleteMenu = false
-                                }
-                                HapticFeedback.medium()
-                                modelContext.delete(contact)
-                                dismiss()
-                            }
-                        )
+                        TopDeletePillButton(title: "删除人脉") {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { showDeleteMenu = false }
+                            HapticFeedback.medium()
+                            Task { await submitDelete() }
+                        }
                         .frame(maxWidth: .infinity, alignment: .trailing)
                         .padding(.trailing, 44 + 10)
                         .transition(.move(edge: .top).combined(with: .opacity))
@@ -98,11 +123,14 @@ struct ContactDetailView: View {
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 24) {
                         // 姓名
-                        Text(contact.name)
+                        TextField("姓名", text: $editedName)
                             .font(.system(size: 34, weight: .bold))
                             .foregroundColor(primaryTextColor)
                             .multilineTextAlignment(.center)
+                            .lineLimit(1)
+                            .padding(.horizontal, 64)
                             .padding(.top, 10)
+                            .disabled(isSubmitting)
                         
                         // 分段选择器
                         HStack(spacing: 0) {
@@ -123,7 +151,17 @@ struct ContactDetailView: View {
                             // 基础信息内容
                             VStack(spacing: 20) {
                                 // 公司和职位
-                                InfoRow(icon: "building.2", text: contact.company ?? "未填写公司", subtext: contact.identity)
+                                EditableInfoRow(
+                                    icon: "building.2",
+                                    placeholder: "公司",
+                                    text: $editedCompany,
+                                    subPlaceholder: "职位",
+                                    subText: $editedIdentity,
+                                    isSubmitting: isSubmitting,
+                                    primaryTextColor: primaryTextColor,
+                                    secondaryTextColor: secondaryTextColor,
+                                    iconColor: iconColor
+                                )
                                 
                                 // 行业
                                 InfoRow(icon: "bag", text: contact.industry ?? "未填写行业")
@@ -137,10 +175,20 @@ struct ContactDetailView: View {
                                 
                                 // 电话
                                 HStack(spacing: 0) {
-                                    InfoRow(icon: "phone", text: contact.phoneNumber ?? "未填写电话")
+                                    EditableSingleRow(
+                                        icon: "phone",
+                                        placeholder: "手机号",
+                                        text: $editedPhone,
+                                        keyboardType: .phonePad,
+                                        isSubmitting: isSubmitting,
+                                        primaryTextColor: primaryTextColor,
+                                        secondaryTextColor: secondaryTextColor,
+                                        iconColor: iconColor
+                                    )
                                     
                                     Button(action: {
-                                        if let phone = contact.phoneNumber, let url = URL(string: "tel://\(phone.filter { $0.isNumber })") {
+                                        let phone = editedPhone.trimmingCharacters(in: .whitespacesAndNewlines)
+                                        if !phone.isEmpty, let url = URL(string: "tel://\(phone.filter { $0.isNumber })") {
                                             UIApplication.shared.open(url)
                                         }
                                     }) {
@@ -154,7 +202,16 @@ struct ContactDetailView: View {
                                 }
                                 
                                 // 邮箱
-                                InfoRow(icon: "envelope", text: contact.email ?? "未填写邮箱")
+                                EditableSingleRow(
+                                    icon: "envelope",
+                                    placeholder: "邮箱",
+                                    text: $editedEmail,
+                                    keyboardType: .emailAddress,
+                                    isSubmitting: isSubmitting,
+                                    primaryTextColor: primaryTextColor,
+                                    secondaryTextColor: secondaryTextColor,
+                                    iconColor: iconColor
+                                )
                                 
                                 Divider()
                                     .padding(.horizontal, 20)
@@ -198,11 +255,12 @@ struct ContactDetailView: View {
                                         .foregroundColor(iconColor)
                                         .frame(width: 24, alignment: .leading)
                                     
-                                    Text(contact.notes ?? "暂无详细描述，长按下方按钮可语音录入。")
+                                    TextField("添加备注", text: $editedNotes, axis: .vertical)
                                         .font(.system(size: 16))
                                         .foregroundColor(primaryTextColor)
+                                        .lineLimit(4...10)
                                         .lineSpacing(6)
-                                        .fixedSize(horizontal: false, vertical: true)
+                                        .disabled(isSubmitting)
                                     
                                     Spacer()
                                 }
@@ -221,11 +279,6 @@ struct ContactDetailView: View {
                     }
                 }
                 
-                if showDeleteMenu {
-                    Color.black.opacity(0.001)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .onTapGesture { withAnimation { showDeleteMenu = false } }
-                }
             }
             
             // Voice Button
@@ -263,12 +316,61 @@ struct ContactDetailView: View {
                 )
                 .zIndex(1000)
             }
+            
+            if isLoadingDetail {
+                ProgressView("正在获取详情…")
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(.ultraThinMaterial)
+                    .clipShape(Capsule())
+                    .padding(.bottom, 92)
+            }
         }
         .coordinateSpace(name: "ContactDetailViewSpace")
         .background(bgColor)
         .onAppear { speechRecognizer.requestAuthorization() }
         .onReceive(speechRecognizer.$audioLevel) { self.audioPower = mapAudioLevelToPower($0) }
         .navigationBarHidden(true)
+        .onAppear { syncDraftFromContactIfNeeded(force: true) }
+        .task {
+            await loadDetailIfNeeded()
+        }
+        .alert(
+            "操作失败",
+            isPresented: Binding(
+                get: { alertMessage != nil },
+                set: { if !$0 { alertMessage = nil } }
+            )
+        ) {
+            Button("好", role: .cancel) {}
+        } message: {
+            Text(alertMessage ?? "")
+        }
+        // 点击空白处关闭菜单（与日程一致）
+        // ⚠️ 不能用全屏 overlay 盖住一切，否则会把顶部“删除人脉”胶囊的点击也拦截掉，造成“点了没反应”的体感。
+        .overlay {
+            if showDeleteMenu {
+                VStack(spacing: 0) {
+                    // 预留顶部区域给 header + 删除胶囊（避免遮罩吞掉按钮点击）
+                    Color.clear
+                        .frame(height: 140)
+                        .allowsHitTesting(false)
+                    
+                    Color.black.opacity(0.001)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .contentShape(Rectangle())
+                        .onTapGesture { withAnimation { showDeleteMenu = false } }
+                }
+                .ignoresSafeArea()
+            }
+        }
+        // 任何编辑即标记
+        .onChange(of: editedName) { _, _ in hasUserEdited = true }
+        .onChange(of: editedCompany) { _, _ in hasUserEdited = true }
+        .onChange(of: editedIdentity) { _, _ in hasUserEdited = true }
+        .onChange(of: editedPhone) { _, _ in hasUserEdited = true }
+        .onChange(of: editedEmail) { _, _ in hasUserEdited = true }
+        .onChange(of: editedNotes) { _, _ in hasUserEdited = true }
     }
     
     // Voice logic
@@ -290,6 +392,160 @@ struct ContactDetailView: View {
             // 这里可以复用类似 TodoVoiceParser 的逻辑，或者为联系人单独写一个
             HapticFeedback.success()
         }
+    }
+    
+    // MARK: - 后端详情/删除
+    
+    @MainActor
+    private func loadDetailIfNeeded() async {
+        let rid = (contact.remoteId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !rid.isEmpty else { return }
+        guard !isLoadingDetail else { return }
+        
+        isLoadingDetail = true
+        defer { isLoadingDetail = false }
+        
+        do {
+            let card = try await ContactService.fetchContactDetail(remoteId: rid, keepLocalId: contact.id)
+            // 用后端信息覆盖/补齐本地字段（只更新有意义的字段，避免把本地自维护信息清空）
+            contact.remoteId = card.remoteId ?? rid
+            if !card.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                contact.name = card.name
+            }
+            if let v = card.company?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty {
+                contact.company = v
+            }
+            if let v = card.title?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty {
+                contact.identity = v
+            }
+            if let v = card.phone?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty {
+                contact.phoneNumber = v
+            }
+            if let v = card.email?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty {
+                contact.email = v
+            }
+            let imp = (card.impression ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let notes = (card.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let candidate = !imp.isEmpty ? imp : (notes.isEmpty ? nil : notes)
+            if let candidate, !candidate.isEmpty {
+                let current = (contact.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                if current.isEmpty {
+                    contact.notes = candidate
+                } else if !current.contains(candidate) {
+                    contact.notes = current + "\n\n" + candidate
+                }
+            }
+            contact.lastModified = Date()
+            try? modelContext.save()
+            // 只有用户还没开始编辑时，才用后端返回覆盖草稿
+            syncDraftFromContactIfNeeded(force: false)
+        } catch {
+            print("❌ [ContactDetailView] load detail failed rid=\(rid) error=\(error)")
+        }
+    }
+    
+    @MainActor
+    private func submitDelete() async {
+        guard !isSubmitting else { return }
+        isSubmitting = true
+        submittingAction = .delete
+        defer { isSubmitting = false }
+        
+        do {
+            let rid = (contact.remoteId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !rid.isEmpty {
+                try await ContactService.deleteContact(remoteId: rid)
+            }
+            modelContext.delete(contact)
+            try? modelContext.save()
+            dismiss()
+        } catch {
+            alertMessage = "删除失败：\(error.localizedDescription)"
+        }
+        submittingAction = nil
+    }
+    
+    @MainActor
+    private func submitSave() async {
+        guard !isSubmitting else { return }
+        let name = editedName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else {
+            alertMessage = "姓名不能为空"
+            return
+        }
+        
+        isSubmitting = true
+        submittingAction = .save
+        defer {
+            isSubmitting = false
+            submittingAction = nil
+        }
+        
+        // 先本地写入（与日程一致：本地 edited -> commit）
+        contact.name = name
+        contact.company = editedCompany.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : editedCompany
+        contact.identity = editedIdentity.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : editedIdentity
+        contact.phoneNumber = editedPhone.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : editedPhone
+        contact.email = editedEmail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : editedEmail
+        contact.notes = editedNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : editedNotes
+        contact.lastModified = Date()
+        
+        do {
+            let rid = (contact.remoteId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !rid.isEmpty {
+                var payload: [String: Any] = ["name": name]
+                
+                let company = editedCompany.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !company.isEmpty { payload["company"] = company }
+                let position = editedIdentity.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !position.isEmpty { payload["position"] = position }
+                let phone = editedPhone.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !phone.isEmpty { payload["phone"] = phone }
+                let email = editedEmail.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !email.isEmpty { payload["email"] = email }
+                let notes = editedNotes.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !notes.isEmpty { payload["notes"] = notes }
+                
+                if let updated = try await ContactService.updateContact(remoteId: rid, payload: payload, keepLocalId: contact.id) {
+                    contact.remoteId = updated.remoteId ?? rid
+                    contact.name = updated.name
+                    if let v = updated.company?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty { contact.company = v }
+                    if let v = updated.title?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty { contact.identity = v }
+                    if let v = updated.phone?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty { contact.phoneNumber = v }
+                    if let v = updated.email?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty { contact.email = v }
+                    let imp = (updated.impression ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                    let n = (updated.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                    let candidate = !imp.isEmpty ? imp : (n.isEmpty ? nil : n)
+                    if let candidate {
+                        let current = (contact.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                        if current.isEmpty {
+                            contact.notes = candidate
+                        } else if !current.contains(candidate) {
+                            contact.notes = current + "\n\n" + candidate
+                        }
+                    }
+                    contact.lastModified = Date()
+                }
+            }
+            
+            try? modelContext.save()
+            dismiss()
+        } catch {
+            alertMessage = "保存失败：\(error.localizedDescription)"
+        }
+    }
+    
+    private func syncDraftFromContactIfNeeded(force: Bool) {
+        if didInitDraft, !force, hasUserEdited { return }
+        
+        editedName = contact.name
+        editedCompany = contact.company ?? ""
+        editedIdentity = contact.identity ?? ""
+        editedPhone = contact.phoneNumber ?? ""
+        editedEmail = contact.email ?? ""
+        editedNotes = contact.notes ?? ""
+        didInitDraft = true
+        if force { hasUserEdited = false }
     }
 }
 
@@ -369,18 +625,70 @@ struct LabelWithIcon: View {
     }
 }
 
-struct ContactDeletePillButton: View {
-    var onDelete: () -> Void
+// MARK: - 可编辑行（轻量）：按日程详情的“直接编辑 + ✅ 保存”思路做最小对齐
+private struct EditableInfoRow: View {
+    let icon: String
+    let placeholder: String
+    @Binding var text: String
+    let subPlaceholder: String
+    @Binding var subText: String
+    let isSubmitting: Bool
+    let primaryTextColor: Color
+    let secondaryTextColor: Color
+    let iconColor: Color
+    
     var body: some View {
-        Button(action: onDelete) {
-            HStack(spacing: 8) {
-                Image(systemName: "trash").font(.system(size: 14, weight: .medium)).foregroundColor(Color(hex: "FF3B30"))
-                Text("删除人脉").foregroundColor(Color(hex: "FF3B30")).font(.system(size: 15, weight: .medium))
-                Spacer(minLength: 0)
+        HStack(spacing: 16) {
+            Image(systemName: icon)
+                .font(.system(size: 18))
+                .foregroundColor(iconColor)
+                .frame(width: 24)
+            
+            VStack(alignment: .leading, spacing: 6) {
+                TextField(placeholder, text: $text)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(primaryTextColor)
+                    .disabled(isSubmitting)
+                
+                TextField(subPlaceholder, text: $subText)
+                    .font(.system(size: 14))
+                    .foregroundColor(secondaryTextColor)
+                    .disabled(isSubmitting)
             }
-            .padding(.leading, 20).padding(.trailing, 16).frame(width: 200, height: 52)
-            .background(Capsule().fill(Color.white).shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 4))
-            .contentShape(Capsule())
-        }.buttonStyle(.plain)
+            
+            Spacer()
+        }
+        .padding(.horizontal, 20)
+    }
+}
+
+private struct EditableSingleRow: View {
+    let icon: String
+    let placeholder: String
+    @Binding var text: String
+    var keyboardType: UIKeyboardType = .default
+    let isSubmitting: Bool
+    let primaryTextColor: Color
+    let secondaryTextColor: Color
+    let iconColor: Color
+    
+    var body: some View {
+        HStack(spacing: 16) {
+            Image(systemName: icon)
+                .font(.system(size: 18))
+                .foregroundColor(iconColor)
+                .frame(width: 24)
+            
+            TextField(placeholder, text: $text)
+                .font(.system(size: 16, weight: .medium))
+                .foregroundColor(primaryTextColor)
+                .keyboardType(keyboardType)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled(true)
+                .disabled(isSubmitting)
+            
+            Spacer()
+        }
+        .padding(.horizontal, 20)
     }
 }

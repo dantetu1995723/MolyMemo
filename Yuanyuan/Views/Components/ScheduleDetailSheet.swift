@@ -11,6 +11,11 @@ struct ScheduleDetailSheet: View {
     @State private var activeDatePicker: DatePickerType? = nil
     @State private var startTimeAreaFrame: CGRect = .zero
     @State private var endTimeAreaFrame: CGRect = .zero
+    
+    // 提交状态（保存/删除）
+    @State private var isSubmitting: Bool = false
+    @State private var submittingAction: SubmittingAction? = nil
+    @State private var alertMessage: String? = nil
 
     // MARK: - 仅用于 UI 复刻（不写回 ScheduleEvent，避免与数据模型冲突）
     @State private var uiAllDay: Bool = false
@@ -20,6 +25,18 @@ struct ScheduleDetailSheet: View {
     
     enum DatePickerType {
         case start, end
+    }
+    
+    private enum SubmittingAction {
+        case save
+        case delete
+        
+        var text: String {
+            switch self {
+            case .save: return "正在保存…"
+            case .delete: return "正在删除…"
+            }
+        }
     }
     
     // 语音输入相关
@@ -61,6 +78,7 @@ struct ScheduleDetailSheet: View {
                                 .frame(width: 44, height: 44)
                                 .background(Circle().fill(Color.secondary.opacity(0.15)))
                         }
+                        .disabled(isSubmitting)
                         
                         Spacer()
                         
@@ -76,17 +94,26 @@ struct ScheduleDetailSheet: View {
                                     .frame(width: 44, height: 44)
                                     .background(Circle().fill(Color.white).shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 2))
                             }
+                            .disabled(isSubmitting)
                             
                             Button(action: {
-                                onSave(editedEvent)
-                                dismiss()
+                                Task { await submitSave() }
                             }) {
-                                Image(systemName: "checkmark")
-                                    .font(.system(size: 18, weight: .medium))
-                                    .foregroundColor(primaryTextColor)
-                                    .frame(width: 44, height: 44)
-                                    .background(Circle().fill(Color.white).shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 2))
+                                ZStack {
+                                    if isSubmitting, submittingAction == .save {
+                                        ProgressView()
+                                            .progressViewStyle(.circular)
+                                            .tint(primaryTextColor)
+                                    } else {
+                                        Image(systemName: "checkmark")
+                                            .font(.system(size: 18, weight: .medium))
+                                            .foregroundColor(primaryTextColor)
+                                    }
+                                }
+                                .frame(width: 44, height: 44)
+                                .background(Circle().fill(Color.white).shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 2))
                             }
+                            .disabled(isSubmitting)
                         }
                     }
                     
@@ -97,12 +124,9 @@ struct ScheduleDetailSheet: View {
                     if showDeleteMenu {
                         TopDeletePillButton(
                             onDelete: {
-                                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                                    showDeleteMenu = false
-                                }
+                                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { showDeleteMenu = false }
                                 HapticFeedback.medium()
-                                onDelete()
-                                dismiss()
+                                Task { await submitDelete() }
                             }
                         )
                         .frame(maxWidth: .infinity, alignment: .trailing)
@@ -351,6 +375,8 @@ struct ScheduleDetailSheet: View {
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .onTapGesture { withAnimation { showDeleteMenu = false } }
                     }
+                    
+                    // 提交中不在页面上额外展示提示（避免“弹窗/胶囊”影响视觉）
                 }
             }
             
@@ -392,6 +418,17 @@ struct ScheduleDetailSheet: View {
         }
         .coordinateSpace(name: "ScheduleDetailSheetSpace")
         .background(bgColor)
+        .alert(
+            "操作失败",
+            isPresented: Binding(
+                get: { alertMessage != nil },
+                set: { if !$0 { alertMessage = nil } }
+            )
+        ) {
+            Button("好", role: .cancel) {}
+        } message: {
+            Text(alertMessage ?? "")
+        }
         .onAppear { speechRecognizer.requestAuthorization() }
         .onReceive(speechRecognizer.$audioLevel) { self.audioPower = mapAudioLevelToPower($0) }
         .onChange(of: editedEvent.startTime) { _, newStart in
@@ -506,6 +543,54 @@ struct ScheduleDetailSheet: View {
         f.dateFormat = "HH:mm"
         return f.string(from: date)
     }
+    
+    // MARK: - 提交后端
+    
+    @MainActor
+    private func submitSave() async {
+        guard !isSubmitting else { return }
+        isSubmitting = true
+        submittingAction = .save
+        defer {
+            isSubmitting = false
+            submittingAction = nil
+        }
+        
+        do {
+            var updated = editedEvent
+            if let rid = updated.remoteId?.trimmingCharacters(in: .whitespacesAndNewlines), !rid.isEmpty {
+                let saved = try await ScheduleService.updateSchedule(remoteId: rid, event: updated)
+                updated = saved
+                editedEvent = saved
+            }
+            event = updated
+            onSave(updated)
+            dismiss()
+        } catch {
+            alertMessage = "保存失败：\(error.localizedDescription)"
+        }
+    }
+    
+    @MainActor
+    private func submitDelete() async {
+        guard !isSubmitting else { return }
+        isSubmitting = true
+        submittingAction = .delete
+        defer {
+            isSubmitting = false
+            submittingAction = nil
+        }
+        
+        do {
+            if let rid = editedEvent.remoteId?.trimmingCharacters(in: .whitespacesAndNewlines), !rid.isEmpty {
+                try await ScheduleService.deleteSchedule(remoteId: rid)
+            }
+            onDelete()
+            dismiss()
+        } catch {
+            alertMessage = "删除失败：\(error.localizedDescription)"
+        }
+    }
 }
 
 // MARK: - Global frame reporter
@@ -528,6 +613,7 @@ private struct GlobalFrameReporter: ViewModifier {
 }
 
 struct TopDeletePillButton: View {
+    var title: String = "删除日程"
     var onDelete: () -> Void
     var body: some View {
         Button(action: onDelete) {
@@ -535,7 +621,7 @@ struct TopDeletePillButton: View {
                 Image(systemName: "trash")
                     .font(.system(size: 14, weight: .medium))
                     .foregroundColor(Color(hex: "FF3B30"))
-                Text("删除日程")
+                Text(title)
                     .foregroundColor(Color(hex: "FF3B30"))
                     .font(.system(size: 15, weight: .medium))
                 Spacer(minLength: 0)

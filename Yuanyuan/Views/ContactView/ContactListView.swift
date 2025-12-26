@@ -16,6 +16,9 @@ struct ContactListView: View {
     @State private var scrollProxy: ScrollViewProxy?
     @State private var showImportSheet = false
     @State private var isLoading = true
+    @State private var remoteIsLoading: Bool = false
+    @State private var remoteErrorText: String? = nil
+    @State private var didKickoffRemoteLoad: Bool = false
     
     init(showAddSheet: Binding<Bool> = .constant(false)) {
         self._showAddSheet = showAddSheet
@@ -72,6 +75,14 @@ struct ContactListView: View {
             
             ModuleSheetContainer {
                 VStack(spacing: 0) {
+                    if let remoteErrorText, !remoteErrorText.isEmpty, showHeader && showContent {
+                        Text(remoteErrorText)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.red.opacity(0.85))
+                            .padding(.horizontal, 20)
+                            .padding(.bottom, 6)
+                    }
+                    
                     // 搜索栏和导入按钮 - 同一行
                     if showHeader && showContent {
                         HStack(spacing: 12) {
@@ -187,9 +198,6 @@ struct ContactListView: View {
         }
         .toolbar(.hidden, for: .navigationBar)
         .onAppear {
-            // 创建示例联系人
-            createSampleContactsIfNeeded()
-            
             // 等待数据准备完成
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
                 // 先关闭loading
@@ -222,26 +230,120 @@ struct ContactListView: View {
                 }
             }
         }
+        .task {
+            // 与「日程」一致：进入模块即拉取后端列表；失败则仍展示本地缓存
+            if !didKickoffRemoteLoad {
+                didKickoffRemoteLoad = true
+                await reloadRemoteContacts()
+            }
+        }
+    }
+
+    // MARK: - 后端拉取联系人列表（分页）
+    @MainActor
+    private func reloadRemoteContacts() async {
+        remoteIsLoading = true
+        remoteErrorText = nil
+        defer { remoteIsLoading = false }
+        
+        do {
+            var all: [ContactCard] = []
+            let pageSize = 100
+            for page in 1...5 {
+                let list = try await ContactService.fetchContactList(
+                    params: .init(page: page, pageSize: pageSize, search: nil, relationshipType: nil)
+                )
+                all.append(contentsOf: list)
+                if list.count < pageSize { break }
+            }
+            upsertRemoteContacts(all)
+        } catch {
+            remoteErrorText = "后端联系人获取失败：\(error.localizedDescription)"
+        }
     }
     
-    // 创建示例联系人
-    private func createSampleContactsIfNeeded() {
-        guard allContacts.isEmpty else { return }
+    @MainActor
+    private func upsertRemoteContacts(_ cards: [ContactCard]) {
+        guard !cards.isEmpty else { return }
         
-        let sampleContacts = [
-            Contact(name: "张伟", phoneNumber: "138****1234", company: "科技公司", hobbies: "阅读、跑步", relationship: "同事"),
-            Contact(name: "李娜", phoneNumber: "139****5678", company: "设计工作室", hobbies: "绘画、摄影", relationship: "朋友"),
-            Contact(name: "王强", phoneNumber: "136****9012", company: "互联网公司", hobbies: "编程、游戏", relationship: "客户"),
-            Contact(name: "赵敏", phoneNumber: "137****3456", company: "咨询公司", hobbies: "旅游", relationship: "同事"),
-            Contact(name: "Alex Chen", phoneNumber: "188****7890", hobbies: "创业、投资", relationship: "朋友"),
-            Contact(name: "Bob Wilson", phoneNumber: "186****2345", company: "Global Corp", relationship: "客户")
-        ]
-        
-        for contact in sampleContacts {
-            modelContext.insert(contact)
+        for card in cards {
+            let rid = (card.remoteId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            
+            // 1) 优先按 remoteId 命中
+            if !rid.isEmpty, let existing = allContacts.first(where: { ($0.remoteId ?? "") == rid }) {
+                applyRemote(card: card, to: existing)
+                continue
+            }
+            
+            // 2) 若 remoteId 是 UUID，且本地 id 命中，也算同一个
+            if let u = UUID(uuidString: rid), let existing = allContacts.first(where: { $0.id == u }) {
+                if (existing.remoteId ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    existing.remoteId = rid
+                }
+                applyRemote(card: card, to: existing)
+                continue
+            }
+            
+            // 3) 兜底：按 name + phone
+            if let phone = card.phone?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !phone.isEmpty,
+               let existing = allContacts.first(where: { $0.name == card.name && ($0.phoneNumber ?? "") == phone })
+            {
+                if !rid.isEmpty, (existing.remoteId ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    existing.remoteId = rid
+                }
+                applyRemote(card: card, to: existing)
+                continue
+            }
+            
+            // 4) 新建
+            let newContact = Contact(
+                name: card.name,
+                remoteId: rid.isEmpty ? nil : rid,
+                phoneNumber: card.phone,
+                company: card.company,
+                identity: card.title,
+                email: card.email,
+                notes: {
+                    let imp = (card.impression ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !imp.isEmpty { return imp }
+                    let n = (card.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                    return n.isEmpty ? nil : n
+                }()
+            )
+            
+            // 若后端 id 是 UUID，用它稳定映射
+            if rid.isEmpty == false, let u = UUID(uuidString: rid) {
+                newContact.id = u
+            }
+            
+            modelContext.insert(newContact)
         }
         
         try? modelContext.save()
+    }
+    
+    private func applyRemote(card: ContactCard, to contact: Contact) {
+        // 只补齐/覆盖“有值字段”，避免把本地自维护字段清空
+        contact.name = card.name
+        if let v = card.company?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty { contact.company = v }
+        if let v = card.title?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty { contact.identity = v }
+        if let v = card.phone?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty { contact.phoneNumber = v }
+        if let v = card.email?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty { contact.email = v }
+        
+        let imp = (card.impression ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let n = (card.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let candidate = !imp.isEmpty ? imp : (n.isEmpty ? nil : n)
+        if let candidate {
+            let current = (contact.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if current.isEmpty {
+                contact.notes = candidate
+            } else if !current.contains(candidate) {
+                contact.notes = current + "\n\n" + candidate
+            }
+        }
+        
+        contact.lastModified = Date()
     }
 }
 
