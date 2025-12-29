@@ -146,6 +146,7 @@ struct TodoListView: View {
     
     // 列表滚动位置
     @State private var listScrollOffset: CGFloat = 0
+    @State private var isListAtBottom: Bool = false
     
     // 拖拽临时状态
     @State private var dragStartProgress: CGFloat?
@@ -259,7 +260,8 @@ struct TodoListView: View {
                     .onEnded { value in
                         handleDragEnd(value)
                     },
-                including: (calendarProgress < 1.0 && listScrollOffset >= 0) ? .all : .subviews
+                // 额外支持：当处于周视图且列表已经到底部时，继续“下拉回弹”可把周视图展开回月视图
+                including: ((calendarProgress < 1.0 && listScrollOffset >= 0) || (calendarProgress >= 0.999 && isListAtBottom)) ? .all : .subviews
             )
             
             // 底部操作栏（选中事项时显示）
@@ -319,6 +321,10 @@ struct TodoListView: View {
             // 进入工具箱「日程」页即自动刷新（无需按钮）
             Task { await reloadRemoteSchedulesForSelectedDate() }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .remoteScheduleDidChange)) { _ in
+            // 远端日程创建/更新/删除后，强制从网络刷新（绕过缓存），确保“今日行程”及时更新
+            Task { await reloadRemoteSchedulesForSelectedDate(forceRefresh: true) }
+        }
         .onChange(of: selectedDate) { _, _ in
             // 切换日期时自动刷新对应日程
             Task { await reloadRemoteSchedulesForSelectedDate() }
@@ -342,13 +348,16 @@ struct TodoListView: View {
     private func handleDragChange(_ value: DragGesture.Value) {
         let verticalTranslation = value.translation.height
         
+        // ✅ 反向操作：周视图 + 列表到底部时，继续下拉（回弹）允许展开月历
+        let canExpandFromBottomBounce = (calendarProgress >= 0.999 && isListAtBottom && verticalTranslation > 0)
+        
         // 列表不在顶部时，不允许继续收缩或展开
-        if listScrollOffset < -5 && verticalTranslation < 0 {
+        if !canExpandFromBottomBounce, listScrollOffset < -5 && verticalTranslation < 0 {
             dragStartProgress = nil
             return
         }
         
-        if verticalTranslation > 0 && listScrollOffset < -2 {
+        if !canExpandFromBottomBounce, verticalTranslation > 0 && listScrollOffset < -2 {
             dragStartProgress = nil
             return
         }
@@ -381,7 +390,7 @@ struct TodoListView: View {
         
         if velocity < -150 { // 快速上滑
             targetProgress = 1.0
-        } else if velocity > 150 && listScrollOffset >= 0 { // 快速下滑且列表在顶
+        } else if velocity > 150 && (listScrollOffset >= 0 || (calendarProgress >= 0.999 && isListAtBottom)) { // 快速下滑：列表在顶 或 列表在底部回弹
             targetProgress = 0.0
         } else {
             // 就近停靠
@@ -389,7 +398,7 @@ struct TodoListView: View {
         }
         
         // 如果列表不在顶部且是下滑操作，不要强制展开日历
-        if listScrollOffset < -10 && targetProgress == 0.0 {
+        if listScrollOffset < -10 && targetProgress == 0.0 && !(calendarProgress >= 0.999 && isListAtBottom) {
              return
         }
         
@@ -577,6 +586,12 @@ struct TodoListView: View {
                         .padding(.top, 40)
                 }
             }
+            
+            // 底部哨兵：用于识别“列表已到底部”，配合周视图的“下拉回弹”手势实现 周 -> 月
+            Color.clear
+                .frame(height: 1)
+                .onAppear { isListAtBottom = true }
+                .onDisappear { isListAtBottom = false }
         }
         .padding(.horizontal, 16) // 统一水平内边距
         .padding(.bottom, 160)
@@ -584,39 +599,66 @@ struct TodoListView: View {
 
     // MARK: - 后端拉取（按当前选中日期过滤）
     @MainActor
-    private func reloadRemoteSchedulesForSelectedDate() async {
-        remoteIsLoading = true
+    private func reloadRemoteSchedulesForSelectedDate(forceRefresh: Bool = false) async {
         remoteErrorText = nil
-        defer { remoteIsLoading = false }
-
-        do {
-            // 先拉全量（自动翻页），再在前端按选中日期过滤：
-            // - 避免后端 start_date/end_date 格式/时区导致返回空
-            // - 同时可直接对照后端“确实有数据”
-            var all: [ScheduleEvent] = []
-            let pageSize = 100 // 后端校验：<= 100
-            for page in 1...5 { // 简单上限，避免异常情况下无限请求
-                let list = try await ScheduleService.fetchScheduleList(
-                    params: .init(
-                        page: page,
-                        pageSize: pageSize,
-                        startDate: nil,
-                        endDate: nil,
-                        search: nil,
-                        category: nil,
-                        relatedMeetingId: nil
-                    )
-                )
-                all.append(contentsOf: list)
-                if list.count < pageSize { break }
-            }
-            
+        
+        let base = ScheduleService.ListParams(
+            page: nil,
+            pageSize: nil,
+            startDate: nil,
+            endDate: nil,
+            search: nil,
+            category: nil,
+            relatedMeetingId: nil
+        )
+        
+        // 强制刷新：绕过缓存，直接从网络拉
+        if forceRefresh {
+            await reloadRemoteSchedulesForSelectedDateFromNetwork(base: base, showError: true, forceRefresh: true)
+            return
+        }
+        
+        // 1) 先用缓存秒开（避免切换日期/返回页面就必定 loading）
+        if let cached = await ScheduleService.peekAllSchedules(maxPages: 5, pageSize: 100, baseParams: base) {
             let cal = Calendar.current
-            let filtered = all.filter { cal.isDate($0.startTime, inSameDayAs: selectedDate) }
-            remoteEvents = filtered.sorted(by: { $0.startTime < $1.startTime })
+            remoteEvents = cached.value
+                .filter { cal.isDate($0.startTime, inSameDayAs: selectedDate) }
+                .sorted(by: { $0.startTime < $1.startTime })
+            
+            if cached.isFresh { return }
+            
+            // 过期：后台静默刷新
+            Task { @MainActor in
+                await reloadRemoteSchedulesForSelectedDateFromNetwork(base: base, showError: false, forceRefresh: true)
+            }
+            return
+        }
+        
+        // 2) 首次无缓存：显示 loading
+        await reloadRemoteSchedulesForSelectedDateFromNetwork(base: base, showError: true, forceRefresh: false)
+    }
+    
+    @MainActor
+    private func reloadRemoteSchedulesForSelectedDateFromNetwork(base: ScheduleService.ListParams, showError: Bool, forceRefresh: Bool) async {
+        remoteIsLoading = true
+        defer { remoteIsLoading = false }
+        
+        do {
+            let all = try await ScheduleService.fetchScheduleListAllPages(
+                maxPages: 5,
+                pageSize: 100,
+                baseParams: base,
+                forceRefresh: forceRefresh
+            )
+            let cal = Calendar.current
+            remoteEvents = all
+                .filter { cal.isDate($0.startTime, inSameDayAs: selectedDate) }
+                .sorted(by: { $0.startTime < $1.startTime })
         } catch {
             remoteEvents = []
-            remoteErrorText = "后端日程获取失败：\(error.localizedDescription)"
+            if showError {
+                remoteErrorText = "后端日程获取失败：\(error.localizedDescription)"
+            }
         }
     }
 

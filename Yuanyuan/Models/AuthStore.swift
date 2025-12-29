@@ -13,12 +13,27 @@ final class AuthStore: ObservableObject {
     @Published private(set) var isLoading: Bool = false
     @Published private(set) var lastError: String? = nil
     
-    var sessionId: String? { UserDefaults.standard.string(forKey: Keys.sessionId) }
+    var sessionId: String? {
+        // Keychain 优先：可跨 Debug 重装保留；UserDefaults 作为兼容回退
+        KeychainStore.getString(Keys.sessionId) ?? UserDefaults.standard.string(forKey: Keys.sessionId)
+    }
     
     init() {
-        let storedSession = UserDefaults.standard.string(forKey: Keys.sessionId) ?? ""
-        self.isLoggedIn = !storedSession.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        self.phone = UserDefaults.standard.string(forKey: Keys.phone) ?? ""
+        let storedSession = (KeychainStore.getString(Keys.sessionId) ?? UserDefaults.standard.string(forKey: Keys.sessionId) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        self.isLoggedIn = !storedSession.isEmpty
+        self.phone = (KeychainStore.getString(Keys.phone) ?? UserDefaults.standard.string(forKey: Keys.phone) ?? "")
+
+        // 让后端请求统一走 BackendChatConfig.apiKey（其它 service 会优先读它）
+        if !storedSession.isEmpty {
+            BackendChatConfig.apiKey = storedSession
+            // 顺便把 UserDefaults 补齐，便于旧代码路径命中
+            UserDefaults.standard.set(storedSession, forKey: Keys.sessionId)
+        }
+        if !phone.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            UserDefaults.standard.set(phone, forKey: Keys.phone)
+        }
     }
     
     func login() async {
@@ -43,6 +58,10 @@ final class AuthStore: ObservableObject {
                 phone: p,
                 verificationCode: c
             )
+            // 1) Keychain：跨重装保留
+            _ = KeychainStore.setString(sessionId, for: Keys.sessionId)
+            _ = KeychainStore.setString(p, for: Keys.phone)
+            // 2) UserDefaults：兼容旧读取路径
             UserDefaults.standard.set(sessionId, forKey: Keys.sessionId)
             UserDefaults.standard.set(p, forKey: Keys.phone)
             
@@ -97,6 +116,7 @@ final class AuthStore: ObservableObject {
         }
         
         UserDefaults.standard.removeObject(forKey: Keys.sessionId)
+        _ = KeychainStore.delete(Keys.sessionId)
         // 保留手机号，方便下次登录更快
         verificationCode = ""
         isLoggedIn = false

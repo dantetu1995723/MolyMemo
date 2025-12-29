@@ -2,6 +2,11 @@ import SwiftUI
 import Combine
 import SwiftData
 
+extension NSNotification.Name {
+    /// 远端日程数据发生变更（创建/更新/删除）后广播，用于驱动 UI 强刷，避免被缓存挡住
+    static let remoteScheduleDidChange = NSNotification.Name("RemoteScheduleDidChange")
+}
+
 // MARK: - 枚举类型
 
 // 底部按钮类型
@@ -556,6 +561,13 @@ class AppState: ObservableObject {
         guard let index = chatMessages.firstIndex(where: { $0.id == messageId }) else { return }
         var msg = chatMessages[index]
 
+        let beforeScheduleCount = msg.scheduleEvents?.count ?? 0
+        let beforeScheduleRemoteIds: Set<String> = Set(
+            (msg.scheduleEvents ?? [])
+                .compactMap { $0.remoteId?.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+        )
+
 #if DEBUG
         let beforeSchedule = msg.scheduleEvents?.count ?? -1
         let beforeContacts = msg.contacts?.count ?? -1
@@ -583,6 +595,19 @@ class AppState: ObservableObject {
 
         if !output.scheduleEvents.isEmpty {
             msg.scheduleEvents = mergeReplacingById(existing: msg.scheduleEvents, incoming: output.scheduleEvents)
+
+            // 若日程卡片发生实质变化（新增/补齐 remoteId），触发远端日程缓存失效 + UI 强刷
+            let afterScheduleCount = msg.scheduleEvents?.count ?? 0
+            let afterScheduleRemoteIds: Set<String> = Set(
+                (msg.scheduleEvents ?? [])
+                    .compactMap { $0.remoteId?.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .filter { !$0.isEmpty }
+            )
+            let didChange = (afterScheduleCount != beforeScheduleCount) || (afterScheduleRemoteIds != beforeScheduleRemoteIds)
+            if didChange {
+                Task { await ScheduleService.invalidateScheduleCaches() }
+                NotificationCenter.default.post(name: .remoteScheduleDidChange, object: nil, userInfo: nil)
+            }
         }
         if !output.contacts.isEmpty {
             // 联系人卡片需要“字段级合并”：避免后续 card chunk 覆盖掉 tool observation 里带回的 impression/notes
@@ -687,6 +712,42 @@ class AppState: ObservableObject {
             print("✅ 消息已保存到本地: \(message.content.prefix(20))...")
         } catch {
             print("⚠️ 保存消息失败: \(error)")
+        }
+    }
+
+    // MARK: - Chat 卡片同步（以“后端返回”为准）
+
+    /// 将“后端返回的最新联系人卡片”同步到当前聊天里所有引用它的联系人卡片上（用于：详情页保存后刷新聊天卡片展示）
+    @MainActor
+    func applyUpdatedContactCardToChatMessages(_ updated: ContactCard) {
+        objectWillChange.send()
+
+        let rid = (updated.remoteId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+
+        for i in chatMessages.indices {
+            guard var cards = chatMessages[i].contacts, !cards.isEmpty else { continue }
+
+            var changed = false
+            for j in cards.indices {
+                let cardRid = (cards[j].remoteId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                let isMatch: Bool = (!rid.isEmpty && cardRid == rid) || (cards[j].id == updated.id)
+                guard isMatch else { continue }
+
+                cards[j].remoteId = updated.remoteId ?? cards[j].remoteId
+                cards[j].name = updated.name
+                cards[j].company = updated.company
+                cards[j].title = updated.title
+                cards[j].phone = updated.phone
+                cards[j].email = updated.email
+                cards[j].notes = updated.notes
+                cards[j].impression = updated.impression
+                if let v = updated.avatarData { cards[j].avatarData = v }
+                changed = true
+            }
+
+            if changed {
+                chatMessages[i].contacts = cards
+            }
         }
     }
     

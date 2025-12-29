@@ -9,8 +9,6 @@ struct RemoteScheduleDetailLoaderSheet: View {
     var onCommittedSave: ((ScheduleEvent) -> Void)? = nil
     var onCommittedDelete: ((ScheduleEvent) -> Void)? = nil
     
-    @State private var isLoading: Bool = false
-    
     var body: some View {
         Group {
             if let binding = bindingForEvent() {
@@ -28,16 +26,6 @@ struct RemoteScheduleDetailLoaderSheet: View {
                         onCommittedSave?(updated)
                     }
                 )
-                .overlay(alignment: .top) {
-                    if isLoading {
-                        ProgressView("正在获取详情…")
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .background(.ultraThinMaterial)
-                            .clipShape(Capsule())
-                            .padding(.top, 12)
-                    }
-                }
                 .task {
                     await loadDetailIfNeeded()
                 }
@@ -67,15 +55,37 @@ struct RemoteScheduleDetailLoaderSheet: View {
         guard let rid = current.remoteId, !rid.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return
         }
+        let trimmed = rid.trimmingCharacters(in: .whitespacesAndNewlines)
         
-        isLoading = true
-        defer { isLoading = false }
+        // 1) 先用缓存，避免每次打开都 loading
+        if let cached = await ScheduleService.peekScheduleDetail(remoteId: trimmed) {
+            var v = cached.value
+            v.id = current.id
+            event = v
+            if cached.isFresh { return }
+            // 过期：后台静默刷新
+            Task {
+                await refreshSilently(remoteId: trimmed, keepLocalId: current.id)
+            }
+            return
+        }
         
+        // 2) 首次无缓存：静默拉取，不展示 loading 弹层（避免进入详情页出现弹窗/浮层）
         do {
-            let detail = try await ScheduleService.fetchScheduleDetail(remoteId: rid, keepLocalId: current.id)
+            let detail = try await ScheduleService.fetchScheduleDetail(remoteId: trimmed, keepLocalId: current.id)
             event = detail
         } catch {
             print("❌ [RemoteScheduleDetailLoaderSheet] load detail failed: \(error)")
+        }
+    }
+    
+    @MainActor
+    private func refreshSilently(remoteId: String, keepLocalId: UUID) async {
+        do {
+            let detail = try await ScheduleService.fetchScheduleDetail(remoteId: remoteId, keepLocalId: keepLocalId)
+            event = detail
+        } catch {
+            print("❌ [RemoteScheduleDetailLoaderSheet] silent refresh failed: \(error)")
         }
     }
 }

@@ -85,19 +85,16 @@ struct RecordingRecoveryManager {
     }
     
     private static func candidateFolders() -> [URL] {
-        let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let recordingsURL = ensureRecordingsFolder()
-        
-        if recordingsURL == documentsURL {
-            return [recordingsURL]
-        }
-        
+        let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+
+        // 新目录（临时）优先，但仍兼容扫描旧的 Documents 目录以清理/恢复历史残留。
         return [recordingsURL, documentsURL]
     }
     
     private static func ensureRecordingsFolder() -> URL {
-        let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let folderURL = documentsURL.appendingPathComponent("MeetingRecordings", isDirectory: true)
+        // 统一后端接入：录音文件改用临时目录（不做持久化存储）。
+        let folderURL = FileManager.default.temporaryDirectory.appendingPathComponent("MeetingRecordings", isDirectory: true)
         
         if !FileManager.default.fileExists(atPath: folderURL.path) {
             try? FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true)

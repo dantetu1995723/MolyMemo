@@ -23,6 +23,21 @@ struct ContactDetailView: View {
     @State private var editedNotes: String = ""
     @State private var didInitDraft: Bool = false
     @State private var hasUserEdited: Bool = false
+
+    private var hasDraftChanges: Bool {
+        // 统一：trim + 空字符串当作 nil，避免 “nil vs 空字符串” 导致误判
+        func norm(_ s: String?) -> String? {
+            let v = (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            return v.isEmpty ? nil : v
+        }
+
+        return norm(editedName) != norm(contact.name)
+            || norm(editedCompany) != norm(contact.company)
+            || norm(editedIdentity) != norm(contact.identity)
+            || norm(editedPhone) != norm(contact.phoneNumber)
+            || norm(editedEmail) != norm(contact.email)
+            || norm(editedNotes) != norm(contact.notes)
+    }
     
     // 颜色定义
     private let bgColor = Color(red: 0.97, green: 0.97, blue: 0.97)
@@ -316,15 +331,6 @@ struct ContactDetailView: View {
                 )
                 .zIndex(1000)
             }
-            
-            if isLoadingDetail {
-                ProgressView("正在获取详情…")
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-                    .background(.ultraThinMaterial)
-                    .clipShape(Capsule())
-                    .padding(.bottom, 92)
-            }
         }
         .coordinateSpace(name: "ContactDetailViewSpace")
         .background(bgColor)
@@ -401,47 +407,82 @@ struct ContactDetailView: View {
         let rid = (contact.remoteId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         guard !rid.isEmpty else { return }
         guard !isLoadingDetail else { return }
+
+        // 1) 先用缓存填充（进入详情页不展示 loading 浮层，详情异步补齐即可）
+        if let cached = await ContactService.peekContactDetail(remoteId: rid) {
+            applyRemoteDetailCard(cached.value, rid: rid)
+#if DEBUG
+            // ✅ Debug：即使命中缓存也强制静默刷新一次，方便你在控制台看到「后端原始日志」
+            Task { await refreshRemoteDetailSilently(rid: rid) }
+            return
+#elseif targetEnvironment(simulator)
+            // ✅ 模拟器：默认也强制静默刷新一次，避免你 scheme/config 不是 DEBUG 时看不到日志
+            Task { await refreshRemoteDetailSilently(rid: rid) }
+            return
+#else
+            if cached.isFresh { return }
+            // 过期：后台静默刷新，不打断编辑体验
+            Task { await refreshRemoteDetailSilently(rid: rid) }
+            return
+#endif
+        }
         
+        // 2) 首次无缓存：才显示 loading
         isLoadingDetail = true
         defer { isLoadingDetail = false }
         
         do {
             let card = try await ContactService.fetchContactDetail(remoteId: rid, keepLocalId: contact.id)
-            // 用后端信息覆盖/补齐本地字段（只更新有意义的字段，避免把本地自维护信息清空）
-            contact.remoteId = card.remoteId ?? rid
-            if !card.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                contact.name = card.name
-            }
-            if let v = card.company?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty {
-                contact.company = v
-            }
-            if let v = card.title?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty {
-                contact.identity = v
-            }
-            if let v = card.phone?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty {
-                contact.phoneNumber = v
-            }
-            if let v = card.email?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty {
-                contact.email = v
-            }
-            let imp = (card.impression ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            let notes = (card.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            let candidate = !imp.isEmpty ? imp : (notes.isEmpty ? nil : notes)
-            if let candidate, !candidate.isEmpty {
-                let current = (contact.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                if current.isEmpty {
-                    contact.notes = candidate
-                } else if !current.contains(candidate) {
-                    contact.notes = current + "\n\n" + candidate
-                }
-            }
-            contact.lastModified = Date()
-            try? modelContext.save()
-            // 只有用户还没开始编辑时，才用后端返回覆盖草稿
-            syncDraftFromContactIfNeeded(force: false)
+            applyRemoteDetailCard(card, rid: rid)
         } catch {
             print("❌ [ContactDetailView] load detail failed rid=\(rid) error=\(error)")
         }
+    }
+    
+    @MainActor
+    private func refreshRemoteDetailSilently(rid: String) async {
+        do {
+            let card = try await ContactService.fetchContactDetail(remoteId: rid, keepLocalId: contact.id)
+            applyRemoteDetailCard(card, rid: rid)
+        } catch {
+            // 静默刷新失败不打扰用户
+            print("❌ [ContactDetailView] silent refresh failed rid=\(rid) error=\(error)")
+        }
+    }
+    
+    @MainActor
+    private func applyRemoteDetailCard(_ card: ContactCard, rid: String) {
+        // 用后端信息覆盖/补齐本地字段（只更新有意义的字段，避免把本地自维护信息清空）
+        contact.remoteId = card.remoteId ?? rid
+        if !card.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            contact.name = card.name
+        }
+        if let v = card.company?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty {
+            contact.company = v
+        }
+        if let v = card.title?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty {
+            contact.identity = v
+        }
+        if let v = card.phone?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty {
+            contact.phoneNumber = v
+        }
+        if let v = card.email?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty {
+            contact.email = v
+        }
+        // 备注：只使用后端 note/notes 字段（ContactCard.notes）回填，避免把 impression 混进备注
+        let remoteNotes = (card.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !remoteNotes.isEmpty {
+            let current = (contact.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if current.isEmpty {
+                contact.notes = remoteNotes
+            } else if !current.contains(remoteNotes) {
+                contact.notes = current + "\n\n" + remoteNotes
+            }
+        }
+        contact.lastModified = Date()
+        try? modelContext.save()
+        // 只有用户还没开始编辑时，才用后端返回覆盖草稿
+        syncDraftFromContactIfNeeded(force: false)
     }
     
     @MainActor
@@ -473,6 +514,12 @@ struct ContactDetailView: View {
             alertMessage = "姓名不能为空"
             return
         }
+
+        // 未发生任何变更：不触发 loading/网络请求，直接退出即可
+        guard hasDraftChanges else {
+            dismiss()
+            return
+        }
         
         isSubmitting = true
         submittingAction = .save
@@ -481,54 +528,64 @@ struct ContactDetailView: View {
             submittingAction = nil
         }
         
-        // 先本地写入（与日程一致：本地 edited -> commit）
-        contact.name = name
-        contact.company = editedCompany.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : editedCompany
-        contact.identity = editedIdentity.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : editedIdentity
-        contact.phoneNumber = editedPhone.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : editedPhone
-        contact.email = editedEmail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : editedEmail
-        contact.notes = editedNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : editedNotes
-        contact.lastModified = Date()
-        
         do {
-            let rid = (contact.remoteId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            if !rid.isEmpty {
-                var payload: [String: Any] = ["name": name]
-                
-                let company = editedCompany.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !company.isEmpty { payload["company"] = company }
-                let position = editedIdentity.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !position.isEmpty { payload["position"] = position }
-                let phone = editedPhone.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !phone.isEmpty { payload["phone"] = phone }
-                let email = editedEmail.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !email.isEmpty { payload["email"] = email }
-                let notes = editedNotes.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !notes.isEmpty { payload["notes"] = notes }
-                
-                if let updated = try await ContactService.updateContact(remoteId: rid, payload: payload, keepLocalId: contact.id) {
-                    contact.remoteId = updated.remoteId ?? rid
-                    contact.name = updated.name
-                    if let v = updated.company?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty { contact.company = v }
-                    if let v = updated.title?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty { contact.identity = v }
-                    if let v = updated.phone?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty { contact.phoneNumber = v }
-                    if let v = updated.email?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty { contact.email = v }
-                    let imp = (updated.impression ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                    let n = (updated.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                    let candidate = !imp.isEmpty ? imp : (n.isEmpty ? nil : n)
-                    if let candidate {
-                        let current = (contact.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                        if current.isEmpty {
-                            contact.notes = candidate
-                        } else if !current.contains(candidate) {
-                            contact.notes = current + "\n\n" + candidate
-                        }
-                    }
-                    contact.lastModified = Date()
-                }
+            // 以“后端成功”为准：先发请求，成功后再写入本地模型
+            var payload: [String: Any] = ["name": name]
+
+            let company = editedCompany.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !company.isEmpty { payload["company"] = company }
+            let position = editedIdentity.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !position.isEmpty { payload["position"] = position }
+            let phone = editedPhone.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !phone.isEmpty { payload["phone"] = phone }
+            let email = editedEmail.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !email.isEmpty { payload["email"] = email }
+            let notes = editedNotes.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !notes.isEmpty { payload["notes"] = notes }
+
+            let currentRid = (contact.remoteId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let remoteCard: ContactCard?
+            if currentRid.isEmpty {
+                remoteCard = try await ContactService.createContact(payload: payload, keepLocalId: contact.id)
+            } else {
+                remoteCard = try await ContactService.updateContact(remoteId: currentRid, payload: payload, keepLocalId: contact.id)
             }
-            
-            try? modelContext.save()
+
+            let effectiveRid = ((remoteCard?.remoteId ?? currentRid)).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !effectiveRid.isEmpty else {
+                throw NSError(domain: "Yuanyuan.Contact", code: -2, userInfo: [NSLocalizedDescriptionKey: "后端未返回联系人ID，无法确保已同步到后端"])
+            }
+
+            // 若后端 update/create 没有返回 body，则强制拉一次详情，确保“以最新后端状态为准”
+            let canonical: ContactCard
+            if let remoteCard {
+                canonical = remoteCard
+            } else {
+                // forceRefresh=true：避免拿到旧缓存
+                canonical = try await ContactService.fetchContactDetail(remoteId: effectiveRid, keepLocalId: contact.id, forceRefresh: true)
+            }
+
+            // 写回本地模型（用后端字段；若后端缺字段，则用编辑态兜底）
+            contact.remoteId = canonical.remoteId ?? effectiveRid
+            contact.name = canonical.name
+            contact.company = (canonical.company?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false) ? canonical.company : (company.isEmpty ? nil : company)
+            contact.identity = (canonical.title?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false) ? canonical.title : (position.isEmpty ? nil : position)
+            contact.phoneNumber = (canonical.phone?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false) ? canonical.phone : (phone.isEmpty ? nil : phone)
+            contact.email = (canonical.email?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false) ? canonical.email : (email.isEmpty ? nil : email)
+
+            // 备注：只认后端 note/notes（canonical.notes）。若后端没回，才用本次编辑态兜底。
+            let n = (canonical.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !n.isEmpty {
+                contact.notes = n
+            } else {
+                contact.notes = notes.isEmpty ? nil : notes
+            }
+
+            contact.lastModified = Date()
+            try modelContext.save()
+
+            // 同步刷新聊天里的卡片展示（以 canonical 为准）
+            appState.applyUpdatedContactCardToChatMessages(canonical)
             dismiss()
         } catch {
             alertMessage = "保存失败：\(error.localizedDescription)"

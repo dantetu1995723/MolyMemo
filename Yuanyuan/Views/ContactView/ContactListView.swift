@@ -6,30 +6,19 @@ struct ContactListView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var appState: AppState
     @Query(sort: \Contact.name) private var allContacts: [Contact]
-
-    @State private var searchText = ""
-    // 外部绑定的添加弹窗状态（由底部tab栏控制）
-    @Binding var showAddSheet: Bool
     @State private var selectedContact: Contact?
-    @State private var showHeader = false
-    @State private var showContent = false
     @State private var scrollProxy: ScrollViewProxy?
-    @State private var showImportSheet = false
     @State private var isLoading = true
     @State private var remoteIsLoading: Bool = false
     @State private var remoteErrorText: String? = nil
     @State private var didKickoffRemoteLoad: Bool = false
-    
-    init(showAddSheet: Binding<Bool> = .constant(false)) {
-        self._showAddSheet = showAddSheet
-    }
     
     // 主题色 - 统一灰色
     private let themeColor = Color(white: 0.55)
     
     // 分组的联系人
     private var groupedContacts: [(String, [Contact])] {
-        let contacts = filteredContacts
+        let contacts = allContacts
         
         // 按首字母分组
         let grouped = Dictionary(grouping: contacts) { $0.nameInitial }
@@ -44,18 +33,6 @@ struct ContactListView: View {
         return sorted
     }
     
-    // 过滤后的联系人
-    private var filteredContacts: [Contact] {
-        if searchText.isEmpty {
-            return allContacts
-        }
-        return allContacts.filter { contact in
-            contact.name.localizedCaseInsensitiveContains(searchText) ||
-            contact.company?.localizedCaseInsensitiveContains(searchText) == true ||
-            contact.phoneNumber?.contains(searchText) == true
-        }
-    }
-    
     // 字母索引列表
     private var indexLetters: [String] {
         let letters = groupedContacts.map { $0.0 }
@@ -64,168 +41,98 @@ struct ContactListView: View {
     
     var body: some View {
         ZStack {
-            // 渐变背景
-            ModuleBackgroundView(themeColor: themeColor)
+            // 背景
+            Color(white: 0.98).ignoresSafeArea()
+            
+            VStack(spacing: 0) {
+                // 自定义导航栏
+                ModuleNavigationBar(
+                    title: "联系人",
+                    themeColor: themeColor,
+                    onBack: { dismiss() }
+                )
+                
+                if let remoteErrorText, !remoteErrorText.isEmpty {
+                    Text(remoteErrorText)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.red.opacity(0.85))
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 6)
+                }
+                
+                // 列表区域
+                ZStack(alignment: .trailing) {
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
+                                ForEach(groupedContacts, id: \.0) { initial, contacts in
+                                    Section(header: SectionHeaderView(letter: initial)) {
+                                        ForEach(contacts) { contact in
+                                            ContactRowView(contact: contact)
+                                                .id(contact.id)
+                                                .onTapGesture {
+                                                    HapticFeedback.light()
+                                                    selectedContact = contact
+                                                }
+                                        }
+                                    }
+                                    .id(initial)
+                                }
+                                
+                                // 空状态
+                                if allContacts.isEmpty {
+                                    EmptyContactView()
+                                        .padding(.top, 80)
+                                }
+                                
+                                // 底部留白
+                                Color.clear.frame(height: 120)
+                            }
+                        }
+                        .onAppear {
+                            scrollProxy = proxy
+                        }
+                    }
+                    
+                    // 右侧字母索引
+                    if !groupedContacts.isEmpty {
+                        AlphabetIndexView(letters: indexLetters) { letter in
+                            HapticFeedback.light()
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                scrollProxy?.scrollTo(letter, anchor: .top)
+                            }
+                        }
+                        .padding(.trailing, 10)
+                    }
+                }
+            }
             
             // 加载指示器
             if isLoading {
                 LoadingView()
                     .transition(.opacity)
+                    .background(Color(white: 0.98).ignoresSafeArea())
             }
-            
-            ModuleSheetContainer {
-                VStack(spacing: 0) {
-                    if let remoteErrorText, !remoteErrorText.isEmpty, showHeader && showContent {
-                        Text(remoteErrorText)
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(.red.opacity(0.85))
-                            .padding(.horizontal, 20)
-                            .padding(.bottom, 6)
-                    }
-                    
-                    // 搜索栏和导入按钮 - 同一行
-                    if showHeader && showContent {
-                        HStack(spacing: 12) {
-                            ContactSearchBar(text: $searchText)
-                            
-                            Button(action: {
-                                HapticFeedback.light()
-                                showImportSheet = true
-                            }) {
-                                Image(systemName: "person.crop.circle.badge.plus")
-                                    .font(.system(size: 18, weight: .bold))
-                                    .foregroundColor(.black.opacity(0.7))
-                                    .frame(width: 40, height: 40)
-                                    .background(GlassButtonBackground())
-                            }
-                            .buttonStyle(ScaleButtonStyle())
-                        }
-                        .padding(.horizontal, 20)
-                        .padding(.top, 8)
-                        .padding(.bottom, 12)
-                    } else if showHeader {
-                        HStack {
-                            Spacer()
-                            Button(action: {
-                                HapticFeedback.light()
-                                showImportSheet = true
-                            }) {
-                                Image(systemName: "person.crop.circle.badge.plus")
-                                    .font(.system(size: 18, weight: .bold))
-                                    .foregroundColor(.black.opacity(0.7))
-                                    .frame(width: 40, height: 40)
-                                    .background(GlassButtonBackground())
-                            }
-                            .buttonStyle(ScaleButtonStyle())
-                        }
-                        .padding(.horizontal, 20)
-                        .padding(.top, 8)
-                        .padding(.bottom, 12)
-                    } else if showContent {
-                        ContactSearchBar(text: $searchText)
-                            .padding(.horizontal, 20)
-                            .padding(.vertical, 12)
-                    }
-                    
-                    // 联系人列表
-                    ZStack(alignment: .trailing) {
-                        ScrollViewReader { proxy in
-                            ScrollView {
-                                LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
-                                    ForEach(groupedContacts, id: \.0) { initial, contacts in
-                                            Section(header: SectionHeaderView(letter: initial)) {
-                                                ForEach(contacts) { contact in
-                                                    ContactRowView(contact: contact)
-                                                        .id(contact.id) // 给每个联系人添加ID用于滚动定位
-                                                        .onTapGesture {
-                                                            HapticFeedback.light()
-                                                            selectedContact = contact
-                                                        }
-                                                }
-                                        }
-                                        .id(initial) // Section的ID用于滚动定位
-                                    }
-                                    
-                                    // 空状态
-                                    if allContacts.isEmpty {
-                                        EmptyContactView(onAddContact: { showAddSheet = true })
-                                            .padding(.top, 80)
-                                    }
-                                }
-                                .padding(.bottom, 120)
-                                .opacity(showContent ? 1 : 0)
-                            }
-                            .onAppear {
-                                scrollProxy = proxy
-                            }
-                        }
-                        
-                        // 右侧字母索引
-                        if !groupedContacts.isEmpty {
-                            AlphabetIndexView(letters: indexLetters) { letter in
-                                HapticFeedback.light()
-                                withAnimation(.easeInOut(duration: 0.2)) {
-                                    scrollProxy?.scrollTo(letter, anchor: .top)
-                                }
-                            }
-                            .padding(.trailing, 8)
-                            .opacity(showContent ? 1 : 0)
-                        }
-                    }
-                }
-            }
-        }
-        .safeAreaInset(edge: .top) {
-            ModuleNavigationBar(
-                title: "联系人",
-                themeColor: themeColor,
-                onBack: { dismiss() },
-                trailingIcon: "plus",
-                trailingAction: { showAddSheet = true }
-            )
-        }
-        .sheet(isPresented: $showAddSheet) {
-            ContactEditView()
-                .presentationDragIndicator(.visible)
         }
         .sheet(item: $selectedContact) { contact in
             ContactDetailView(contact: contact)
                 .presentationDragIndicator(.visible)
         }
-        .sheet(isPresented: $showImportSheet) {
-            ContactImportView()
-                .presentationDragIndicator(.visible)
-        }
         .toolbar(.hidden, for: .navigationBar)
         .onAppear {
             // 等待数据准备完成
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                // 先关闭loading
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 withAnimation(.easeOut(duration: 0.25)) {
                     isLoading = false
                 }
                 
-                // loading关闭后，依次显示各个元素
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                    withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                        showHeader = true
-                    }
-                    
-                    withAnimation(.spring(response: 0.5, dampingFraction: 0.8).delay(0.08)) {
-                        showContent = true
-                    }
-                    
-                    // 检查是否需要滚动到指定联系人
-                    if let contactId = appState.scrollToContactId {
-                        // 延迟滚动，确保视图已经完全加载
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                            print("📍 滚动到联系人 ID: \(contactId)")
-                            withAnimation(.easeInOut(duration: 0.3)) {
-                                scrollProxy?.scrollTo(contactId, anchor: .center)
-                            }
-                            // 清除滚动标记
-                            appState.scrollToContactId = nil
+                // 检查是否需要滚动到指定联系人
+                if let contactId = appState.scrollToContactId {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            scrollProxy?.scrollTo(contactId, anchor: .center)
                         }
+                        appState.scrollToContactId = nil
                     }
                 }
             }
@@ -242,23 +149,40 @@ struct ContactListView: View {
     // MARK: - 后端拉取联系人列表（分页）
     @MainActor
     private func reloadRemoteContacts() async {
-        remoteIsLoading = true
         remoteErrorText = nil
+        
+        // 1) 先用缓存秒开（不必每次进来都打网络）
+        let base = ContactService.ListParams(page: nil, pageSize: nil, search: nil, relationshipType: nil)
+        if let cached = await ContactService.peekAllContacts(maxPages: 5, pageSize: 100, baseParams: base) {
+            upsertRemoteContacts(cached.value)
+            if cached.isFresh { return }
+            // 过期：后台静默刷新（不打断体验）
+            Task {
+                await reloadRemoteContactsFromNetwork(base: base, showError: false)
+            }
+            return
+        }
+        
+        // 2) 首次无缓存：走网络（可以显示错误提示）
+        await reloadRemoteContactsFromNetwork(base: base, showError: true)
+    }
+    
+    @MainActor
+    private func reloadRemoteContactsFromNetwork(base: ContactService.ListParams, showError: Bool) async {
+        remoteIsLoading = true
         defer { remoteIsLoading = false }
         
         do {
-            var all: [ContactCard] = []
-            let pageSize = 100
-            for page in 1...5 {
-                let list = try await ContactService.fetchContactList(
-                    params: .init(page: page, pageSize: pageSize, search: nil, relationshipType: nil)
-                )
-                all.append(contentsOf: list)
-                if list.count < pageSize { break }
-            }
+            let all = try await ContactService.fetchContactListAllPages(
+                maxPages: 5,
+                pageSize: 100,
+                baseParams: base
+            )
             upsertRemoteContacts(all)
         } catch {
-            remoteErrorText = "后端联系人获取失败：\(error.localizedDescription)"
+            if showError {
+                remoteErrorText = "后端联系人获取失败：\(error.localizedDescription)"
+            }
         }
     }
     
@@ -305,8 +229,6 @@ struct ContactListView: View {
                 identity: card.title,
                 email: card.email,
                 notes: {
-                    let imp = (card.impression ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !imp.isEmpty { return imp }
                     let n = (card.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                     return n.isEmpty ? nil : n
                 }()
@@ -331,15 +253,13 @@ struct ContactListView: View {
         if let v = card.phone?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty { contact.phoneNumber = v }
         if let v = card.email?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty { contact.email = v }
         
-        let imp = (card.impression ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let n = (card.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        let candidate = !imp.isEmpty ? imp : (n.isEmpty ? nil : n)
-        if let candidate {
+        if !n.isEmpty {
             let current = (contact.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             if current.isEmpty {
-                contact.notes = candidate
-            } else if !current.contains(candidate) {
-                contact.notes = current + "\n\n" + candidate
+                contact.notes = n
+            } else if !current.contains(n) {
+                contact.notes = current + "\n\n" + n
             }
         }
         
@@ -347,100 +267,21 @@ struct ContactListView: View {
     }
 }
 
-// MARK: - 搜索框 - 液态玻璃风格
-struct ContactSearchBar: View {
-    @Binding var text: String
-    
-    var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 16, weight: .medium))
-                .foregroundColor(Color.black.opacity(0.4))
-            
-            TextField("搜索联系人", text: $text)
-                .font(.system(size: 16, design: .rounded))
-                .foregroundColor(Color.black.opacity(0.85))
-            
-            if !text.isEmpty {
-                Button(action: {
-                    text = ""
-                    HapticFeedback.light()
-                }) {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(Color.black.opacity(0.3))
-                }
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .background(
-            ZStack {
-                // 液态玻璃基础
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            gradient: Gradient(stops: [
-                                .init(color: Color.white.opacity(0.85), location: 0.0),
-                                .init(color: Color.white.opacity(0.65), location: 0.5),
-                                .init(color: Color.white.opacity(0.75), location: 1.0)
-                            ]),
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                
-                // 表面高光
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            gradient: Gradient(stops: [
-                                .init(color: Color.white.opacity(0.4), location: 0.0),
-                                .init(color: Color.white.opacity(0.15), location: 0.2),
-                                .init(color: Color.clear, location: 0.5)
-                            ]),
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
-                
-                // 晶体边框
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .strokeBorder(
-                        LinearGradient(
-                            gradient: Gradient(stops: [
-                                .init(color: Color.white.opacity(0.9), location: 0.0),
-                                .init(color: Color.white.opacity(0.3), location: 0.5),
-                                .init(color: Color.white.opacity(0.6), location: 1.0)
-                            ]),
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1
-                    )
-            }
-        )
-        .shadow(color: Color.white.opacity(0.5), radius: 6, x: 0, y: -2)
-        .shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 3)
-    }
-}
-
-// MARK: - 分组标题 - 液态玻璃风格
+// MARK: - 分组标题 - 清爽风格
 struct SectionHeaderView: View {
     let letter: String
     
     var body: some View {
         HStack {
             Text(letter)
-                .font(.system(size: 15, weight: .bold, design: .rounded))
-                .foregroundColor(Color.black.opacity(0.6))
+                .font(.system(size: 14, weight: .bold, design: .rounded))
+                .foregroundColor(Color.black.opacity(0.4))
             Spacer()
         }
         .padding(.horizontal, 24)
-        .padding(.vertical, 8)
+        .padding(.vertical, 10)
         .background(
-            Rectangle()
-                .fill(.ultraThinMaterial)
+            Color(white: 0.98).opacity(0.95)
         )
     }
 }
@@ -505,80 +346,61 @@ struct ContactRowView: View {
     }
 
     var body: some View {
-        HStack(spacing: 16) {
-            // 头像 - 液态玻璃风格
+        HStack(spacing: 12) {
+            // 头像
             ZStack {
                 if let avatarData = contact.avatarData,
                    let uiImage = UIImage(data: avatarData) {
                     Image(uiImage: uiImage)
                         .resizable()
                         .scaledToFill()
-                        .frame(width: 48, height: 48)
+                        .frame(width: 44, height: 44)
                         .clipShape(Circle())
-                        .overlay(
-                            Circle()
-                                .strokeBorder(Color.white.opacity(0.5), lineWidth: 1)
-                        )
                 } else {
-                    // 默认头像 - 显示首字母，液态玻璃风格
+                    // 默认头像
                     ZStack {
                         Circle()
-                            .fill(themeColor.opacity(0.3))
-                        
-                        Circle()
-                            .strokeBorder(
-                                LinearGradient(
-                                    colors: [
-                                        Color.white.opacity(0.8),
-                                        Color.white.opacity(0.3)
-                                    ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                ),
-                                lineWidth: 1
-                            )
+                            .fill(themeColor.opacity(0.12))
                         
                         Text(String(contact.name.prefix(1)))
-                            .font(.system(size: 20, weight: .light))
-                            .foregroundColor(Color(red: 0.41, green: 0.41, blue: 0.41))
+                            .font(.system(size: 18, weight: .medium))
+                            .foregroundColor(themeColor.opacity(0.8))
                     }
-                    .frame(width: 48, height: 48)
+                    .frame(width: 44, height: 44)
                 }
             }
             
             // 联系人信息
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 2) {
                 // 名字
                 Text(contact.name)
-                    .font(.system(size: 17, weight: .semibold, design: .rounded))
-                    .foregroundColor(Color.black.opacity(0.85))
+                    .font(.system(size: 17, weight: .medium))
+                    .foregroundColor(.primary)
 
-                // 副内容：统一在一行横向排列
+                // 副内容
                 if hasSecondaryInfo {
-                    HStack(spacing: 6) {
+                    HStack(spacing: 4) {
                         ForEach(Array(secondaryInfoItems.enumerated()), id: \.offset) { index, item in
                             if index > 0 {
                                 Text("·")
-                                    .font(.system(size: 13, weight: .regular))
-                                    .foregroundColor(Color.black.opacity(0.35))
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.secondary.opacity(0.5))
                             }
 
                             if item.isAttachment {
-                                // 附件图标
-                                    HStack(spacing: 3) {
-                                        Image(systemName: "paperclip")
-                                            .font(.system(size: 11, weight: .medium))
-                                        if item.count > 1 {
-                                            Text("\(item.count)")
-                                                .font(.system(size: 13, weight: .regular))
-                                        }
+                                HStack(spacing: 2) {
+                                    Image(systemName: "paperclip")
+                                        .font(.system(size: 10))
+                                    if item.count > 1 {
+                                        Text("\(item.count)")
+                                            .font(.system(size: 12))
                                     }
-                                    .foregroundColor(themeColor.opacity(0.8))
+                                }
+                                .foregroundColor(themeColor.opacity(0.6))
                             } else {
-                                // 文本信息
                                 Text(item.text)
-                                    .font(.system(size: 13, weight: .regular))
-                                    .foregroundColor(Color.black.opacity(0.5))
+                                    .font(.system(size: 13))
+                                    .foregroundColor(.secondary)
                             }
                         }
                     }
@@ -590,110 +412,50 @@ struct ContactRowView: View {
             
             // 右箭头
             Image(systemName: "chevron.right")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundColor(themeColor.opacity(0.5))
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(themeColor.opacity(0.3))
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
         .background(
-            ZStack {
-                // 液态玻璃基础
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            gradient: Gradient(stops: [
-                                .init(color: Color.white.opacity(0.88), location: 0.0),
-                                .init(color: Color.white.opacity(0.68), location: 0.5),
-                                .init(color: Color.white.opacity(0.78), location: 1.0)
-                            ]),
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                
-                // 表面高光
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            gradient: Gradient(stops: [
-                                .init(color: Color.white.opacity(0.45), location: 0.0),
-                                .init(color: Color.white.opacity(0.15), location: 0.2),
-                                .init(color: Color.clear, location: 0.5)
-                            ]),
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
-                
-                // 晶体边框
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .strokeBorder(
-                        LinearGradient(
-                            gradient: Gradient(stops: [
-                                .init(color: Color.white.opacity(0.9), location: 0.0),
-                                .init(color: Color.white.opacity(0.35), location: 0.5),
-                                .init(color: Color.white.opacity(0.65), location: 1.0)
-                            ]),
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1
-                    )
-            }
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color.white)
+                .shadow(color: Color.black.opacity(0.03), radius: 8, x: 0, y: 2)
         )
-        .shadow(color: Color.white.opacity(0.5), radius: 6, x: 0, y: -2)
-        .shadow(color: Color.black.opacity(0.05), radius: 10, x: 0, y: 4)
-        .padding(.horizontal, 20)
-        .padding(.vertical, 6)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 4)
     }
 }
 
-// MARK: - 字母索引视图 - 液态玻璃风格
+// MARK: - 字母索引视图
 struct AlphabetIndexView: View {
     let letters: [String]
     let onTap: (String) -> Void
     
     var body: some View {
-        VStack(spacing: 2) {
+        VStack(spacing: 0) {
             ForEach(letters, id: \.self) { letter in
                 Text(letter)
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-                    .foregroundColor(Color.black.opacity(0.55))
-                    .frame(width: 20, height: 16)
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .foregroundColor(Color.black.opacity(0.4))
+                    .frame(width: 24, height: 18)
                     .contentShape(Rectangle())
                     .onTapGesture {
                         onTap(letter)
                     }
             }
         }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 4)
+        .padding(.vertical, 6)
         .background(
-            ZStack {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                Color.white.opacity(0.85),
-                                Color.white.opacity(0.65)
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
-                
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.6), lineWidth: 1)
-            }
+            Capsule()
+                .fill(Color.white.opacity(0.8))
+                .shadow(color: Color.black.opacity(0.04), radius: 4, x: 0, y: 2)
         )
-        .shadow(color: Color.black.opacity(0.06), radius: 8, x: 0, y: 2)
     }
 }
 
 // MARK: - 空状态视图
 struct EmptyContactView: View {
-    let onAddContact: () -> Void
-    
     var body: some View {
         VStack(spacing: 20) {
             Image(systemName: "person.2.circle")
@@ -703,10 +465,6 @@ struct EmptyContactView: View {
             Text("暂无联系人")
                 .font(.system(size: 18, weight: .medium, design: .rounded))
                 .foregroundColor(Color.black.opacity(0.5))
-            
-            Text("点击下方按钮添加新联系人")
-                .font(.system(size: 14, weight: .regular, design: .rounded))
-                .foregroundColor(Color.black.opacity(0.35))
         }
     }
 }

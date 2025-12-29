@@ -12,30 +12,15 @@ struct YuanyuanApp: App {
     let modelContainer: ModelContainer
     
     init() {
-        // 让 AppIntent/Widget 也能访问同一份数据：把 store 放进 App Group，并尝试迁移旧 store
-        SharedModelContainer.migrateLegacyStoreIfNeeded()
+        // 统一后端接入：启动即清空本地落盘数据/文件，避免与后端冲突。
+        LocalDataPurger.purgeAll(reason: "统一后端接入：禁用本地持久化")
+
         do {
             modelContainer = try SharedModelContainer.makeContainer()
-            print("✅ SwiftData 容器初始化成功")
+            print("✅ SwiftData 容器初始化成功（内存库）")
         } catch {
-            print("❌ 容器初始化失败，尝试删除旧数据库重建: \(error)")
-            
-            // 如果初始化失败（通常是模型变化导致），删除旧数据库
-            do {
-                // 优先删除 App Group 位置的 store（新的唯一真实来源）
-                if let groupURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: SharedModelContainer.appGroupId) {
-                    let storeURL = groupURL.appendingPathComponent(SharedModelContainer.storeFilename)
-                    try? FileManager.default.removeItem(at: storeURL)
-                    print("🗑️ 已删除 App Group 数据库")
-                }
-                
-                // 重新创建容器
-                modelContainer = try SharedModelContainer.makeContainer()
-                print("✅ 重建容器成功")
-            } catch {
-                print("❌ 重建容器失败: \(error)")
-                fatalError("无法初始化 SwiftData 容器: \(error)")
-            }
+            print("❌ 容器初始化失败: \(error)")
+            fatalError("无法初始化 SwiftData 容器: \(error)")
         }
 
         // 尽早安装 Darwin 录音命令监听，避免 “通知先发出、监听后注册” 的竞态

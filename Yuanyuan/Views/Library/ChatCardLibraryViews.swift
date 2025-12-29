@@ -203,14 +203,15 @@ private struct ContactCardBatchList: View {
                     try? modelContext.save()
                 }
             }
-            let imp = (card.impression ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            if !imp.isEmpty {
+            // 备注：只使用后端 note/notes（ContactCard.notes）回填，避免把 impression 混进备注
+            let n = (card.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !n.isEmpty {
                 let current = (existing.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                 if current.isEmpty {
-                    existing.notes = imp
+                    existing.notes = n
                     try? modelContext.save()
-                } else if !current.contains(imp) {
-                    existing.notes = current + "\n\n" + imp
+                } else if !current.contains(n) {
+                    existing.notes = current + "\n\n" + n
                     try? modelContext.save()
                 }
             }
@@ -226,14 +227,14 @@ private struct ContactCardBatchList: View {
                     try? modelContext.save()
                 }
             }
-            let imp = (card.impression ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            if !imp.isEmpty {
+            let n = (card.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !n.isEmpty {
                 let current = (existing.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                 if current.isEmpty {
-                    existing.notes = imp
+                    existing.notes = n
                     try? modelContext.save()
-                } else if !current.contains(imp) {
-                    existing.notes = current + "\n\n" + imp
+                } else if !current.contains(n) {
+                    existing.notes = current + "\n\n" + n
                     try? modelContext.save()
                 }
             }
@@ -251,8 +252,6 @@ private struct ContactCardBatchList: View {
             company: card.company,
             identity: card.title,
             notes: {
-                let imp = (card.impression ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                if !imp.isEmpty { return imp }
                 let n = (card.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                 return n.isEmpty ? nil : n
             }(),

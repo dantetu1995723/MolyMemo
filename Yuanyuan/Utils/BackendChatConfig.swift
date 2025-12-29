@@ -140,7 +140,21 @@ enum BackendChatConfig {
 #if DEBUG
     /// Debug：是否在控制台打印完整后端响应（可能很长，默认关闭）
     static var debugLogFullResponse: Bool {
-        get { UserDefaults.standard.bool(forKey: Keys.debugFullResponseLog) }
+        get {
+            // 默认策略：
+            // - 模拟器：默认开启（便于联调看“原始后端输出”）
+            // - 真机：默认关闭（避免刷爆控制台/泄漏敏感信息）
+            if UserDefaults.standard.object(forKey: Keys.debugFullResponseLog) == nil {
+#if targetEnvironment(simulator)
+                UserDefaults.standard.set(true, forKey: Keys.debugFullResponseLog)
+                return true
+#else
+                UserDefaults.standard.set(false, forKey: Keys.debugFullResponseLog)
+                return false
+#endif
+            }
+            return UserDefaults.standard.bool(forKey: Keys.debugFullResponseLog)
+        }
         set { UserDefaults.standard.set(newValue, forKey: Keys.debugFullResponseLog) }
     }
 

@@ -24,6 +24,7 @@ struct ModuleContainerView: View {
     @Environment(\.modelContext) private var modelContext
     @State private var selectedModule: ModuleType = .todo
     @State private var showAddSheet = false
+    @State private var showContactAddSheet = false
     @Namespace private var tabNamespace
     
     // 主题色 - 统一灰色
@@ -46,7 +47,7 @@ struct ModuleContainerView: View {
                         TodoListView(showAddSheet: $showAddSheet)
                     case .contact:
                         // 联系人模块：与「日程」一致，进入即从后端拉取列表；失败则展示本地缓存
-                        ContactListView(showAddSheet: $showAddSheet)
+                        ContactListView()
                     case .expense:
                         InvoiceCardLibraryView(showAddSheet: $showAddSheet)
                     case .meeting:
@@ -58,6 +59,11 @@ struct ModuleContainerView: View {
                 // 底部悬浮导航栏
                 liquidGlassTabBar()
             }
+        }
+        .sheet(isPresented: $showContactAddSheet) {
+            ContactEditView(contact: nil)
+                .environmentObject(appState)
+                .presentationDragIndicator(.visible)
         }
     }
     
@@ -85,7 +91,11 @@ struct ModuleContainerView: View {
     private func addButton() -> some View {
         Button(action: {
             HapticFeedback.light()
-            showAddSheet = true
+            if selectedModule == .contact {
+                showContactAddSheet = true
+            } else {
+                showAddSheet = true
+            }
         }) {
             ZStack {
                 // 背景圆形 - 主题色

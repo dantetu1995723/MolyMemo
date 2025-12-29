@@ -25,7 +25,7 @@ enum ScheduleService {
         }
     }
     
-    struct ListParams: Equatable {
+    struct ListParams: Equatable, Hashable {
         var page: Int? = nil
         var pageSize: Int? = nil
         /// yyyy-MM-dd
@@ -43,6 +43,50 @@ enum ScheduleService {
     
     private static let listPath = "/api/v1/schedules"
     private static func detailPath(_ id: String) -> String { "/api/v1/schedules/\(id)" }
+    
+    // MARK: - Cache
+    
+    private struct AllPagesKey: Hashable {
+        var base: ListParams
+        var maxPages: Int
+        var pageSize: Int
+    }
+    
+    private static let listCache = ExpiringAsyncCache<ListParams, [ScheduleEvent]>()
+    private static let detailCache = ExpiringAsyncCache<String, ScheduleEvent>()
+    private static let allPagesCache = ExpiringAsyncCache<AllPagesKey, [ScheduleEvent]>()
+    
+    /// 默认：列表 2 分钟、详情 10 分钟（只影响“是否复用缓存”，不改变后端数据）
+    private static let defaultListTTL: TimeInterval = 120
+    private static let defaultDetailTTL: TimeInterval = 600
+    private static let defaultAllPagesTTL: TimeInterval = 120
+    
+    static func invalidateScheduleCaches() async {
+        await listCache.invalidateAll()
+        await detailCache.invalidateAll()
+        await allPagesCache.invalidateAll()
+    }
+    
+    static func peekScheduleList(params: ListParams = .init()) async -> (value: [ScheduleEvent], isFresh: Bool)? {
+        if let s = await listCache.peek(params) { return (s.value, s.isFresh) }
+        return nil
+    }
+    
+    static func peekScheduleDetail(remoteId: String) async -> (value: ScheduleEvent, isFresh: Bool)? {
+        let k = remoteId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !k.isEmpty else { return nil }
+        if let s = await detailCache.peek(k) { return (s.value, s.isFresh) }
+        return nil
+    }
+    
+    static func peekAllSchedules(maxPages: Int = 5, pageSize: Int = 100, baseParams: ListParams = .init()) async -> (value: [ScheduleEvent], isFresh: Bool)? {
+        var base = baseParams
+        base.page = nil
+        base.pageSize = nil
+        let k = AllPagesKey(base: base, maxPages: maxPages, pageSize: pageSize)
+        if let s = await allPagesCache.peek(k) { return (s.value, s.isFresh) }
+        return nil
+    }
     
     private static func resolvedBaseURL() throws -> String {
         let candidate = BackendChatConfig.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -173,10 +217,9 @@ enum ScheduleService {
             // ✅ 后端常见：不带时区的 ISO 字符串（如 2025-12-26T21:00:00）
             // 使用 POSIX locale，避免 12/24 小时制、地区设置导致解析失败
             let posix = Locale(identifier: "en_US_POSIX")
-            // ⚠️ 根因：后端返回的时间字符串经常“不带时区”，但语义上是 UTC（例如 10:36 本地=02:36Z，会返回 02:36）
-            // 若用本地时区解析，会把 02:36 当成“本地 02:36”，导致界面显示被提前 8 小时。
-            // 因此这里对“不带时区”的时间串统一按 UTC 解析。
-            let tz = TimeZone(secondsFromGMT: 0) ?? .gmt
+            // 约定：当后端返回“不带时区”的时间串时，按“本地时间语义”理解（例如 14:00 就是本地 14:00）。
+            // 否则会出现中国时区常见的 +8 小时偏移（14:00 -> 22:00）。
+            let tz = TimeZone.current
 
             let f5 = DateFormatter()
             f5.locale = posix
@@ -286,7 +329,16 @@ enum ScheduleService {
         return []
     }
     
-    static func fetchScheduleList(params: ListParams = .init()) async throws -> [ScheduleEvent] {
+    static func fetchScheduleList(params: ListParams = .init(), forceRefresh: Bool = false) async throws -> [ScheduleEvent] {
+        if forceRefresh {
+            await listCache.invalidate(params)
+        }
+        return try await listCache.getOrFetch(params, ttl: defaultListTTL) {
+            try await fetchScheduleListFromNetwork(params: params)
+        }
+    }
+    
+    private static func fetchScheduleListFromNetwork(params: ListParams = .init()) async throws -> [ScheduleEvent] {
         var query: [URLQueryItem] = []
         if let page = params.page { query.append(URLQueryItem(name: "page", value: String(page))) }
         if let pageSize = params.pageSize { query.append(URLQueryItem(name: "page_size", value: String(pageSize))) }
@@ -332,7 +384,28 @@ enum ScheduleService {
         }
     }
     
-    static func fetchScheduleDetail(remoteId: String, keepLocalId: UUID? = nil) async throws -> ScheduleEvent {
+    static func fetchScheduleDetail(remoteId: String, keepLocalId: UUID? = nil, forceRefresh: Bool = false) async throws -> ScheduleEvent {
+        let trimmed = remoteId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw ScheduleServiceError.parseFailed("remoteId empty") }
+        
+        if forceRefresh {
+            await detailCache.invalidate(trimmed)
+        }
+        
+        let cached = try await detailCache.getOrFetch(trimmed, ttl: defaultDetailTTL) {
+            try await fetchScheduleDetailFromNetwork(remoteId: trimmed, keepLocalId: keepLocalId)
+        }
+        
+        // 维持 keepLocalId：缓存里可能是不同 local id 的版本，这里对外保证调用方想保留的 id
+        if let keepLocalId, cached.id != keepLocalId {
+            var v = cached
+            v.id = keepLocalId
+            return v
+        }
+        return cached
+    }
+    
+    private static func fetchScheduleDetailFromNetwork(remoteId: String, keepLocalId: UUID? = nil) async throws -> ScheduleEvent {
         let trimmed = remoteId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw ScheduleServiceError.parseFailed("remoteId empty") }
         
@@ -371,6 +444,36 @@ enum ScheduleService {
             throw error
         }
     }
+    
+    /// 常用：拉“全量后端日程（自动翻页）”并缓存，适合前端再做日期过滤（TodoListView 目前就是这么做的）
+    static func fetchScheduleListAllPages(
+        maxPages: Int = 5,
+        pageSize: Int = 100,
+        baseParams: ListParams = .init(),
+        forceRefresh: Bool = false
+    ) async throws -> [ScheduleEvent] {
+        var base = baseParams
+        base.page = nil
+        base.pageSize = nil
+        let k = AllPagesKey(base: base, maxPages: maxPages, pageSize: pageSize)
+        
+        if forceRefresh {
+            await allPagesCache.invalidate(k)
+        }
+        
+        return try await allPagesCache.getOrFetch(k, ttl: defaultAllPagesTTL) {
+            var all: [ScheduleEvent] = []
+            for page in 1...maxPages {
+                var p = base
+                p.page = page
+                p.pageSize = pageSize
+                let list = try await fetchScheduleListFromNetwork(params: p)
+                all.append(contentsOf: list)
+                if list.count < pageSize { break }
+            }
+            return all
+        }
+    }
 
     /// 更新日程：PUT /api/v1/schedules/{id}
     /// - Note: 目前客户端只维护 title/description/start_time/end_time；其它字段若后端有默认值，可由后端补齐
@@ -405,17 +508,33 @@ enum ScheduleService {
 
             // 有些后端会返回更新后的实体；若返回体不是实体形状，至少返回本地 event
             if data.isEmpty {
+                await detailCache.set(trimmed, value: event, ttl: defaultDetailTTL)
+                await listCache.invalidateAll()
+                await allPagesCache.invalidateAll()
+                NotificationCenter.default.post(name: .remoteScheduleDidChange, object: nil, userInfo: nil)
                 return event
             }
             let json = try decodeJSON(data)
             if let dict = json as? [String: Any] {
                 if let d = dict["data"] as? [String: Any], let ev = parseEventDict(d, keepLocalId: event.id) {
+                    await detailCache.set(trimmed, value: ev, ttl: defaultDetailTTL)
+                    await listCache.invalidateAll()
+                    await allPagesCache.invalidateAll()
+                    NotificationCenter.default.post(name: .remoteScheduleDidChange, object: nil, userInfo: nil)
                     return ev
                 }
                 if let ev = parseEventDict(dict, keepLocalId: event.id) {
+                    await detailCache.set(trimmed, value: ev, ttl: defaultDetailTTL)
+                    await listCache.invalidateAll()
+                    await allPagesCache.invalidateAll()
+                    NotificationCenter.default.post(name: .remoteScheduleDidChange, object: nil, userInfo: nil)
                     return ev
                 }
             }
+            await detailCache.set(trimmed, value: event, ttl: defaultDetailTTL)
+            await listCache.invalidateAll()
+            await allPagesCache.invalidateAll()
+            NotificationCenter.default.post(name: .remoteScheduleDidChange, object: nil, userInfo: nil)
             return event
         } catch {
             print("❌ [ScheduleService:update] threw error=\(error)")
@@ -443,6 +562,11 @@ enum ScheduleService {
                 let body = String(data: data, encoding: .utf8) ?? ""
                 throw ScheduleServiceError.httpStatus(http.statusCode, body)
             }
+            
+            await detailCache.invalidate(trimmed)
+            await listCache.invalidateAll()
+            await allPagesCache.invalidateAll()
+            NotificationCenter.default.post(name: .remoteScheduleDidChange, object: nil, userInfo: nil)
         } catch {
             print("❌ [ScheduleService:delete] threw error=\(error)")
             throw error

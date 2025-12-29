@@ -11,6 +11,7 @@ struct ScheduleDetailSheet: View {
     @State private var activeDatePicker: DatePickerType? = nil
     @State private var startTimeAreaFrame: CGRect = .zero
     @State private var endTimeAreaFrame: CGRect = .zero
+    @State private var hasUserEdited: Bool = false
     
     // 提交状态（保存/删除）
     @State private var isSubmitting: Bool = false
@@ -431,6 +432,17 @@ struct ScheduleDetailSheet: View {
         }
         .onAppear { speechRecognizer.requestAuthorization() }
         .onReceive(speechRecognizer.$audioLevel) { self.audioPower = mapAudioLevelToPower($0) }
+        // 远端详情覆盖 event 时：如果用户还没动过编辑，就同步草稿，避免“看起来没改但其实草稿和最新值不一致”
+        .onChange(of: event) { _, newValue in
+            guard !isSubmitting else { return }
+            guard !hasUserEdited else { return }
+            editedEvent = newValue
+        }
+        // 任何编辑即标记（用于保护草稿不被远端刷新覆盖）
+        .onChange(of: editedEvent.title) { _, _ in hasUserEdited = true }
+        .onChange(of: editedEvent.description) { _, _ in hasUserEdited = true }
+        .onChange(of: editedEvent.startTime) { _, _ in hasUserEdited = true }
+        .onChange(of: editedEvent.endTime) { _, _ in hasUserEdited = true }
         .onChange(of: editedEvent.startTime) { _, newStart in
             if editedEvent.endTime < newStart {
                 editedEvent.endTime = newStart
@@ -549,6 +561,13 @@ struct ScheduleDetailSheet: View {
     @MainActor
     private func submitSave() async {
         guard !isSubmitting else { return }
+
+        // 未发生任何变更：不触发 loading/网络请求，直接退出即可
+        guard editedEvent != event else {
+            dismiss()
+            return
+        }
+
         isSubmitting = true
         submittingAction = .save
         defer {

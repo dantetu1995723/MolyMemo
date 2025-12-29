@@ -72,6 +72,14 @@ struct ChatView: View {
     private let bubbleWhite = Color.white
     private let userBubbleColor = Color(hex: "222222") // 深黑色用户气泡
 
+    // MARK: - 首页通知栏（今日日程）
+    @State private var todayScheduleEvents: [ScheduleEvent] = []
+    @State private var todayScheduleIsLoading: Bool = false
+    @State private var todayScheduleErrorText: String? = nil
+    @State private var isTodayScheduleExpanded: Bool = false
+    @State private var lastLoadedScheduleDayKey: String = ""
+    @State private var todayReadIds: Set<String> = []
+
     // MARK: - Helpers (Text splitting for cards)
     /// 将 AI 文本按“第一段 + 其余段”拆分，用于把卡片插到两段文字中间。
     /// 规则：仅在存在至少一个有效的双换行分隔时拆分；否则返回原文 + nil。
@@ -103,15 +111,15 @@ struct ChatView: View {
                     try? modelContext.save()
                 }
             }
-            // 将 impression 写入联系人备注（不覆盖用户已有备注；必要时追加）
-            let imp = (card.impression ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            if !imp.isEmpty {
+            // 备注：只使用后端 note/notes（ContactCard.notes）回填，避免把 impression 混进备注
+            let n = (card.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !n.isEmpty {
                 let current = (existing.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                 if current.isEmpty {
-                    existing.notes = imp
+                    existing.notes = n
                     try? modelContext.save()
-                } else if !current.contains(imp) {
-                    existing.notes = current + "\n\n" + imp
+                } else if !current.contains(n) {
+                    existing.notes = current + "\n\n" + n
                     try? modelContext.save()
                 }
             }
@@ -126,14 +134,14 @@ struct ChatView: View {
                     try? modelContext.save()
                 }
             }
-            let imp = (card.impression ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            if !imp.isEmpty {
+            let n = (card.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !n.isEmpty {
                 let current = (existing.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                 if current.isEmpty {
-                    existing.notes = imp
+                    existing.notes = n
                     try? modelContext.save()
-                } else if !current.contains(imp) {
-                    existing.notes = current + "\n\n" + imp
+                } else if !current.contains(n) {
+                    existing.notes = current + "\n\n" + n
                     try? modelContext.save()
                 }
             }
@@ -150,8 +158,6 @@ struct ChatView: View {
             company: card.company,
             identity: card.title,
             notes: {
-                let imp = (card.impression ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                if !imp.isEmpty { return imp }
                 let n = (card.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                 return n.isEmpty ? nil : n
             }(),
@@ -175,27 +181,12 @@ struct ChatView: View {
                 // 背景
                 backgroundView
                 
-                // 聊天内容层
+                // 1. 聊天内容层
                 VStack(spacing: 0) {
-                    // 顶部导航
-                    headerView
-                        .padding(.horizontal, 20)
-                        .padding(.top, 8)
-                        .padding(.bottom, 12)
-                    
-                    // 提醒卡片
-                    reminderCard
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 8)
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                    
                     // 聊天内容区域
                     ScrollViewReader { proxy in
                         ScrollView {
                             LazyVStack(spacing: 24) {
-                                // 顶部垫高（缩小与通知栏的间距）
-                                Color.clear.frame(height: 4)
-                                
                                 // 聊天内容
                                 normalChatContent
                                 
@@ -207,14 +198,15 @@ struct ChatView: View {
                         }
                         .scrollDisabled(isCardHorizontalPaging)
                         .scrollIndicators(.hidden)
-                        .scrollDismissesKeyboard(.interactively) // 滑动时渐进收回键盘
+                        .scrollDismissesKeyboard(.interactively)
+                        .safeAreaInset(edge: .top) {
+                            // 动态计算占位高度：顶部安全区域 + 导航栏约 44 + 提醒卡片基础高度
+                            Color.clear.frame(height: geometry.safeAreaInsets.top + 100)
+                        }
                         .safeAreaInset(edge: .bottom) {
-                            // 为底部输入区域预留空间，确保滚动内容不被遮挡
-                            Color.clear
-                                .frame(height: bottomInputBaseHeight) // Use a rough estimate or bind to actual height
+                            Color.clear.frame(height: bottomInputBaseHeight)
                         }
                         .onTapGesture {
-                            // 点击空白处收回键盘
                             if inputViewModel.isInputFocused {
                                 inputViewModel.isInputFocused = false
                             }
@@ -223,7 +215,6 @@ struct ChatView: View {
                                     inputViewModel.showMenu = false
                                 }
                             }
-                            // 点击聊天空白处同时取消日程卡片选中（关闭胶囊菜单）
                             NotificationCenter.default.post(name: .dismissScheduleMenu, object: nil)
                         }
                         .onChange(of: appState.chatMessages.count) { _, _ in
@@ -240,15 +231,12 @@ struct ChatView: View {
                         }
                     }
                 }
+                .zIndex(0)
                 // 裁剪 + 虚化聊天内容区域：
                 .mask(
                     VStack(spacing: 0) {
                         let fadeHeight: CGFloat = 20
-                        
-                        // 完全清晰区域
                         Color.white
-                        
-                        // 虚化淡出区域
                         LinearGradient(
                             gradient: Gradient(colors: [
                                 Color.white,
@@ -258,18 +246,51 @@ struct ChatView: View {
                             endPoint: .bottom
                         )
                         .frame(height: fadeHeight)
-                        
-                        // 底部透明区域
-                        Color.clear
-                            .frame(height: bottomInputBaseHeight)
+                        Color.clear.frame(height: bottomInputBaseHeight)
                     }
                 )
                 
-                // 底部输入区域 (浮动在最上层)
+                // 2. 底部输入区域
                 ChatInputView(viewModel: inputViewModel, namespace: inputNamespace)
                     .zIndex(101)
                 
-                // 录音动画覆盖层（松手后保持一小段时间跑逆向动画）
+                // 3. 首页通知栏展开时的全局蒙层
+                if isTodayScheduleExpanded {
+                    Color.black.opacity(0.4)
+                        .ignoresSafeArea()
+                        .zIndex(105) 
+                        .transition(.opacity)
+                        .onTapGesture {
+                            withAnimation(.easeOut(duration: 0.2)) {
+                                isTodayScheduleExpanded = false
+                            }
+                        }
+                }
+
+                // 4. 顶部固定区域 (常驻顶部，不受蒙层影响)
+                VStack(spacing: 0) {
+                    VStack(spacing: 0) {
+                        // 手动避让顶部安全区域（灵动岛/刘海）
+                        Color.clear.frame(height: geometry.safeAreaInsets.top)
+                        
+                        headerView
+                            .padding(.horizontal, 20)
+                            .padding(.top, 8)
+                            .padding(.bottom, 12)
+                        
+                        reminderCard
+                            .padding(.horizontal, 16)
+                            .padding(.bottom, 8)
+                    }
+                    .background(backgroundGray)
+                    .clipShape(RoundedCorner(radius: 24, corners: [.bottomLeft, .bottomRight]))
+                    
+                    Spacer() // 撑开
+                }
+                .ignoresSafeArea(edges: .top) // 关键：让背景忽略顶部安全区域
+                .zIndex(110) // 最高层级
+                
+                // 录音动画覆盖层
                 if inputViewModel.isRecording || inputViewModel.isAnimatingRecordingExit {
                     VoiceRecordingOverlay(
                         isRecording: $inputViewModel.isRecording,
@@ -451,19 +472,160 @@ struct ChatView: View {
             inputViewModel.onStopGenerator = {
                 appState.stopGeneration()
             }
-            
-            // DEMO: 注入示例卡片，方便调试查看（改为 true 启用）
-            if false, appState.chatMessages.isEmpty {
-                appState.addSampleScheduleMessage()
-                
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    appState.addSampleContactMessage()
-                }
-            }
+
+            // 首页通知栏：初始化今日日程
+            bootstrapTodayScheduleNotice()
         }
         .onChange(of: appState.isAgentTyping) { _, newValue in
             inputViewModel.isAgentTyping = newValue
         }
+        // 远端日程变更（创建/更新/删除）后强刷，确保通知栏及时更新
+        .onReceive(NotificationCenter.default.publisher(for: .remoteScheduleDidChange)) { _ in
+            refreshTodaySchedules(force: true)
+        }
+        // App 回到前台时强刷，确保“今天”切换或后台被改动后能及时同步
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+            refreshTodaySchedules(force: true)
+        }
+        // 系统显著时间变化（含跨天/时区变化）时强刷
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in
+            bootstrapTodayScheduleNotice(forceRefresh: true)
+        }
+        // 轻量自动刷新：每分钟触发一次（不强刷，依赖 ScheduleService 缓存 TTL，避免频繁请求）
+        .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { _ in
+            refreshTodaySchedules(force: false)
+        }
+    }
+
+    // MARK: - 首页通知栏：数据同步
+
+    private func bootstrapTodayScheduleNotice(forceRefresh: Bool = false) {
+        let key = todayDayKey()
+        if lastLoadedScheduleDayKey != key {
+            lastLoadedScheduleDayKey = key
+            todayReadIds = loadReadIds(dayKey: key)
+        }
+        refreshTodaySchedules(force: forceRefresh)
+    }
+
+    private func refreshTodaySchedules(force: Bool) {
+        let dayKey = todayDayKey()
+        let base = ScheduleService.ListParams(
+            page: nil,
+            pageSize: nil,
+            startDate: nil,
+            endDate: nil,
+            search: nil,
+            category: nil,
+            relatedMeetingId: nil
+        )
+        
+        Task {
+            // 1) 非强刷：先用缓存秒开（与 TodoListView 一致），避免“看起来没请求/一直空”
+            if !force, let cached = await ScheduleService.peekAllSchedules(maxPages: 5, pageSize: 100, baseParams: base) {
+                let cal = Calendar.current
+                let sorted = cached.value
+                    .filter { cal.isDate($0.startTime, inSameDayAs: Date()) }
+                    .sorted(by: { $0.startTime < $1.startTime })
+                
+                await MainActor.run {
+                    // 跨天时重置“已读”缓存，避免复用昨天状态
+                    if lastLoadedScheduleDayKey != dayKey {
+                        lastLoadedScheduleDayKey = dayKey
+                        todayReadIds = loadReadIds(dayKey: dayKey)
+                    }
+                    todayScheduleEvents = sorted
+                    todayScheduleIsLoading = false
+                    todayScheduleErrorText = nil
+                }
+                
+                // 缓存新鲜就直接返回；否则后台静默强刷
+                if cached.isFresh { return }
+                await refreshTodaySchedulesFromNetwork(base: base, dayKey: dayKey, forceRefresh: true, showError: false)
+                return
+            }
+            
+            // 2) 首次/强刷：走网络
+            await refreshTodaySchedulesFromNetwork(base: base, dayKey: dayKey, forceRefresh: force, showError: true)
+        }
+    }
+
+    @MainActor
+    private func refreshTodaySchedulesFromNetwork(
+        base: ScheduleService.ListParams,
+        dayKey: String,
+        forceRefresh: Bool,
+        showError: Bool
+    ) async {
+        // 跨天时重置“已读”缓存，避免复用昨天状态
+        if lastLoadedScheduleDayKey != dayKey {
+            lastLoadedScheduleDayKey = dayKey
+            todayReadIds = loadReadIds(dayKey: dayKey)
+        }
+        
+        todayScheduleIsLoading = true
+        if showError { todayScheduleErrorText = nil }
+        defer { todayScheduleIsLoading = false }
+        
+        do {
+            // 与 TodoListView 完全一致：分页拉全量，再本地按日期过滤
+            let all = try await ScheduleService.fetchScheduleListAllPages(
+                maxPages: 5,
+                pageSize: 100,
+                baseParams: base,
+                forceRefresh: forceRefresh
+            )
+            let cal = Calendar.current
+            todayScheduleEvents = all
+                .filter { cal.isDate($0.startTime, inSameDayAs: Date()) }
+                .sorted(by: { $0.startTime < $1.startTime })
+        } catch {
+            todayScheduleEvents = []
+            if showError {
+                todayScheduleErrorText = error.localizedDescription
+            }
+        }
+    }
+
+    private func todayDayKey(_ date: Date = Date()) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "zh_CN")
+        f.dateFormat = "yyyy-MM-dd"
+        return f.string(from: date)
+    }
+
+    private func readIdsKey(dayKey: String) -> String {
+        "yuanyuan_today_schedule_read_ids_\(dayKey)"
+    }
+
+    private func scheduleStableId(_ event: ScheduleEvent) -> String {
+        let rid = (event.remoteId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !rid.isEmpty { return "rid:\(rid)" }
+        return "lid:\(event.id.uuidString)"
+    }
+
+    private func loadReadIds(dayKey: String) -> Set<String> {
+        let key = readIdsKey(dayKey: dayKey)
+        let arr = UserDefaults.standard.stringArray(forKey: key) ?? []
+        return Set(arr)
+    }
+
+    private func saveReadIds(dayKey: String, ids: Set<String>) {
+        let key = readIdsKey(dayKey: dayKey)
+        UserDefaults.standard.set(Array(ids), forKey: key)
+    }
+
+    private func markAllReadForToday() {
+        let dayKey = todayDayKey()
+        let all = Set(todayScheduleEvents.map { scheduleStableId($0) })
+        todayReadIds.formUnion(all)
+        saveReadIds(dayKey: dayKey, ids: todayReadIds)
+    }
+
+    private func markRead(_ event: ScheduleEvent) {
+        let dayKey = todayDayKey()
+        todayReadIds.insert(scheduleStableId(event))
+        saveReadIds(dayKey: dayKey, ids: todayReadIds)
     }
     
     // MARK: - Components
@@ -510,30 +672,17 @@ struct ChatView: View {
     
     // MARK: - 提醒卡片
     private var reminderCard: some View {
-        HStack(spacing: 10) {
-            // 日历图标
-            Image(systemName: "calendar")
-                .font(.system(size: 16))
-                .foregroundColor(secondaryGray)
-            
-            // 时间
-            Text("14:00")
-                .font(.system(size: 15))
-                .foregroundColor(secondaryGray)
-            
-            // 内容
-            Text("和张总开会")
-                .font(.system(size: 15))
-                .foregroundColor(primaryGray)
-            
-            Spacer()
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color.white)
-                .shadow(color: Color.black.opacity(0.03), radius: 6, x: 0, y: 2)
+        TodayScheduleNotificationBar(
+            events: todayScheduleEvents,
+            isLoading: todayScheduleIsLoading,
+            errorText: todayScheduleErrorText,
+            isExpanded: $isTodayScheduleExpanded,
+            onTapMarkAllRead: {
+                markAllReadForToday()
+            },
+            onTapRow: { event in
+                markRead(event)
+            }
         )
     }
     
@@ -574,7 +723,8 @@ struct ChatView: View {
                         AIBubble(
                             text: split.before,
                             messageId: message.id,
-                            showActionButtons: showButtonsInBubble,
+                            // 联系人创建的 tool 中间态：不需要“复制/重试”等操作栏，避免干扰 loading UI
+                            showActionButtons: showButtonsInBubble && !isContactToolLoading,
                             isInterrupted: message.isInterrupted,
                             showAvatar: true,
                             onTypingCompleted: {
@@ -1713,4 +1863,15 @@ struct DeleteConfirmationView: View {
 #Preview {
     ChatView(showModuleContainer: .constant(false))
         .environmentObject(AppState())
+}
+
+// MARK: - Helper Shape for Rounded Corners
+struct RoundedCorner: Shape {
+    var radius: CGFloat = .infinity
+    var corners: UIRectCorner = .allCorners
+
+    func path(in rect: CGRect) -> Path {
+        let path = UIBezierPath(roundedRect: rect, byRoundingCorners: corners, cornerRadii: CGSize(width: radius, height: radius))
+        return Path(path.cgPath)
+    }
 }

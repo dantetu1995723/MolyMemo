@@ -9,7 +9,6 @@ struct RemoteScheduleListView: View {
     @State private var errorText: String? = nil
     
     @State private var selectedEvent: ScheduleEvent? = nil
-    @State private var isLoadingDetail: Bool = false
     
     private func isSameRemote(_ a: ScheduleEvent, _ b: ScheduleEvent) -> Bool {
         let ra = (a.remoteId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -106,7 +105,7 @@ struct RemoteScheduleListView: View {
                     Button("关闭") { dismiss() }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("刷新") { Task { await reload() } }
+                    Button("刷新") { Task { await reload(forceRefresh: true) } }
                         .disabled(isLoading)
                 }
             }
@@ -116,13 +115,12 @@ struct RemoteScheduleListView: View {
                 }
             }
             .refreshable {
-                await reload()
+                await reload(forceRefresh: true)
             }
             .sheet(item: $selectedEvent) { _ in
                 // 注意：ScheduleDetailSheet 需要 Binding，所以这里用一个 wrapper
                 RemoteScheduleDetailSheet(
                     event: $selectedEvent,
-                    isLoading: $isLoadingDetail,
                     onCommittedSave: { updated in
                         Task { @MainActor in
                             applyUpdatedEvent(updated)
@@ -141,14 +139,25 @@ struct RemoteScheduleListView: View {
     }
     
     @MainActor
-    private func reload() async {
-        isLoading = true
+    private func reload(forceRefresh: Bool = false) async {
         errorText = nil
+        
+        // 先用缓存：fresh 直接返回；stale 先展示再后台刷新
+        if !forceRefresh, let cached = await ScheduleService.peekScheduleList() {
+            events = cached.value.sorted(by: { $0.startTime < $1.startTime })
+            if cached.isFresh { return }
+            Task { @MainActor in
+                await reload(forceRefresh: true)
+            }
+            return
+        }
+        
+        // 无缓存时才显示 loading（避免每次进入都转圈）
+        if events.isEmpty { isLoading = true }
         defer { isLoading = false }
         
         do {
-            // 默认不带任何过滤条件，方便先看原始返回
-            let list = try await ScheduleService.fetchScheduleList()
+            let list = try await ScheduleService.fetchScheduleList(forceRefresh: forceRefresh)
             events = list.sorted(by: { $0.startTime < $1.startTime })
         } catch {
             errorText = "获取失败：\(error.localizedDescription)"
@@ -167,7 +176,6 @@ private struct RemoteScheduleDetailSheet: View {
     
     /// 注意：这里用 Optional Binding 来驱动 sheet(item:)
     @Binding var event: ScheduleEvent?
-    @Binding var isLoading: Bool
     var onCommittedSave: (ScheduleEvent) -> Void
     var onCommittedDelete: (ScheduleEvent) -> Void
     
@@ -189,16 +197,6 @@ private struct RemoteScheduleDetailSheet: View {
                         onCommittedSave(updated)
                     }
                 )
-                .overlay(alignment: .top) {
-                    if isLoading {
-                        ProgressView("正在获取详情…")
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .background(.ultraThinMaterial)
-                            .clipShape(Capsule())
-                            .padding(.top, 12)
-                    }
-                }
                 .task {
                     await loadDetailIfNeeded()
                 }
@@ -229,15 +227,37 @@ private struct RemoteScheduleDetailSheet: View {
             // 没有 remoteId 就无法拉详情，保留列表信息
             return
         }
+        let trimmed = rid.trimmingCharacters(in: .whitespacesAndNewlines)
         
-        isLoading = true
-        defer { isLoading = false }
+        // 先用缓存：避免每次打开都 loading
+        if let cached = await ScheduleService.peekScheduleDetail(remoteId: trimmed) {
+            var v = cached.value
+            v.id = current.id
+            event = v
+            if cached.isFresh { return }
+            
+            Task { @MainActor in
+                await refreshSilently(remoteId: trimmed, keepLocalId: current.id)
+            }
+            return
+        }
         
+        // 首次无缓存：静默拉取，不展示 loading 弹层（避免进入详情页出现弹窗/浮层）
         do {
-            let detail = try await ScheduleService.fetchScheduleDetail(remoteId: rid, keepLocalId: current.id)
+            let detail = try await ScheduleService.fetchScheduleDetail(remoteId: trimmed, keepLocalId: current.id)
             event = detail
         } catch {
             print("❌ [RemoteScheduleDetailSheet] load detail failed: \(error)")
+        }
+    }
+    
+    @MainActor
+    private func refreshSilently(remoteId: String, keepLocalId: UUID) async {
+        do {
+            let detail = try await ScheduleService.fetchScheduleDetail(remoteId: remoteId, keepLocalId: keepLocalId)
+            event = detail
+        } catch {
+            print("❌ [RemoteScheduleDetailSheet] silent refresh failed: \(error)")
         }
     }
 }

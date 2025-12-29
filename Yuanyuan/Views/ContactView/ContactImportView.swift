@@ -50,156 +50,45 @@ struct ContactImportView: View {
     }
     
     var body: some View {
+        // 统一后端接入：系统通讯录导入/同步已下线（避免读取通讯录权限）。
         NavigationView {
-            ZStack {
-                Color.white.ignoresSafeArea()
-                
-                VStack(spacing: 0) {
-                    // 搜索框
-                    ContactSearchBar(text: $searchText)
-                        .padding(.horizontal, 20)
-                        .padding(.top, 12)
-                        .padding(.bottom, 8)
-                    
-                    // 联系人列表
-                    if isLoading {
-                        VStack(spacing: 20) {
-                            Spacer()
-                            ProgressView()
-                                .scaleEffect(1.5)
-                            Text("正在加载通讯录...")
-                                .font(.system(size: 16, weight: .medium, design: .rounded))
-                                .foregroundColor(Color.black.opacity(0.5))
-                            Spacer()
-                        }
-                    } else if systemContacts.isEmpty {
-                        VStack(spacing: 20) {
-                            Spacer()
-                            Image(systemName: "person.2.slash")
-                                .font(.system(size: 64, weight: .light))
-                                .foregroundColor(Color.black.opacity(0.2))
-                            
-                            Text("通讯录为空")
-                                .font(.system(size: 18, weight: .medium, design: .rounded))
-                                .foregroundColor(Color.black.opacity(0.5))
-                            Spacer()
-                        }
-                    } else {
-                        ScrollView {
-                            LazyVStack(spacing: 8) {
-                                ForEach(Array(filteredContacts.enumerated()), id: \.element.id) { _, contact in
-                                    if let originalIndex = systemContacts.firstIndex(where: { $0.id == contact.id }) {
-                                        SystemContactRow(
-                                            contact: contact,
-                                            isSelected: systemContacts[originalIndex].isSelected,
-                                            themeColor: themeColor
-                                        ) {
-                                            systemContacts[originalIndex].isSelected.toggle()
-                                            // 检查是否需要更新全选状态
-                                            updateSelectAllState()
-                                            HapticFeedback.light()
-                                        }
-                                    }
-                                }
-                            }
-                            .padding(.horizontal, 20)
-                            .padding(.top, 8)
-                            .padding(.bottom, 100)
-                        }
-                    }
-                }
-                
-                // 底部导入按钮
-                if selectedCount > 0 {
-                    VStack {
-                        Spacer()
-                        
-                        Button(action: {
-                            importSelectedContacts()
-                        }) {
-                            HStack(spacing: 10) {
-                                Image(systemName: "square.and.arrow.down.fill")
-                                    .font(.system(size: 20, weight: .bold))
-                                
-                                Text("导入 \(selectedCount) 个联系人")
-                                    .font(.system(size: 17, weight: .bold, design: .rounded))
-                            }
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 18)
-                            .background(
-                                RoundedRectangle(cornerRadius: 24)
-                                    .fill(themeColor)
-                                    .shadow(color: themeColor.opacity(0.4), radius: 20, x: 0, y: 8)
-                            )
-                        }
-                        .buttonStyle(ScaleButtonStyle())
-                        .padding(.horizontal, 24)
-                        .padding(.bottom, 40)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                    }
-                }
+            VStack(spacing: 14) {
+                Spacer()
+
+                Image(systemName: "person.crop.circle.badge.xmark")
+                    .font(.system(size: 56, weight: .light))
+                    .foregroundColor(.black.opacity(0.18))
+
+                Text("已取消系统通讯录导入/同步")
+                    .font(.system(size: 17, weight: .semibold, design: .rounded))
+                    .foregroundColor(.black.opacity(0.78))
+
+                Text("联系人现在统一以「后端人脉」为准，不再读取系统通讯录。")
+                    .font(.system(size: 13))
+                    .foregroundColor(.black.opacity(0.45))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 28)
+
+                Button("关闭") { dismiss() }
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 10)
+                    .background(Capsule().fill(Color.black.opacity(0.08)))
+
+                Spacer()
             }
-            .navigationTitle("从通讯录导入")
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.white.ignoresSafeArea())
+            .navigationTitle("通讯录导入")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(action: { dismiss() }) {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundColor(Color.black.opacity(0.7))
-                            .frame(width: 36, height: 36)
-                            .background(
-                                Circle()
-                                    .fill(Color.white)
-                                    .shadow(color: Color.black.opacity(0.08), radius: 8, x: 0, y: 2)
-                            )
-                    }
-                    .buttonStyle(ScaleButtonStyle())
-                }
-                
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    if !systemContacts.isEmpty {
-                        Button(action: {
-                            selectAll.toggle()
-                            for index in systemContacts.indices {
-                                // 只选择非重复的联系人
-                                if !systemContacts[index].isDuplicate {
-                                    systemContacts[index].isSelected = selectAll
-                                }
-                            }
-                            HapticFeedback.light()
-                        }) {
-                            Text(selectAll ? "取消全选" : "全选")
-                                .font(.system(size: 16, weight: .bold, design: .rounded))
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 8)
-                                .background(
-                                    Capsule()
-                                        .fill(themeColor)
-                                )
-                        }
-                        .buttonStyle(ScaleButtonStyle())
+                        Image(systemName: "xmark")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(Color.black.opacity(0.6))
                     }
                 }
-            }
-            .alert("权限提示", isPresented: $showError) {
-                if errorMessage.contains("系统设置") {
-                    Button("去设置") {
-                        if let url = URL(string: UIApplication.openSettingsURLString) {
-                            UIApplication.shared.open(url)
-                        }
-                    }
-                    Button("取消", role: .cancel) { }
-                } else {
-                    Button("确定", role: .cancel) { }
-                }
-            } message: {
-                Text(errorMessage)
-            }
-            .onAppear {
-                loadContacts()
             }
         }
     }

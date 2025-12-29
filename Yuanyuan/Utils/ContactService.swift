@@ -24,12 +24,56 @@ enum ContactService {
         }
     }
     
-    struct ListParams: Equatable {
+    struct ListParams: Equatable, Hashable {
         var page: Int? = nil
         var pageSize: Int? = nil
         var search: String? = nil
         /// 后端字段：relationship_type
         var relationshipType: String? = nil
+    }
+    
+    // MARK: - Cache
+    
+    private struct AllPagesKey: Hashable {
+        var base: ListParams
+        var maxPages: Int
+        var pageSize: Int
+    }
+    
+    private static let listCache = ExpiringAsyncCache<ListParams, [ContactCard]>()
+    private static let detailCache = ExpiringAsyncCache<String, ContactCard>()
+    private static let allPagesCache = ExpiringAsyncCache<AllPagesKey, [ContactCard]>()
+    
+    /// 默认：列表 2 分钟、详情 10 分钟
+    private static let defaultListTTL: TimeInterval = 120
+    private static let defaultDetailTTL: TimeInterval = 600
+    private static let defaultAllPagesTTL: TimeInterval = 120
+    
+    static func invalidateContactCaches() async {
+        await listCache.invalidateAll()
+        await detailCache.invalidateAll()
+        await allPagesCache.invalidateAll()
+    }
+    
+    static func peekContactList(params: ListParams = .init()) async -> (value: [ContactCard], isFresh: Bool)? {
+        if let s = await listCache.peek(params) { return (s.value, s.isFresh) }
+        return nil
+    }
+    
+    static func peekContactDetail(remoteId: String) async -> (value: ContactCard, isFresh: Bool)? {
+        let k = remoteId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !k.isEmpty else { return nil }
+        if let s = await detailCache.peek(k) { return (s.value, s.isFresh) }
+        return nil
+    }
+    
+    static func peekAllContacts(maxPages: Int = 5, pageSize: Int = 100, baseParams: ListParams = .init()) async -> (value: [ContactCard], isFresh: Bool)? {
+        var base = baseParams
+        base.page = nil
+        base.pageSize = nil
+        let k = AllPagesKey(base: base, maxPages: maxPages, pageSize: pageSize)
+        if let s = await allPagesCache.peek(k) { return (s.value, s.isFresh) }
+        return nil
     }
     
     private enum AuthKeys {
@@ -90,34 +134,152 @@ enum ContactService {
         guard t.count > 8 else { return "***" }
         return "\(t.prefix(4))***\(t.suffix(4))"
     }
+
+    private static var debugLogsEnabled: Bool {
+#if DEBUG
+        return true
+#elseif targetEnvironment(simulator)
+        // ✅ 你要求用 iPhone 模拟器调试：在模拟器上默认开启网络原始日志，方便直接看后端字段
+        return true
+#else
+        return false
+#endif
+    }
+
+    /// 将完整原始日志落盘（避免 Xcode 控制台截断）
+    private static var debugDumpLogsToFileEnabled: Bool {
+#if DEBUG
+        // 默认开启：Debug 下更需要“完整原始日志”
+        return true
+#elseif targetEnvironment(simulator)
+        // 模拟器默认也开启
+        return true
+#else
+        return false
+#endif
+    }
+
+    private static func debugLogsDirectoryURL() -> URL? {
+        guard debugDumpLogsToFileEnabled else { return nil }
+        let fm = FileManager.default
+        guard let docs = fm.urls(for: .documentDirectory, in: .userDomainMask).first else { return nil }
+        let dir = docs.appendingPathComponent("Yuanyuan-NetworkLogs", isDirectory: true)
+        if !fm.fileExists(atPath: dir.path) {
+            try? fm.createDirectory(at: dir, withIntermediateDirectories: true, attributes: nil)
+        }
+        return dir
+    }
+
+    private static func debugWriteLogFile(prefix: String, tag: String, text: String) {
+        guard let dir = debugLogsDirectoryURL() else { return }
+        let ts = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
+        let safeTag = tag.replacingOccurrences(of: "/", with: "_")
+        let filename = "\(ts)_ContactService_\(safeTag)_\(prefix).log"
+        let url = dir.appendingPathComponent(filename)
+        do {
+            try text.data(using: .utf8)?.write(to: url, options: [.atomic])
+            print("🧾 [ContactService:\(tag)] 已落盘完整原始日志：\(url.path)")
+        } catch {
+            print("⚠️ [ContactService:\(tag)] 日志落盘失败：\(error)")
+        }
+    }
     
     private static func debugPrintRequest(_ request: URLRequest, tag: String) {
+        guard debugLogsEnabled else { return }
         let method = request.httpMethod ?? "GET"
         let url = request.url?.absoluteString ?? "(nil)"
         print("🌐 [ContactService:\(tag)] \(method) \(url)")
         let headers = request.allHTTPHeaderFields ?? [:]
-        if headers.isEmpty { return }
-        print("🌐 [ContactService:\(tag)] headers:")
-        for (k, v) in headers.sorted(by: { $0.key < $1.key }) {
-            if k.lowercased() == "x-session-id" {
-                print("  \(k): \(maskedSessionId(v))")
-            } else {
-                print("  \(k): \(v)")
+        if !headers.isEmpty {
+            print("🌐 [ContactService:\(tag)] headers:")
+            for (k, v) in headers.sorted(by: { $0.key < $1.key }) {
+                if k.lowercased() == "x-session-id" {
+                    print("  \(k): \(maskedSessionId(v))")
+                } else {
+                    print("  \(k): \(v)")
+                }
             }
+        }
+        if let body = request.httpBody, !body.isEmpty {
+            let raw = String(data: body, encoding: .utf8) ?? "<non-utf8 body: \(body.count) bytes>"
+            print("🌐 [ContactService:\(tag)] raw request body:\n\(raw)")
+        }
+
+        if debugDumpLogsToFileEnabled {
+            var lines: [String] = []
+            lines.append("[REQUEST] \(method) \(url)")
+            if !headers.isEmpty {
+                lines.append("[REQUEST_HEADERS]")
+                for (k, v) in headers.sorted(by: { $0.key < $1.key }) {
+                    if k.lowercased() == "x-session-id" {
+                        lines.append("\(k): \(maskedSessionId(v))")
+                    } else {
+                        lines.append("\(k): \(v)")
+                    }
+                }
+            }
+            if let body = request.httpBody, !body.isEmpty {
+                let raw = String(data: body, encoding: .utf8) ?? "<non-utf8 body: \(body.count) bytes>"
+                lines.append("[REQUEST_BODY_UTF8]")
+                lines.append(raw)
+            } else {
+                lines.append("[REQUEST_BODY] <empty>")
+            }
+            debugWriteLogFile(prefix: "request", tag: tag, text: lines.joined(separator: "\n"))
         }
     }
     
     private static func debugPrintResponse(data: Data, response: URLResponse?, error: Error?, tag: String) {
+        guard debugLogsEnabled else { return }
         if let error {
             print("❌ [ContactService:\(tag)] error=\(error)")
         }
         if let http = response as? HTTPURLResponse {
             print("🌐 [ContactService:\(tag)] status=\(http.statusCode)")
+            let headers = http.allHeaderFields
+            if !headers.isEmpty {
+                print("🌐 [ContactService:\(tag)] response headers:")
+                let pairs = headers.compactMap { (k, v) -> (String, String)? in
+                    let ks = String(describing: k)
+                    let vs = String(describing: v)
+                    return (ks, vs)
+                }.sorted(by: { $0.0 < $1.0 })
+                for (k, v) in pairs {
+                    print("  \(k): \(v)")
+                }
+            }
         } else {
             print("🌐 [ContactService:\(tag)] status=(non-http)")
         }
         let body = String(data: data, encoding: .utf8) ?? "<non-utf8 body: \(data.count) bytes>"
-        print("🌐 [ContactService:\(tag)] raw body:\n\(body)")
+        print("🌐 [ContactService:\(tag)] raw response body (\(data.count) bytes):\n\(body)")
+
+        if debugDumpLogsToFileEnabled {
+            var lines: [String] = []
+            if let http = response as? HTTPURLResponse {
+                lines.append("[RESPONSE] status=\(http.statusCode)")
+                let pairs = http.allHeaderFields.compactMap { (k, v) -> (String, String)? in
+                    let ks = String(describing: k)
+                    let vs = String(describing: v)
+                    return (ks, vs)
+                }.sorted(by: { $0.0 < $1.0 })
+                if !pairs.isEmpty {
+                    lines.append("[RESPONSE_HEADERS]")
+                    for (k, v) in pairs {
+                        lines.append("\(k): \(v)")
+                    }
+                }
+            } else {
+                lines.append("[RESPONSE] status=(non-http)")
+            }
+            if let error {
+                lines.append("[ERROR]")
+                lines.append(String(describing: error))
+            }
+            lines.append("[RESPONSE_BODY_UTF8] (\(data.count) bytes)")
+            lines.append(body)
+            debugWriteLogFile(prefix: "response", tag: tag, text: lines.joined(separator: "\n"))
+        }
     }
     
     private static func makeURL(path: String, queryItems: [URLQueryItem]) throws -> URL {
@@ -179,11 +341,40 @@ enum ContactService {
     }
     
     private static func string(_ dict: [String: Any], _ keys: [String]) -> String? {
-        for k in keys {
-            if let v = dict[k] as? String {
-                let t = v.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !t.isEmpty { return t }
+        func coerceToString(_ any: Any?) -> String? {
+            guard let any else { return nil }
+            if any is NSNull { return nil }
+            if let s = any as? String {
+                let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+                return t.isEmpty ? nil : t
             }
+            if let n = any as? Int { return String(n) }
+            if let n = any as? Double {
+                // 尽量避免 1.0 这种尾巴影响阅读
+                if n.rounded() == n { return String(Int(n)) }
+                return String(n)
+            }
+            if let b = any as? Bool { return b ? "true" : "false" }
+            if let dict = any as? [String: Any] {
+                // 常见：{ "text": "..." } / { "content": "..." } / { "value": "..." }
+                let preferred = ["text", "content", "value", "impression", "notes", "note", "remark"]
+                for k in preferred {
+                    if let v = coerceToString(dict[k]) { return v }
+                }
+                return nil
+            }
+            if let arr = any as? [Any] {
+                let parts = arr.compactMap { coerceToString($0) }.filter { !$0.isEmpty }
+                if parts.isEmpty { return nil }
+                return parts.joined(separator: "\n")
+            }
+            // 兜底：用描述字符串（避免直接丢字段）
+            let s = String(describing: any).trimmingCharacters(in: .whitespacesAndNewlines)
+            return s.isEmpty ? nil : s
+        }
+
+        for k in keys {
+            if let t = coerceToString(dict[k]) { return t }
         }
         return nil
     }
@@ -217,7 +408,16 @@ enum ContactService {
     
     // MARK: - API
     
-    static func fetchContactList(params: ListParams = .init()) async throws -> [ContactCard] {
+    static func fetchContactList(params: ListParams = .init(), forceRefresh: Bool = false) async throws -> [ContactCard] {
+        if forceRefresh {
+            await listCache.invalidate(params)
+        }
+        return try await listCache.getOrFetch(params, ttl: defaultListTTL) {
+            try await fetchContactListFromNetwork(params: params)
+        }
+    }
+    
+    private static func fetchContactListFromNetwork(params: ListParams = .init()) async throws -> [ContactCard] {
         var query: [URLQueryItem] = []
         if let page = params.page { query.append(URLQueryItem(name: "page", value: String(page))) }
         if let pageSize = params.pageSize { query.append(URLQueryItem(name: "page_size", value: String(pageSize))) }
@@ -253,7 +453,27 @@ enum ContactService {
         }
     }
     
-    static func fetchContactDetail(remoteId: String, keepLocalId: UUID? = nil) async throws -> ContactCard {
+    static func fetchContactDetail(remoteId: String, keepLocalId: UUID? = nil, forceRefresh: Bool = false) async throws -> ContactCard {
+        let trimmed = remoteId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw ContactServiceError.parseFailed("remoteId empty") }
+        
+        if forceRefresh {
+            await detailCache.invalidate(trimmed)
+        }
+        
+        let cached = try await detailCache.getOrFetch(trimmed, ttl: defaultDetailTTL) {
+            try await fetchContactDetailFromNetwork(remoteId: trimmed, keepLocalId: keepLocalId)
+        }
+        
+        if let keepLocalId, cached.id != keepLocalId {
+            var v = cached
+            v.id = keepLocalId
+            return v
+        }
+        return cached
+    }
+    
+    private static func fetchContactDetailFromNetwork(remoteId: String, keepLocalId: UUID? = nil) async throws -> ContactCard {
         let trimmed = remoteId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw ContactServiceError.parseFailed("remoteId empty") }
         
@@ -292,6 +512,36 @@ enum ContactService {
         }
     }
     
+    /// 常用：拉“全量后端人脉（自动翻页）”并缓存（列表页目前就是这么做的）
+    static func fetchContactListAllPages(
+        maxPages: Int = 5,
+        pageSize: Int = 100,
+        baseParams: ListParams = .init(),
+        forceRefresh: Bool = false
+    ) async throws -> [ContactCard] {
+        var base = baseParams
+        base.page = nil
+        base.pageSize = nil
+        let k = AllPagesKey(base: base, maxPages: maxPages, pageSize: pageSize)
+        
+        if forceRefresh {
+            await allPagesCache.invalidate(k)
+        }
+        
+        return try await allPagesCache.getOrFetch(k, ttl: defaultAllPagesTTL) {
+            var all: [ContactCard] = []
+            for page in 1...maxPages {
+                var p = base
+                p.page = page
+                p.pageSize = pageSize
+                let list = try await fetchContactListFromNetwork(params: p)
+                all.append(contentsOf: list)
+                if list.count < pageSize { break }
+            }
+            return all
+        }
+    }
+    
     /// 更新人脉：PUT /api/v1/contacts/{id}
     static func updateContact(remoteId: String, payload: [String: Any], keepLocalId: UUID? = nil) async throws -> ContactCard? {
         let trimmed = remoteId.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -315,16 +565,108 @@ enum ContactService {
                 throw ContactServiceError.httpStatus(http.statusCode, body)
             }
             
-            guard !data.isEmpty else { return nil }
+            guard !data.isEmpty else {
+                await detailCache.invalidate(trimmed)
+                await listCache.invalidateAll()
+                await allPagesCache.invalidateAll()
+                return nil
+            }
             let json = try decodeJSON(data)
             if let dict = json as? [String: Any] {
-                if let d = dict["data"] as? [String: Any] { return parseContactCard(d, keepLocalId: keepLocalId) }
-                return parseContactCard(dict, keepLocalId: keepLocalId)
+                if let d = dict["data"] as? [String: Any], let c = parseContactCard(d, keepLocalId: keepLocalId) {
+                    await detailCache.set(trimmed, value: c, ttl: defaultDetailTTL)
+                    await listCache.invalidateAll()
+                    await allPagesCache.invalidateAll()
+                    return c
+                }
+                if let c = parseContactCard(dict, keepLocalId: keepLocalId) {
+                    await detailCache.set(trimmed, value: c, ttl: defaultDetailTTL)
+                    await listCache.invalidateAll()
+                    await allPagesCache.invalidateAll()
+                    return c
+                }
+                await detailCache.invalidate(trimmed)
+                await listCache.invalidateAll()
+                await allPagesCache.invalidateAll()
+                return nil
             }
-            if let arr = json as? [[String: Any]], let first = arr.first { return parseContactCard(first, keepLocalId: keepLocalId) }
+            if let arr = json as? [[String: Any]], let first = arr.first, let c = parseContactCard(first, keepLocalId: keepLocalId) {
+                await detailCache.set(trimmed, value: c, ttl: defaultDetailTTL)
+                await listCache.invalidateAll()
+                await allPagesCache.invalidateAll()
+                return c
+            }
+            await detailCache.invalidate(trimmed)
+            await listCache.invalidateAll()
+            await allPagesCache.invalidateAll()
             return nil
         } catch {
             print("❌ [ContactService:update] threw error=\(error)")
+            throw error
+        }
+    }
+
+    /// 创建人脉：POST /api/v1/contacts
+    /// - Returns: 若后端返回 body，则解析为 ContactCard；若 body 为空则返回 nil（但会视为创建成功）。
+    static func createContact(payload: [String: Any], keepLocalId: UUID? = nil) async throws -> ContactCard? {
+        let url = try makeURL(path: listPath, queryItems: [])
+        var request = URLRequest(url: url, timeoutInterval: 30)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        try applyCommonHeaders(to: &request)
+        request.httpBody = try JSONSerialization.data(withJSONObject: payload, options: [])
+        debugPrintRequest(request, tag: "create")
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            debugPrintResponse(data: data, response: response, error: nil, tag: "create")
+
+            guard let http = response as? HTTPURLResponse else { throw ContactServiceError.invalidResponse }
+            if !(200...299).contains(http.statusCode) {
+                let body = String(data: data, encoding: .utf8) ?? ""
+                throw ContactServiceError.httpStatus(http.statusCode, body)
+            }
+
+            // 后端可能返回空 body（例如 204/200 with empty）——仍视为成功，但需要调用方决定是否再拉详情
+            guard !data.isEmpty else {
+                await listCache.invalidateAll()
+                await allPagesCache.invalidateAll()
+                return nil
+            }
+
+            let json = try decodeJSON(data)
+            if let dict = json as? [String: Any] {
+                if let d = dict["data"] as? [String: Any], let c = parseContactCard(d, keepLocalId: keepLocalId) {
+                    if let rid = c.remoteId?.trimmingCharacters(in: .whitespacesAndNewlines), !rid.isEmpty {
+                        await detailCache.set(rid, value: c, ttl: defaultDetailTTL)
+                    }
+                    await listCache.invalidateAll()
+                    await allPagesCache.invalidateAll()
+                    return c
+                }
+                if let c = parseContactCard(dict, keepLocalId: keepLocalId) {
+                    if let rid = c.remoteId?.trimmingCharacters(in: .whitespacesAndNewlines), !rid.isEmpty {
+                        await detailCache.set(rid, value: c, ttl: defaultDetailTTL)
+                    }
+                    await listCache.invalidateAll()
+                    await allPagesCache.invalidateAll()
+                    return c
+                }
+            }
+            if let arr = json as? [[String: Any]], let first = arr.first, let c = parseContactCard(first, keepLocalId: keepLocalId) {
+                if let rid = c.remoteId?.trimmingCharacters(in: .whitespacesAndNewlines), !rid.isEmpty {
+                    await detailCache.set(rid, value: c, ttl: defaultDetailTTL)
+                }
+                await listCache.invalidateAll()
+                await allPagesCache.invalidateAll()
+                return c
+            }
+
+            await listCache.invalidateAll()
+            await allPagesCache.invalidateAll()
+            return nil
+        } catch {
+            print("❌ [ContactService:create] threw error=\(error)")
             throw error
         }
     }
@@ -349,6 +691,10 @@ enum ContactService {
                 let body = String(data: data, encoding: .utf8) ?? ""
                 throw ContactServiceError.httpStatus(http.statusCode, body)
             }
+            
+            await detailCache.invalidate(trimmed)
+            await listCache.invalidateAll()
+            await allPagesCache.invalidateAll()
         } catch {
             print("❌ [ContactService:delete] threw error=\(error)")
             throw error

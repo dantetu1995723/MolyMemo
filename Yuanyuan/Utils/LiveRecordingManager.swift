@@ -699,8 +699,9 @@ class LiveRecordingManager: ObservableObject {
     }
     
     private func ensureRecordingsFolder() -> URL {
-        let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let folderURL = documentsURL.appendingPathComponent("MeetingRecordings", isDirectory: true)
+        // 统一后端接入：录音文件不应持久化在 Documents，改用临时目录（可被系统回收，且会在启动时清理）。
+        let baseURL = FileManager.default.temporaryDirectory
+        let folderURL = baseURL.appendingPathComponent("MeetingRecordings", isDirectory: true)
         
         if !FileManager.default.fileExists(atPath: folderURL.path) {
             do {

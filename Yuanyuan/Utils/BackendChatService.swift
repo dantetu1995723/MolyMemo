@@ -89,6 +89,7 @@ final class BackendChatService {
             var sseDataLines: [String] = []
             var parsedChunks: [[String: Any]] = []
             var rawFallbackLines: [String] = [] // 兜底：如果解析不出 chunk，最后当整包再 parse
+            var rawOriginalLines: [String] = [] // 原始：保留后端逐行输出（含空行），用于完整打印/落盘
             var latestStructured: BackendChatStructuredOutput? = nil
 
             func emitChunk(_ obj: [String: Any]) async {
@@ -122,6 +123,7 @@ final class BackendChatService {
             do {
                 for try await line in bytes.lines {
                     if Task.isCancelled { throw CancellationError() }
+                    rawOriginalLines.append(line)
 
                     let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
                     if !trimmedLine.isEmpty {
@@ -151,7 +153,11 @@ final class BackendChatService {
 
 #if DEBUG
                             if BackendChatConfig.debugLogStreamEvents {
-                                print("📡 [SSE data] \(truncate(redactBase64(payload), limit: 520))")
+                                if BackendChatConfig.debugLogFullResponse {
+                                    print("📡 [SSE data RAW] \(payload)")
+                                } else {
+                                    print("📡 [SSE data] \(truncate(redactBase64(payload), limit: 520))")
+                                }
                             }
 #endif
 
@@ -173,7 +179,11 @@ final class BackendChatService {
 
 #if DEBUG
                         if BackendChatConfig.debugLogStreamEvents {
-                            print("🧱 [NDJSON line] \(truncate(redactBase64(trimmedLine), limit: 520))")
+                            if BackendChatConfig.debugLogFullResponse {
+                                print("🧱 [NDJSON line RAW] \(trimmedLine)")
+                            } else {
+                                print("🧱 [NDJSON line] \(truncate(redactBase64(trimmedLine), limit: 520))")
+                            }
                         }
 #endif
 
@@ -203,6 +213,17 @@ final class BackendChatService {
                 // 用户中止：不回调 onError，交给上层 stopGeneration 处理 UI
                 return
             }
+
+#if DEBUG
+            // ✅ 聊天联调：打印“原始后端输出”（完整/落盘），不依赖后续 parseStructuredOutput 是否命中
+            if BackendChatConfig.debugLogFullResponse || BackendChatConfig.debugDumpResponseToFile {
+                let rawStream = rawOriginalLines.joined(separator: "\n")
+                print("\n========== 📥 Backend Chat Raw Stream (joined lines) ==========")
+                print("Raw(\(rawStream.count)):")
+                debugPrintResponseBody(rawStream)
+                print("==============================================================\n")
+            }
+#endif
 
             // 最终：如果流式解析成功，直接用最新结构化结果完成；否则兜底整包解析
             if let structured = latestStructured, !structured.isEmpty {
@@ -251,7 +272,10 @@ final class BackendChatService {
         let raw = String(data: data, encoding: .utf8) ?? ""
 
 #if DEBUG
-        if BackendChatConfig.debugLogChunkSummary {
+        if BackendChatConfig.debugLogFullResponse || BackendChatConfig.debugDumpResponseToFile {
+            print("🔎 [BackendChat] parseStructuredOutput raw(\(raw.count)):")
+            debugPrintResponseBody(raw)
+        } else if BackendChatConfig.debugLogChunkSummary {
             let preview = truncate(redactBase64(raw), limit: 420)
             print("🔎 [BackendChat] parseStructuredOutput raw(\(raw.count)) preview: \(preview)")
         }
@@ -514,14 +538,22 @@ final class BackendChatService {
             rawImage: nil
         )
 
-        // tool 返回 id：可能是 uuid / 数字 / 字符串；remoteId 用于后续详情/更新/删除
-        if let idString = dict["id"] as? String {
-            let trimmed = idString.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmed.isEmpty { card.remoteId = trimmed }
-            if let id = UUID(uuidString: trimmed) { card.id = id }
+        // tool 返回 id：字段名可能是 id/contact_id/remote_id/remoteId；值可能是 uuid / 数字 / 字符串
+        // remoteId 用于后续详情/更新/删除；若它本身是 UUID 且 card.id 未被强制指定，则用它稳定映射本地 id
+        if let rid = dict.string(forAnyOf: ["id", "contact_id", "remote_id", "remoteId"])?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !rid.isEmpty
+        {
+            card.remoteId = rid
+            if let u = UUID(uuidString: rid) {
+                card.id = u
+            }
         } else if let idInt = dict["id"] as? Int {
             card.remoteId = String(idInt)
         } else if let idDouble = dict["id"] as? Double {
+            card.remoteId = String(Int(idDouble))
+        } else if let idInt = dict["contact_id"] as? Int {
+            card.remoteId = String(idInt)
+        } else if let idDouble = dict["contact_id"] as? Double {
             card.remoteId = String(Int(idDouble))
         }
         return card
@@ -1068,11 +1100,37 @@ final class BackendChatService {
 
 private extension Dictionary where Key == String, Value == Any {
     func string(forAnyOf keys: [String]) -> String? {
-        for k in keys {
-            if let v = self[k] as? String {
-                let t = v.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !t.isEmpty { return t }
+        func coerceToString(_ any: Any?) -> String? {
+            guard let any else { return nil }
+            if any is NSNull { return nil }
+            if let s = any as? String {
+                let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+                return t.isEmpty ? nil : t
             }
+            if let n = any as? Int { return String(n) }
+            if let n = any as? Double {
+                if n.rounded() == n { return String(Int(n)) }
+                return String(n)
+            }
+            if let b = any as? Bool { return b ? "true" : "false" }
+            if let dict = any as? [String: Any] {
+                let preferred = ["text", "content", "value", "impression", "notes", "note", "remark"]
+                for k in preferred {
+                    if let v = coerceToString(dict[k]) { return v }
+                }
+                return nil
+            }
+            if let arr = any as? [Any] {
+                let parts = arr.compactMap { coerceToString($0) }.filter { !$0.isEmpty }
+                if parts.isEmpty { return nil }
+                return parts.joined(separator: "\n")
+            }
+            let s = String(describing: any).trimmingCharacters(in: .whitespacesAndNewlines)
+            return s.isEmpty ? nil : s
+        }
+
+        for k in keys {
+            if let t = coerceToString(self[k]) { return t }
         }
         return nil
     }
