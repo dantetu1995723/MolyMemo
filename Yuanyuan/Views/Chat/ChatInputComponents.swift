@@ -8,9 +8,9 @@ struct ToolboxButton: View {
     var body: some View {
         Button(action: onTap) {
             Image(systemName: "shippingbox")
-                .font(.system(size: 18))
+                .font(.system(size: 20))
                 .foregroundColor(Color(hex: "666666")) // Reverted to 666666
-                .frame(width: 44, height: 44)
+                .frame(width: 52, height: 52)
                 .background(
                     Circle()
                         .fill(Color(hex: "F7F8FA"))

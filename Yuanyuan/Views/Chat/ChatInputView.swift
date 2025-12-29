@@ -32,12 +32,16 @@ struct ChatInputView: View {
                     inputContainer
                         .opacity(viewModel.isRecording ? 0 : 1)
                 }
-                .frame(maxWidth: .infinity, minHeight: 44)
+                .frame(maxWidth: .infinity, minHeight: 52)
                 
                 // Right: Toolbox Button
                 if !isLocked && viewModel.inputText.isEmpty && viewModel.selectedImage == nil {
                     ToolboxButton(onTap: { viewModel.onBoxTap?() })
                         .opacity(viewModel.isRecording ? 0 : 1)
+                        .onDisappear {
+                            // 隐藏时清空 frame，避免录音动画误认存在外部按钮
+                            viewModel.toolboxFrame = .zero
+                        }
                         .background(
                             GeometryReader { geo in
                                 Color.clear
@@ -164,7 +168,7 @@ struct ChatInputView: View {
                     .disabled(isLocked)
                     .opacity(isLocked ? 0.4 : 1)
                     .padding(.leading, 8)
-                    .padding(.bottom, 6)
+                    .padding(.bottom, 10)
                 } else {
                     // 有图片时，左侧留出间距 (图中标注 12)
                     Spacer().frame(width: 12)
@@ -182,8 +186,8 @@ struct ChatInputView: View {
                 TextField("发送消息或按住说话", text: $viewModel.inputText, axis: .vertical)
                     .font(.system(size: 16))
                     .padding(.horizontal, 8)
-                    .padding(.vertical, 10)
-                    .frame(minHeight: 44)
+                    .padding(.vertical, 12)
+                    .frame(minHeight: 52)
                     .lineLimit(3, reservesSpace: false) // 限制最大3行，超过后滚动
                     .focused($isFocused)
                     .allowsHitTesting(!interceptTextFieldTouches)
@@ -207,7 +211,7 @@ struct ChatInputView: View {
                         .frame(width: 32, height: 32)
                     }
                     .padding(.trailing, 8)
-                    .padding(.bottom, 6)
+                    .padding(.bottom, 10)
                 } else if !viewModel.inputText.isEmpty || viewModel.selectedImage != nil {
                     Button(action: viewModel.sendMessage) {
                         Image(systemName: "paperplane.fill")
@@ -217,7 +221,7 @@ struct ChatInputView: View {
                             .background(Circle().fill(Color.blue))
                     }
                     .padding(.trailing, 12)
-                    .padding(.bottom, 8)
+                    .padding(.bottom, 12)
                 }
             }
         }
@@ -265,12 +269,12 @@ struct ChatInputView: View {
         
         // 排除按钮区域，避免干扰按钮点击
         let startX = value.startLocation.x
-        // 加号按钮区域 (左侧约 44px)
-        if startX < 44 { return }
+        // 加号按钮区域 (左侧约 52px)
+        if startX < 52 { return }
         // 右侧按钮区域（Stop 或 Send）
         // 这里同样不要用 hasContent，避免发送后状态变化导致误判
         let inputWidth = viewModel.inputFrame.width
-        if inputWidth > 0, startX > (inputWidth - 44) { return }
+        if inputWidth > 0, startX > (inputWidth - 52) { return }
         
         // 记录一次用户触摸（用于允许随后的聚焦）
         if !isPressing {
@@ -315,8 +319,8 @@ struct ChatInputView: View {
         // 因为“发送”会立刻清空 inputText，导致 hasContent 在手势 ended 时变为 false，
         // 从而误把“点发送按钮”当成“点空白区域”，进而把输入框又 focus 回来。
         let inputWidth = viewModel.inputFrame.width
-        let isInRightButtonArea = (inputWidth > 0) ? (startX > (inputWidth - 44)) : false
-        if startX < 44 || isInRightButtonArea {
+        let isInRightButtonArea = (inputWidth > 0) ? (startX > (inputWidth - 52)) : false
+        if startX < 52 || isInRightButtonArea {
             isPressing = false
             pressStartTime = nil
             return

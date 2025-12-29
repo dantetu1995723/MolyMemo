@@ -7,19 +7,18 @@ struct StickyBallAnimationView: View {
     var isCanceling: Bool = false
     /// true：球 -> 输入框（逆向动画）
     var isReversing: Bool = false
-    var audioPower: CGFloat = 0.0  // 0 = 静音，>0 = 说话中
+    var audioPower: CGFloat = 0.0  // 0 = 静音，>0 = 说话中（已在外部平滑处理）
     var onComplete: () -> Void
     var onReverseComplete: (() -> Void)? = nil
     
     @State private var startTime = Date()
-    @State private var smoothPower: CGFloat = 0.0  // 平滑过渡的音频值
     
     // 动画时长常量
-    // 说明：这里同时影响“输入框->球”和“球->输入框”的速度
-    private let turnBlueDuration: Double = 0.08
-    private let mergeDuration: Double = 0.24
-    private let holdDuration: Double = 0.03
-    private let shrinkToBallDuration: Double = 0.36
+    // 说明：这里同时影响"输入框->球"和"球->输入框"的速度
+    private let turnBlueDuration: Double = 0.05
+    private let mergeDuration: Double = 0.15
+    private let holdDuration: Double = 0.02
+    private let shrinkToBallDuration: Double = 0.25
     
     @State private var introFinished = false
     @State private var didTriggerComplete = false
@@ -38,7 +37,8 @@ struct StickyBallAnimationView: View {
                 let elapsed = isReversing ? max(0, totalDuration - rawElapsed) : rawElapsed
                 
                 let safeInputFrame = inputFrame.width > 0 ? inputFrame : CGRect(x: 16, y: size.height - 100, width: size.width - 80, height: 44)
-                let safeToolboxFrame = toolboxFrame.width > 0 ? toolboxFrame : CGRect(x: size.width - 60, y: size.height - 100, width: 44, height: 44)
+                let hasToolbox = toolboxFrame.width > 1 && toolboxFrame.height > 1
+                let safeToolboxFrame = hasToolbox ? toolboxFrame : .zero
                 
                 if elapsed < turnBlueDuration {
                     // --- 阶段 1: 仅变色 (清晰模式) ---
@@ -50,7 +50,7 @@ struct StickyBallAnimationView: View {
                     context.drawLayer { ctx in
                         // 融合阶段使用更小的模糊 (6pt)，确保衔接处不产生多余的"肥油"
                         let isMerging = elapsed < turnBlueDuration + mergeDuration
-                        ctx.addFilter(.blur(radius: isMerging ? 6 : 12))
+                        ctx.addFilter(.blur(radius: (isMerging && hasToolbox) ? 6 : 12))
                         
                         if isMerging {
                             // 阶段 2: 粘滞融合 (现在带滤镜，更水润)
@@ -95,12 +95,6 @@ struct StickyBallAnimationView: View {
                     }
                 }
             }
-            .onChange(of: audioPower) { _, newValue in
-                // 平滑过渡音频值
-                withAnimation(.linear(duration: 0.08)) {
-                    smoothPower = newValue
-                }
-            }
         }
         .ignoresSafeArea()
         .onAppear {
@@ -127,7 +121,7 @@ struct StickyBallAnimationView: View {
         let absoluteTime = Date().timeIntervalSinceReferenceDate
         
         // 根据是否有声音选择不同的绘制模式
-        if smoothPower > 0.05 {
+        if audioPower > 0.05 {
             // === 说话模式：多球不规则扩散（如截图所示）===
             drawSpeakingBlob(context: context, centerX: centerX, centerY: centerY, 
                            bigRadius: bigRadius, progress: progress, time: absoluteTime)
@@ -166,7 +160,7 @@ struct StickyBallAnimationView: View {
     private func drawSpeakingBlob(context: GraphicsContext, centerX: CGFloat, centerY: CGFloat,
                                   bigRadius: CGFloat, progress: CGFloat, time: TimeInterval) {
         // 主球：带轻微脉冲
-        let pulse = sin(time * 3.0) * 3.0 * smoothPower
+        let pulse = sin(time * 3.0) * 3.0 * audioPower
         let mainRadius = (bigRadius + pulse) * progress
         
         let mainRect = CGRect(x: centerX - mainRadius, y: centerY - mainRadius,
@@ -190,10 +184,10 @@ struct StickyBallAnimationView: View {
             let dynamicAngle = config.baseAngle + time * config.speed * 0.3 + sin(time * 2.5 + config.phase) * 0.15
             
             // 动态轨道半径：随音频扩张
-            let orbitRadius = (config.orbitBase + smoothPower * 15 + sin(time * 3.0 + config.phase) * 5) * progress
+            let orbitRadius = (config.orbitBase + audioPower * 15 + sin(time * 3.0 + config.phase) * 5) * progress
             
             // 动态球半径：随音频变化
-            let ballRadius = (config.radiusBase + smoothPower * 8 + sin(time * 4.0 + config.phase) * 3) * progress
+            let ballRadius = (config.radiusBase + audioPower * 8 + sin(time * 4.0 + config.phase) * 3) * progress
             
             let sx = centerX + cos(dynamicAngle) * orbitRadius
             let sy = centerY + sin(dynamicAngle) * orbitRadius
@@ -208,13 +202,18 @@ struct StickyBallAnimationView: View {
         let inputPath = Path(roundedRect: inputRect, cornerRadius: inputRect.height / 2)
         context.fill(inputPath, with: .color(currentColor))
         
-        let toolboxPath = Path(ellipseIn: toolboxRect)
-        context.fill(toolboxPath, with: .color(currentColor))
+        if toolboxRect.width > 0 {
+            let toolboxPath = Path(ellipseIn: toolboxRect)
+            context.fill(toolboxPath, with: .color(currentColor))
+        }
     }
     
     private func drawMerging(context: GraphicsContext, inputRect: CGRect, toolboxRect: CGRect, progress: CGFloat) {
-        // 1. 绘制两个主体
+        // 1. 绘制主体
         drawInitialShapes(context: context, inputRect: inputRect, toolboxRect: toolboxRect)
+        
+        // 如果没有外部 toolbox，不需要绘制连接桥
+        guard toolboxRect.width > 0 else { return }
         
         // 2. 绘制极细的内凹连接（物理上大幅缩减，靠滤镜还原丝滑感）
         let c1 = CGPoint(x: inputRect.maxX - 22, y: inputRect.midY)
@@ -254,6 +253,7 @@ struct StickyBallAnimationView: View {
     }
     
     private func getFullRect(inputRect: CGRect, toolboxRect: CGRect) -> CGRect {
+        guard toolboxRect.width > 0 else { return inputRect }
         return CGRect(
             x: inputRect.minX,
             y: inputRect.minY,

@@ -5,7 +5,7 @@ private struct VoiceWaveformView: View {
     var isCanceling: Bool = false
     
     private let barCount: Int = 20
-    private let activeThreshold: CGFloat = 0.12
+    private let activeThreshold: CGFloat = 0.05  // 与蓝色球阈值统一
     private let barWidth: CGFloat = 1.5
     private let barSpacing: CGFloat = 1.5
     private let minHeight: CGFloat = 5
@@ -83,6 +83,7 @@ struct VoiceRecordingOverlay: View {
     @State private var isAnimatingEntry = true
     @State private var showMainUI = false
     @State private var backgroundOpacity: Double = 0
+    @State private var smoothedPower: CGFloat = 0  // 统一平滑后的音频值
     
     var body: some View {
         ZStack {
@@ -98,10 +99,10 @@ struct VoiceRecordingOverlay: View {
                 isAnimating: .constant(true),
                 isCanceling: isCanceling,
                 isReversing: isExiting,
-                audioPower: audioPower,
+                audioPower: smoothedPower,  // 使用统一平滑后的值
                 onComplete: {
                     // 动画到达成球状态瞬间，显示文字框
-                    withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                         showMainUI = true
                     }
                 },
@@ -117,21 +118,21 @@ struct VoiceRecordingOverlay: View {
                     VStack(alignment: .leading, spacing: 0) {
                         // 文字区域
                         Text(transcript.isEmpty ? "正在聆听..." : transcript)
-                            .font(.system(size: 18, weight: .regular))
+                            .font(.system(size: 15, weight: .regular))
                             .foregroundColor(.black.opacity(0.8))
-                            .lineSpacing(6)
+                            .lineSpacing(4)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .frame(minHeight: 44)
-                            .padding(.horizontal, 24)
-                            .padding(.top, 24)
+                            .frame(minHeight: 32)
+                            .padding(.horizontal, 16)
+                            .padding(.top, 16)
                         
                         // 右下角音浪
                         HStack {
                             Spacer()
-                            VoiceWaveformView(audioPower: audioPower, isCanceling: isCanceling)
-                            .padding(.trailing, 24)
-                            .padding(.bottom, 16)
-                            .padding(.top, 8)
+                            VoiceWaveformView(audioPower: smoothedPower, isCanceling: isCanceling)  // 使用统一平滑后的值
+                            .padding(.trailing, 16)
+                            .padding(.bottom, 12)
+                            .padding(.top, 4)
                         }
                     }
                     .frame(width: UIScreen.main.bounds.width - 60)
@@ -150,15 +151,22 @@ struct VoiceRecordingOverlay: View {
                 .transition(.scale(scale: 0.9).combined(with: .opacity))
             }
         }
+        .ignoresSafeArea()
         .onAppear {
-            // 融合开始时启动背景淡入，0.4s 后达到预定透明度，此时正好完成粘滞融合
-            withAnimation(.easeInOut(duration: 0.28)) {
+            // 融合开始时启动背景淡入，此时正好完成粘滞融合
+            withAnimation(.easeInOut(duration: 0.2)) {
                 backgroundOpacity = 0.35
+            }
+        }
+        .onChange(of: audioPower) { _, newValue in
+            // 统一平滑处理：蓝色球和音浪条使用同一个平滑后的值
+            withAnimation(.linear(duration: 0.08)) {
+                smoothedPower = newValue
             }
         }
         .onChange(of: isExiting) { _, exiting in
             guard exiting else { return }
-            // 退场时先收起主 UI，再淡出背景，避免“文字框悬空”
+            // 退场时先收起主 UI，再淡出背景，避免"文字框悬空"
             withAnimation(.easeInOut(duration: 0.12)) {
                 showMainUI = false
             }

@@ -200,8 +200,11 @@ struct ChatView: View {
                         .scrollIndicators(.hidden)
                         .scrollDismissesKeyboard(.interactively)
                         .safeAreaInset(edge: .top) {
-                            // 动态计算占位高度：顶部安全区域 + 导航栏约 44 + 提醒卡片基础高度
-                            Color.clear.frame(height: geometry.safeAreaInsets.top + 100)
+                            // 动态计算占位高度：顶部安全区域 + 导航栏与提醒卡片的高度
+                            // 修正：此处不应重复叠加 safeAreaInsets.top，除非外层已忽略安全区。
+                            // 调整：由于外层现在忽略安全区，这里需要完整包含安全区 + 头部内容高度。
+                            // 减小该高度可以缩短顶部间距。
+                            Color.clear.frame(height: geometry.safeAreaInsets.top + 96)
                         }
                         .safeAreaInset(edge: .bottom) {
                             Color.clear.frame(height: bottomInputBaseHeight)
@@ -232,6 +235,7 @@ struct ChatView: View {
                     }
                 }
                 .zIndex(0)
+                .ignoresSafeArea(edges: .top) // 让聊天区域延伸到顶部，通过 safeAreaInset 统一控制间距
                 // 裁剪 + 虚化聊天内容区域：
                 .mask(
                     VStack(spacing: 0) {
@@ -304,7 +308,7 @@ struct ChatView: View {
                         inputFrame: inputViewModel.inputFrame,
                         toolboxFrame: inputViewModel.toolboxFrame
                     )
-                    .zIndex(102)
+                    .zIndex(200)
                 }
             }
             .sheet(item: $scheduleDetailSelection, onDismiss: {
