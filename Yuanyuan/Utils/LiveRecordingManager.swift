@@ -302,7 +302,7 @@ class LiveRecordingManager: ObservableObject {
         
         // 结束 Live Activity（内部已包含“已完成”状态展示和延迟逻辑）
         endLiveActivity()
-        endLiveActivity()
+        
         
         print("✅ ========== 停止录音完成 ==========\n")
     }
@@ -632,7 +632,13 @@ class LiveRecordingManager: ObservableObject {
                 
                 let semaphore = DispatchSemaphore(value: 0)
                 Task {
-                    await activity.end(using: finalState, dismissalPolicy: .immediate)
+                    // iOS 16.2+ 推荐使用 end(_ content:dismissalPolicy:)；这里统一走 ActivityContent，避免废弃警告
+                    let content = ActivityContent(
+                        state: finalState,
+                        staleDate: nil,
+                        relevanceScore: 100.0
+                    )
+                    await activity.end(content, dismissalPolicy: .immediate)
                     semaphore.signal()
                 }
                 // 最多等待0.5秒

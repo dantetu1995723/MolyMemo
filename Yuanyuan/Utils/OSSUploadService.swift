@@ -59,13 +59,29 @@ class OSSUploadService {
         print("   AccessKeyId: \(accessKeyId)")
         print("   AccessKeySecret: \(accessKeySecret.prefix(8))***（已隐藏）")
         
-        // 注意：OSSPlainTextAKSKPairCredentialProvider 已被官方标记为废弃，推荐使用 STS 临时凭证。
-        // 这里先保持实现不变，仅通过类型别名包一层，方便未来切换到 STS。
-        typealias LegacyCredentialProvider = OSSPlainTextAKSKPairCredentialProvider
-        let credentialProvider = LegacyCredentialProvider(
-            plainTextAccessKey: accessKeyId,
-            secretKey: accessKeySecret
-        )
+        // OSSPlainTextAKSKPairCredentialProvider 已废弃。这里用 CustomSigner 来做同等 AK/SK 签名，避免废弃警告且不改变现有配置方式。
+        // 说明：此签名方式等价于 Authorization: "OSS <AccessKeyId>:<Signature>"（Signature = Base64(HMAC-SHA1(secret, content))）
+        guard let credentialProvider = OSSCustomSignerCredentialProvider(implementedSigner: { content, error in
+            guard !accessKeyId.isEmpty, !accessKeySecret.isEmpty else {
+                error?.pointee = NSError(
+                    domain: "OSSUploadService",
+                    code: -1,
+                    userInfo: [NSLocalizedDescriptionKey: "OSS AccessKey 配置缺失"]
+                )
+                return ""
+            }
+            guard let signature = OSSUtil.calBase64Sha1(withData: content, withSecret: accessKeySecret) else {
+                error?.pointee = NSError(
+                    domain: "OSSUploadService",
+                    code: -2,
+                    userInfo: [NSLocalizedDescriptionKey: "OSS 签名失败"]
+                )
+                return ""
+            }
+            return "OSS \(accessKeyId):\(signature)"
+        }) else {
+            throw OSSError.configurationMissing
+        }
         
         let clientConfig = OSSClientConfiguration()
         clientConfig.maxRetryCount = 3

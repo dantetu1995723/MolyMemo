@@ -72,7 +72,7 @@ class SpeechRecognizer: ObservableObject {
                     try audioSession.setCategory(
                         .playAndRecord,
                         mode: .measurement,
-                        options: [.duckOthers, .allowBluetooth, .defaultToSpeaker]
+                        options: [.duckOthers, .allowBluetoothHFP, .defaultToSpeaker]
                     )
                     // 尽量让输入格式稳定（不强依赖，但能减少 route/format 抖动）
                     try? audioSession.setPreferredSampleRate(48_000)

@@ -31,16 +31,26 @@ actor ExpiringAsyncCache<Key: Hashable, Value> {
         storage[key] = Entry(value: value, expiry: now.addingTimeInterval(ttl))
     }
     
-    func invalidate(_ key: Key) {
+    /// 失效某个 key 的缓存。
+    /// - Parameter cancelInFlight: 是否取消同 key 的进行中请求。默认 true（保持原语义）。
+    func invalidate(_ key: Key, cancelInFlight: Bool = true) {
         storage.removeValue(forKey: key)
-        inFlight[key]?.cancel()
-        inFlight.removeValue(forKey: key)
+        if cancelInFlight {
+            inFlight[key]?.cancel()
+            inFlight.removeValue(forKey: key)
+        }
+        // cancelInFlight=false：保留 inFlight，让并发强刷复用同一请求，避免重复 GET
     }
     
-    func invalidateAll() {
+    /// 失效全部缓存。
+    /// - Parameter cancelInFlight: 是否取消全部进行中请求。默认 true（保持原语义）。
+    func invalidateAll(cancelInFlight: Bool = true) {
         storage.removeAll()
-        for (_, t) in inFlight { t.cancel() }
-        inFlight.removeAll()
+        if cancelInFlight {
+            for (_, t) in inFlight { t.cancel() }
+            inFlight.removeAll()
+        }
+        // cancelInFlight=false：保留 inFlight，让调用方继续复用正在进行的请求
     }
     
     /// 只在缓存不 fresh 时才会触发 fetch，并对同 key 的并发 fetch 做合并。

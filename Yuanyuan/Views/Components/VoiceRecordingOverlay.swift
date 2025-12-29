@@ -135,7 +135,7 @@ struct VoiceRecordingOverlay: View {
                             .padding(.top, 4)
                         }
                     }
-                    .frame(width: UIScreen.main.bounds.width - 60)
+                    .frame(width: ScreenMetrics.width - 60)
                     .background(
                         RoundedRectangle(cornerRadius: 24)
                             .fill(.white)

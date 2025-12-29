@@ -518,7 +518,8 @@ class AppState: ObservableObject {
 
     /// 设置完整响应内容 - 由AIBubble负责逐字显示动画
     func playResponse(_ content: String, for messageId: UUID) async {
-        print("🎬 设置响应内容，总长度: \(content.count)")
+        let normalized = BackendChatService.normalizeDisplayText(content)
+        print("🎬 设置响应内容，总长度: \(normalized.count)")
         
         // 查找消息索引
         guard let messageIndex = chatMessages.firstIndex(where: { $0.id == messageId }) else {
@@ -530,7 +531,7 @@ class AppState: ObservableObject {
         // 避免出现「正在思考」消失但内容还没刷新的空档
         await MainActor.run {
             // 如果内容为空，显示错误提示
-            guard !content.isEmpty else {
+            guard !normalized.isEmpty else {
                 print("⚠️ 收到空内容")
                 var updatedMessage = chatMessages[messageIndex]
                 updatedMessage.content = "抱歉，没有收到AI的回复内容"
@@ -544,7 +545,10 @@ class AppState: ObservableObject {
             
             // 正常设置完整内容，让 AIBubble 负责逐字显示动画
             var updatedMessage = chatMessages[messageIndex]
-            updatedMessage.content = content
+            // 避免重复赋值触发 UI 抖动/打字机重置
+            if updatedMessage.content != normalized {
+                updatedMessage.content = normalized
+            }
             updatedMessage.streamingState = .completed
             chatMessages[messageIndex] = updatedMessage
             
@@ -587,9 +591,13 @@ class AppState: ObservableObject {
         // 流式阶段：结构化输出里往往已包含 markdown 文本（按 chunk 累积）。
         // 如果等到 onComplete 再一次性设置，会导致“卡片先出现、文字后打字”的视觉错序。
         // 这里做最小策略：仅当新文本更长且非空时更新 content（避免回退/抖动）。
-        let incomingText = output.text
+        let incomingText = BackendChatService.normalizeDisplayText(output.text)
+        // 关键修复：只在“文本确实变长/变更”时才更新 content。
+        // 否则在 tool start/success 等非文本 chunk 到来时，会把同一段文本反复赋值，
+        // 触发 AIBubble 的打字机动画反复重置，从而造成“文字重复打印”。
         if !incomingText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-           incomingText.count >= msg.content.count {
+           incomingText != msg.content,
+           incomingText.count > msg.content.count {
             msg.content = incomingText
         }
 

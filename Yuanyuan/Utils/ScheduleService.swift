@@ -62,9 +62,12 @@ enum ScheduleService {
     private static let defaultAllPagesTTL: TimeInterval = 120
     
     static func invalidateScheduleCaches() async {
-        await listCache.invalidateAll()
-        await detailCache.invalidateAll()
-        await allPagesCache.invalidateAll()
+        // 只让缓存失效，不要取消进行中的请求：
+        // - ChatView / TodoListView 可能同时收到通知并发刷新
+        // - 如果这里 cancel in-flight，会造成 NSURLErrorDomain -999（cancelled）以及重复 GET
+        await listCache.invalidateAll(cancelInFlight: false)
+        await detailCache.invalidateAll(cancelInFlight: false)
+        await allPagesCache.invalidateAll(cancelInFlight: false)
     }
     
     static func peekScheduleList(params: ListParams = .init()) async -> (value: [ScheduleEvent], isFresh: Bool)? {
@@ -331,7 +334,8 @@ enum ScheduleService {
     
     static func fetchScheduleList(params: ListParams = .init(), forceRefresh: Bool = false) async throws -> [ScheduleEvent] {
         if forceRefresh {
-            await listCache.invalidate(params)
+            // 强刷只需让缓存过期即可；如果已有同 key 的 in-flight，直接复用，避免互相取消
+            await listCache.invalidate(params, cancelInFlight: false)
         }
         return try await listCache.getOrFetch(params, ttl: defaultListTTL) {
             try await fetchScheduleListFromNetwork(params: params)
@@ -389,7 +393,7 @@ enum ScheduleService {
         guard !trimmed.isEmpty else { throw ScheduleServiceError.parseFailed("remoteId empty") }
         
         if forceRefresh {
-            await detailCache.invalidate(trimmed)
+            await detailCache.invalidate(trimmed, cancelInFlight: false)
         }
         
         let cached = try await detailCache.getOrFetch(trimmed, ttl: defaultDetailTTL) {
@@ -458,7 +462,7 @@ enum ScheduleService {
         let k = AllPagesKey(base: base, maxPages: maxPages, pageSize: pageSize)
         
         if forceRefresh {
-            await allPagesCache.invalidate(k)
+            await allPagesCache.invalidate(k, cancelInFlight: false)
         }
         
         return try await allPagesCache.getOrFetch(k, ttl: defaultAllPagesTTL) {

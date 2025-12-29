@@ -1468,7 +1468,7 @@ private struct HomeChatBubble: View {
                         RoundedRectangle(cornerRadius: 22)
                             .fill(Color.white.opacity(0.85))
                     )
-                    .frame(maxWidth: UIScreen.main.bounds.width * 0.75, alignment: .trailing)
+                    .frame(maxWidth: ScreenMetrics.width * 0.75, alignment: .trailing)
                 
                 Spacer(minLength: 20)
             } else {
@@ -1486,7 +1486,7 @@ private struct HomeChatBubble: View {
                     .shadow(color: Color.white.opacity(0.3), radius: 6, x: 0, y: 0)
                     // 深色阴影确保可读性
                     .shadow(color: Color.black.opacity(0.2), radius: 2, x: 0, y: 1)
-                    .frame(maxWidth: UIScreen.main.bounds.width * 0.85, alignment: .leading)
+                    .frame(maxWidth: ScreenMetrics.width * 0.85, alignment: .leading)
                     .onChange(of: shouldShowWaitingText) { _, isWaiting in
                         if isWaiting {
                             startDotAnimation()

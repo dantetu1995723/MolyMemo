@@ -106,6 +106,7 @@ class CalendarManager {
     }
     
     /// 更新日历事件
+    @discardableResult
     func updateCalendarEvent(
         eventIdentifier: String,
         title: String,

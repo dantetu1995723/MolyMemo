@@ -227,7 +227,7 @@ final class BackendChatService {
 
             // 最终：如果流式解析成功，直接用最新结构化结果完成；否则兜底整包解析
             if let structured = latestStructured, !structured.isEmpty {
-                let cleaned = removeMarkdownFormatting(structured.text).trimmingCharacters(in: .whitespacesAndNewlines)
+                let cleaned = normalizeDisplayText(structured.text)
                 if cleaned.isEmpty, structured.scheduleEvents.isEmpty, structured.contacts.isEmpty, structured.invoices.isEmpty, structured.meetings.isEmpty, !structured.isContactToolRunning {
                     throw BackendChatError.emptyResponse
                 }
@@ -240,7 +240,7 @@ final class BackendChatService {
             let fallbackData = rawFallback.data(using: .utf8) ?? Data()
             if let structured = parseStructuredOutput(from: fallbackData) {
                 await MainActor.run { onStructuredOutput?(structured) }
-                let cleaned = removeMarkdownFormatting(structured.text).trimmingCharacters(in: .whitespacesAndNewlines)
+                let cleaned = normalizeDisplayText(structured.text)
                 if cleaned.isEmpty, structured.scheduleEvents.isEmpty, structured.contacts.isEmpty, structured.invoices.isEmpty, structured.meetings.isEmpty, !structured.isContactToolRunning {
                     throw BackendChatError.emptyResponse
                 }
@@ -248,7 +248,7 @@ final class BackendChatService {
                 await onComplete(cleaned)
             } else {
                 let text = extractTextFromResponseData(fallbackData)
-                let cleaned = removeMarkdownFormatting(text).trimmingCharacters(in: .whitespacesAndNewlines)
+                let cleaned = normalizeDisplayText(text)
                 if cleaned.isEmpty { throw BackendChatError.emptyResponse }
                 print("✅ [BackendChat] fallbackParsedText(\(cleaned.count)) preview: \(truncate(cleaned, limit: 200))")
                 await onComplete(cleaned)
@@ -425,8 +425,9 @@ final class BackendChatService {
         for (idx, chunk) in chunks.enumerated() {
             guard let type = chunk["type"] as? String else { continue }
 #if DEBUG
-            if BackendChatConfig.debugLogChunkSummary {
-                debugPrintSingleChunkSummary(chunk, source: "reduce", index: idx)
+            // 降噪：reduce 每次都会从头遍历 chunks；只打印“最新 chunk”，避免造成“重复执行/重复触发”的错觉
+            if BackendChatConfig.debugLogChunkSummary, idx == chunks.count - 1 {
+                debugPrintSingleChunkSummary(chunk, source: "reduceLatest", index: idx)
             }
 #endif
             switch type {
@@ -499,7 +500,8 @@ final class BackendChatService {
         if name == "schedules_create" || name == "schedules_update" {
             if let data = obsObj["data"] as? [String: Any] {
                 if let event = parseScheduleEventFromToolData(data) {
-                    output.scheduleEvents.append(event)
+                    // 去重：同一日程可能还会通过 card 再发一次（card 优先）
+                    upsertScheduleEvent(event, into: &output, preferIncoming: false)
                 }
             }
             return
@@ -519,6 +521,26 @@ final class BackendChatService {
             }
             return
         }
+    }
+    
+    /// scheduleEvents 去重合并：以 remoteId 优先，其次 id。可指定是否用 incoming 覆盖 existing。
+    private static func upsertScheduleEvent(_ incoming: ScheduleEvent, into output: inout BackendChatStructuredOutput, preferIncoming: Bool) {
+        func trimmed(_ s: String?) -> String { (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
+        let incomingRid = trimmed(incoming.remoteId)
+        
+        // 优先按 remoteId 匹配（最稳定）
+        if !incomingRid.isEmpty, let idx = output.scheduleEvents.firstIndex(where: { trimmed($0.remoteId) == incomingRid }) {
+            if preferIncoming { output.scheduleEvents[idx] = incoming }
+            return
+        }
+        
+        // 兜底按本地 id 匹配（例如后端没给 remoteId 或格式不对）
+        if let idx = output.scheduleEvents.firstIndex(where: { $0.id == incoming.id }) {
+            if preferIncoming { output.scheduleEvents[idx] = incoming }
+            return
+        }
+        
+        output.scheduleEvents.append(incoming)
     }
 
     private static func parseContactFromToolData(_ dict: [String: Any]) -> ContactCard? {
@@ -601,12 +623,13 @@ final class BackendChatService {
         case "schedule":
             if let dict = data as? [String: Any] {
                 if let event = parseScheduleEvent(dict, forceId: cardId) {
-                    output.scheduleEvents.append(event)
+                    // card 优先：覆盖同日程的 tool 兜底结果
+                    upsertScheduleEvent(event, into: &output, preferIncoming: true)
                 }
             } else if let arr = data as? [[String: Any]] {
                 for d in arr {
                     if let event = parseScheduleEvent(d, forceId: nil) {
-                        output.scheduleEvents.append(event)
+                        upsertScheduleEvent(event, into: &output, preferIncoming: true)
                     }
                 }
             }
@@ -1020,6 +1043,11 @@ final class BackendChatService {
         if short.isEmpty { return build }
         if build.isEmpty { return short }
         return "\(short) (\(build))"
+    }
+    
+    /// 统一的展示文本清洗：流式阶段与最终完成阶段保持一致，避免最后一次替换导致 UI 重新打字。
+    static func normalizeDisplayText(_ text: String) -> String {
+        removeMarkdownFormatting(text).trimmingCharacters(in: .whitespacesAndNewlines)
     }
     
     /// 清理 markdown 格式（保持输出一致），做最小实现以免跨文件依赖

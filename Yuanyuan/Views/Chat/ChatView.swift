@@ -172,11 +172,6 @@ struct ChatView: View {
     
     var body: some View {
         GeometryReader { geometry in
-            // 根据屏幕高度和底部输入区域高度，计算聊天内容可见高度
-            let bottomSafeArea = geometry.safeAreaInsets.bottom
-            // 聊天记录与输入栏之间预留的间距
-            let clipGap: CGFloat = 0
-            
             ZStack(alignment: .bottom) {
                 // 背景
                 backgroundView
@@ -1156,7 +1151,7 @@ struct TypewriterBubble: View {
                     
                     Spacer(minLength: 20)
                 }
-                .frame(maxWidth: UIScreen.main.bounds.width * 0.75)
+                .frame(maxWidth: ScreenMetrics.width * 0.75)
             } else {
                 UserBubble(message: ChatMessage(role: .user, content: displayedText))
             }
@@ -1219,6 +1214,12 @@ struct AIBubble: View {
     @State private var isCompleted: Bool = false
     @State private var timer: Timer?
     
+    /// 目标文本（允许在流式阶段持续增长）
+    @State private var targetText: String = ""
+    @State private var targetChars: [Character] = []
+    /// 已打出的字符数（基于 targetChars）
+    @State private var typedCount: Int = 0
+    
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             // 头像（或占位，确保对齐一致）
@@ -1278,7 +1279,7 @@ struct AIBubble: View {
                     .opacity(isCompleted ? 1 : 0)
                 }
             }
-            .frame(maxWidth: UIScreen.main.bounds.width * 0.75, alignment: .leading)
+            .frame(maxWidth: ScreenMetrics.width * 0.75, alignment: .leading)
             
             Spacer(minLength: 20)
         }
@@ -1286,9 +1287,17 @@ struct AIBubble: View {
             if isInterrupted {
                 isCompleted = true
                 displayedText = text
+                targetText = text
+                targetChars = Array(text)
+                typedCount = targetChars.count
                 onTypingCompleted?()
             } else {
-            startTypewriter()
+                // 初始化：以当前 text 作为 target，开始打字（支持后续增量扩展）
+                targetText = text
+                targetChars = Array(text)
+                typedCount = 0
+                displayedText = ""
+                startOrContinueTypewriter()
             }
         }
         .onChange(of: isInterrupted) { _, newValue in
@@ -1297,12 +1306,31 @@ struct AIBubble: View {
                 timer = nil
                 isCompleted = true
                 displayedText = text
+                targetText = text
+                targetChars = Array(text)
+                typedCount = targetChars.count
                 onTypingCompleted?()
             }
         }
         .onChange(of: text) { oldValue, newValue in
-            if oldValue != newValue {
-                resetAndStartTypewriter()
+            guard !isInterrupted else { return }
+            guard oldValue != newValue else { return }
+            
+            // 流式阶段：newValue 通常是 oldValue 的前缀扩展（追加内容）
+            if newValue.hasPrefix(oldValue) {
+                targetText = newValue
+                targetChars = Array(newValue)
+                
+                // 如果 displayedText 被外部替换过，纠正 typedCount
+                let currentDisplayedCount = displayedText.count
+                if typedCount != currentDisplayedCount {
+                    typedCount = min(currentDisplayedCount, targetChars.count)
+                }
+                
+                startOrContinueTypewriter()
+            } else {
+                // 非前缀扩展：例如最终清洗/替换、回退、重新生成清空等，才允许重置
+                resetAndStartTypewriter(with: newValue)
             }
         }
         .onDisappear {
@@ -1361,64 +1389,73 @@ struct AIBubble: View {
         }
     }
     
-    private func startTypewriter() {
+    /// 继续打“目标文本剩余部分”，不会把已打内容从头重来（用于流式追加）
+    private func startOrContinueTypewriter() {
         if isInterrupted {
             isCompleted = true
-            displayedText = text
+            displayedText = targetText
+            typedCount = targetChars.count
             onTypingCompleted?()
             return
         }
         
-        guard !text.isEmpty else { return }
+        // 无内容：保持空
+        if targetChars.isEmpty {
+            timer?.invalidate()
+            timer = nil
+            displayedText = ""
+            typedCount = 0
+            isCompleted = false
+            return
+        }
         
-        // 如果已经显示完整，直接显示
-        if displayedText == text {
+        // 已全部打完：直接完成（但保留随时可追加的能力）
+        if typedCount >= targetChars.count {
+            timer?.invalidate()
+            timer = nil
+            displayedText = String(targetChars)
             isCompleted = true
-            displayedText = text
             onTypingCompleted?()
             return
         }
         
-        // 重置状态
-        displayedText = ""
+        // 确保 displayedText 与 typedCount 对齐（避免外部直接赋值导致错位）
+        if displayedText.count != typedCount {
+            typedCount = min(displayedText.count, targetChars.count)
+        }
+        
         isCompleted = false
         
-        // 在主线程上开始打字机效果
-        DispatchQueue.main.async {
-            var charIndex = 0
-            let chars = Array(self.text)
-            
-            self.timer?.invalidate()
-            
-            // 先立即显示第一个字符
-            if !chars.isEmpty {
-                self.displayedText = String(chars[0])
-                charIndex = 1
-            }
-            
-            self.timer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { timer in
-                if charIndex < chars.count {
-                    self.displayedText.append(chars[charIndex])
-                    charIndex += 1
-                    if charIndex % 2 == 0 {
-                        HapticFeedback.soft()
-                    }
-                } else {
-                    timer.invalidate()
-                    self.isCompleted = true
-                    self.timer = nil
-                    self.onTypingCompleted?()
+        // 已有计时器在跑就不重复创建
+        if timer != nil { return }
+        
+        // 启动/续跑定时器：只打新增 delta
+        timer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { t in
+            // 目标可能在流式阶段继续增长，这里每 tick 都以最新 targetChars 为准
+            if typedCount < targetChars.count {
+                displayedText.append(targetChars[typedCount])
+                typedCount += 1
+                if typedCount % 2 == 0 {
+                    HapticFeedback.soft()
                 }
+            } else {
+                t.invalidate()
+                timer = nil
+                isCompleted = true
+                onTypingCompleted?()
             }
         }
     }
     
-    private func resetAndStartTypewriter() {
+    private func resetAndStartTypewriter(with newText: String) {
         timer?.invalidate()
         timer = nil
+        targetText = newText
+        targetChars = Array(newText)
         displayedText = ""
+        typedCount = 0
         isCompleted = false
-        startTypewriter()
+        startOrContinueTypewriter()
     }
 }
 
@@ -1457,7 +1494,7 @@ struct UserBubble: View {
                         )
                 }
             }
-            .frame(maxWidth: UIScreen.main.bounds.width * 0.80 + 28, alignment: .trailing)
+            .frame(maxWidth: ScreenMetrics.width * 0.80 + 28, alignment: .trailing)
             
             Spacer(minLength: 4)
         }
