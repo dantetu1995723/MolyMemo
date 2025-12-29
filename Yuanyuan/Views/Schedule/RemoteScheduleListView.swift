@@ -8,6 +8,9 @@ struct RemoteScheduleListView: View {
     @State private var isLoading: Bool = false
     @State private var errorText: String? = nil
     
+    // 追踪正在删除的日程 ID（用于显示行内 loading）
+    @State private var deletingIds: Set<String> = []
+    
     @State private var selectedEvent: ScheduleEvent? = nil
     
     private func isSameRemote(_ a: ScheduleEvent, _ b: ScheduleEvent) -> Bool {
@@ -54,8 +57,11 @@ struct RemoteScheduleListView: View {
                                 .foregroundColor(.secondary)
                         } else {
                             ForEach(events) { e in
+                                let rid = e.remoteId ?? ""
                                 Button {
-                                    openDetail(for: e)
+                                    if !deletingIds.contains(rid) {
+                                        openDetail(for: e)
+                                    }
                                 } label: {
                                     VStack(alignment: .leading, spacing: 6) {
                                         HStack(spacing: 8) {
@@ -74,7 +80,7 @@ struct RemoteScheduleListView: View {
                                                 .foregroundColor(.secondary)
                                                 .lineLimit(2)
                                         }
-                                        if let rid = e.remoteId, !rid.isEmpty {
+                                        if !rid.isEmpty {
                                             Text("id: \(rid)")
                                                 .font(.system(size: 11))
                                                 .foregroundColor(.secondary.opacity(0.8))
@@ -82,6 +88,25 @@ struct RemoteScheduleListView: View {
                                         }
                                     }
                                     .padding(.vertical, 4)
+                                    .overlay {
+                                        if deletingIds.contains(rid) {
+                                            ZStack {
+                                                Color(white: 1.0, opacity: 0.6)
+                                                ProgressView()
+                                                    .tint(.red)
+                                            }
+                                        }
+                                    }
+                                }
+                                .disabled(deletingIds.contains(rid))
+                                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                    Button(role: .destructive) {
+                                        Task { @MainActor in
+                                            await deleteEvent(e)
+                                        }
+                                    } label: {
+                                        Text("删除")
+                                    }
                                 }
                             }
                         }
@@ -167,6 +192,23 @@ struct RemoteScheduleListView: View {
     private func openDetail(for e: ScheduleEvent) {
         // 先打开弹窗，再在弹窗内部拉详情（这样 UI 响应快）
         selectedEvent = e
+    }
+
+    @MainActor
+    private func deleteEvent(_ e: ScheduleEvent) async {
+        let rid = e.remoteId ?? ""
+        guard !rid.isEmpty else { return }
+        
+        deletingIds.insert(rid)
+        defer { deletingIds.remove(rid) }
+        
+        do {
+            try await DeleteActions.deleteRemoteSchedule(e)
+            applyDeletedEvent(e)
+        } catch {
+            // 不做 UI 兜底提示，只打印，方便定位后端 404 的原因
+            print("❌ [RemoteScheduleListView:deleteEvent] title=\(e.title) remoteId=\(rid) error=\(error)")
+        }
     }
 }
 

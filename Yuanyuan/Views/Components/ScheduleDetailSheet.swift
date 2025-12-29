@@ -601,9 +601,7 @@ struct ScheduleDetailSheet: View {
         }
         
         do {
-            if let rid = editedEvent.remoteId?.trimmingCharacters(in: .whitespacesAndNewlines), !rid.isEmpty {
-                try await ScheduleService.deleteSchedule(remoteId: rid)
-            }
+            try await DeleteActions.deleteRemoteSchedule(editedEvent)
             onDelete()
             dismiss()
         } catch {

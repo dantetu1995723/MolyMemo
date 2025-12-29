@@ -158,6 +158,9 @@ struct TodoListView: View {
     @State private var remoteErrorText: String? = nil
     @State private var remoteDetailSelection: ScheduleEvent? = nil
     
+    // 追踪正在删除的日程 ID（用于显示行内 loading）
+    @State private var deletingRemoteIds: Set<String> = []
+    
     init(showAddSheet: Binding<Bool> = .constant(false)) {
         self._showAddSheet = showAddSheet
     }
@@ -213,7 +216,6 @@ struct TodoListView: View {
                 AdaptiveCalendarView(
                     currentMonth: $currentMonth,
                     selectedDate: $selectedDate,
-                    todos: allTodos,
                     progress: calendarProgress,
                     height: currentCalendarHeight
                 )
@@ -312,8 +314,7 @@ struct TodoListView: View {
                     currentMonth = today
                 }
             }
-            
-            createSampleTodoIfNeeded()
+
             withAnimation(.spring(response: 0.5, dampingFraction: 0.75).delay(0.1)) {
                 showContent = true
             }
@@ -347,6 +348,13 @@ struct TodoListView: View {
     // MARK: - 拖拽手势处理
     private func handleDragChange(_ value: DragGesture.Value) {
         let verticalTranslation = value.translation.height
+        let horizontalTranslation = value.translation.width
+        
+        // 关键修复：如果横向位移明显大于纵向，且还没开始折叠流程，则不拦截手势
+        // 这让下层的左滑删除组件有机会获得手势
+        if abs(horizontalTranslation) > abs(verticalTranslation) + 10 && dragStartProgress == nil {
+            return
+        }
         
         // ✅ 反向操作：周视图 + 列表到底部时，继续下拉（回弹）允许展开月历
         let canExpandFromBottomBounce = (calendarProgress >= 0.999 && isListAtBottom && verticalTranslation > 0)
@@ -524,12 +532,14 @@ struct TodoListView: View {
             if remoteErrorText == nil {
                 if !remoteEvents.isEmpty {
                     ForEach(remoteEvents) { e in
-                        Button {
-                            remoteDetailSelection = e
-                        } label: {
+                        let rid = e.remoteId ?? ""
+                        SwipeToDeleteCard(
+                            isLoading: deletingRemoteIds.contains(rid),
+                            onTap: { remoteDetailSelection = e },
+                            onDelete: { requestDeleteRemoteEvent(e) }
+                        ) {
                             RemoteScheduleRow(event: e)
                         }
-                        .buttonStyle(.plain)
                     }
                 } else if !remoteIsLoading {
                     Text("暂无后端日程")
@@ -662,6 +672,25 @@ struct TodoListView: View {
         }
     }
 
+    // MARK: - 左滑删除（后端日程）
+    private func requestDeleteRemoteEvent(_ event: ScheduleEvent) {
+        let rid = event.remoteId ?? ""
+        guard !rid.isEmpty else { return }
+
+        Task { @MainActor in
+            deletingRemoteIds.insert(rid)
+            defer { deletingRemoteIds.remove(rid) }
+            
+            do {
+                try await DeleteActions.deleteRemoteSchedule(event)
+                applyRemoteEventDelete(event)
+            } catch {
+                // 不做 UI 兜底提示，只打印，方便定位后端 404 的原因
+                print("❌ [TodoListView:deleteRemoteEvent] title=\(event.title) remoteId=\(rid) error=\(error)")
+            }
+        }
+    }
+
     private func formatYMD(_ date: Date) -> String {
         let f = DateFormatter()
         f.locale = Locale(identifier: "zh_CN")
@@ -759,24 +788,7 @@ struct TodoListView: View {
         showDeleteConfirmation = false
     }
     
-    // 创建示例待办
-    private func createSampleTodoIfNeeded() {
-        guard allTodos.isEmpty else { return }
-        
-        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()
-        let startTime = Calendar.current.date(bySettingHour: 14, minute: 0, second: 0, of: tomorrow) ?? tomorrow
-        let endTime = Calendar.current.date(bySettingHour: 15, minute: 30, second: 0, of: tomorrow) ?? tomorrow
-        
-        let sampleTodo = TodoItem(
-            title: "项目周会",
-            taskDescription: "讨论本周工作进展和下周计划",
-            startTime: startTime,
-            endTime: endTime
-        )
-        
-        modelContext.insert(sampleTodo)
-        try? modelContext.save()
-    }
+    // 注意：不再创建任何“示例待办”，避免污染用户真实数据。
     
     // 计算月视图高度
     private var monthViewHeight: CGFloat {
@@ -811,7 +823,6 @@ struct TodoListView: View {
 struct AdaptiveCalendarView: View {
     @Binding var currentMonth: Date
     @Binding var selectedDate: Date
-    let todos: [TodoItem]
     let progress: CGFloat // 0=月视图, 1=周视图
     let height: CGFloat
     
@@ -822,7 +833,6 @@ struct AdaptiveCalendarView: View {
                 AdaptiveMonthGrid(
                     month: month,
                     selectedDate: $selectedDate,
-                    todos: todos,
                     progress: progress
                 )
                 .tag(month)
@@ -851,7 +861,6 @@ struct AdaptiveCalendarView: View {
 struct AdaptiveMonthGrid: View {
     let month: Date
     @Binding var selectedDate: Date
-    let todos: [TodoItem]
     let progress: CGFloat
     
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 0), count: 7)
@@ -893,7 +902,6 @@ struct AdaptiveMonthGrid: View {
                                 date: date,
                                 isSelected: Calendar.current.isDate(date, inSameDayAs: selectedDate),
                                 isToday: Calendar.current.isDateInToday(date),
-                                hasTodos: hasTodos(on: date),
                                 isCurrentMonth: Calendar.current.isDate(date, equalTo: month, toGranularity: .month)
                             )
                             .onTapGesture {
@@ -950,10 +958,7 @@ struct AdaptiveMonthGrid: View {
         return 0
     }
     
-    private func hasTodos(on date: Date) -> Bool {
-        let calendar = Calendar.current
-        return todos.contains { calendar.isDate($0.startTime, inSameDayAs: date) }
-    }
+    // 注意：日历日期不再根据“是否有待办”做任何变色/标记。
 }
 
 // MARK: - 日历日期单元格（新设计）
@@ -961,10 +966,7 @@ struct CalendarDayCellNew: View {
     let date: Date
     let isSelected: Bool
     let isToday: Bool
-    let hasTodos: Bool
     let isCurrentMonth: Bool
-    
-    private let selectionColor = Color(red: 0.95, green: 0.75, blue: 0.45)
     
     var body: some View {
         ZStack {
@@ -985,8 +987,6 @@ struct CalendarDayCellNew: View {
             return .black.opacity(0.85)
         } else if !isCurrentMonth {
             return .black.opacity(0.25)
-        } else if hasTodos {
-            return selectionColor.opacity(0.95)
         } else {
             return .black.opacity(0.8)
         }
@@ -1000,7 +1000,7 @@ struct CalendarDayCellNew: View {
                 .transition(.scale(scale: 0.92).combined(with: .opacity))
         } else if isToday {
             Circle()
-                .strokeBorder(selectionColor, lineWidth: 2)
+                .strokeBorder(Color.black.opacity(0.6), lineWidth: 2)
                 .frame(width: 36, height: 36)
         } else {
             Circle()
@@ -1164,138 +1164,6 @@ struct UnifiedScheduleRow: View {
         .padding(.top, isOverlapping ? -10 : 0) // 视觉重叠
         .scaleEffect(isOverlapping ? 0.98 : 1.0) // 稍微缩小
         .zIndex(isOverlapping ? 0 : 1) // 保证正确的层级覆盖（这里反向，新的在下？）通常List是顺序渲染
-    }
-}
-
-// MARK: - Swipe to Delete 容器
-struct SwipeToDeleteCard<Content: View>: View {
-    let onTap: () -> Void
-    let onDelete: () -> Void
-    private let content: () -> Content
-    
-    @State private var offsetX: CGFloat = 0
-    @State private var isRevealed = false
-    @State private var isSwiping = false
-    
-    private let maxRevealOffset: CGFloat = 110.0
-    private let revealThreshold: CGFloat = 70.0
-    
-    init(
-        onTap: @escaping () -> Void,
-        onDelete: @escaping () -> Void,
-        @ViewBuilder content: @escaping () -> Content
-    ) {
-        self.onTap = onTap
-        self.onDelete = onDelete
-        self.content = content
-    }
-    
-    private var revealProgress: CGFloat {
-        min(1.0, max(0.0, -offsetX / maxRevealOffset))
-    }
-    
-    var body: some View {
-        ZStack(alignment: .trailing) {
-            // 只有滑动时才显示删除背景
-            if offsetX < 0 {
-                deleteBackground
-                    .opacity(Double(revealProgress))
-            }
-            
-            content()
-                .contentShape(Rectangle())
-                .offset(x: offsetX)
-                .gesture(dragGesture)
-                .onTapGesture {
-                    if isRevealed {
-                        closeSwipe()
-                    } else {
-                        onTap()
-                    }
-                }
-        }
-        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: offsetX)
-    }
-    
-    private var deleteBackground: some View {
-        HStack {
-            Spacer()
-            
-            // 纯图标设计，不使用按钮样式，更符合"非按钮"的描述
-            Image(systemName: "trash.fill")
-                .font(.system(size: 22, weight: .medium))
-                .foregroundColor(.white)
-                .scaleEffect(0.8 + 0.2 * revealProgress)
-                .padding(.trailing, 36)
-        }
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.red.opacity(0.9))
-        )
-        // 匹配卡片的内边距视觉
-        .padding(.vertical, 2) 
-    }
-    
-    private var dragGesture: some Gesture {
-        DragGesture()
-            .onChanged { value in
-                if !isSwiping {
-                    if abs(value.translation.width) > abs(value.translation.height) {
-                        isSwiping = true
-                    } else {
-                        return
-                    }
-                }
-                
-                // 允许左滑，限制右滑
-                let baseOffset = isRevealed ? -maxRevealOffset : 0
-                var newOffset = baseOffset + value.translation.width
-                
-                if newOffset > 0 {
-                    newOffset = newOffset / 4 // 强阻尼右滑
-                }
-                
-                if newOffset < -maxRevealOffset {
-                    let extra = newOffset + maxRevealOffset
-                    newOffset = -maxRevealOffset + extra / 3 // 左侧阻尼
-                }
-                
-                offsetX = newOffset
-            }
-            .onEnded { value in
-                guard isSwiping else { return }
-                defer { isSwiping = false }
-                
-                let baseOffset = isRevealed ? -maxRevealOffset : 0
-                let finalOffset = baseOffset + value.translation.width
-                let shouldReveal = -finalOffset > revealThreshold
-                let shouldDelete = -finalOffset > maxRevealOffset * 1.5 // 深度滑动直接删除
-                
-                if shouldDelete {
-                     // 触发删除并关闭
-                    HapticFeedback.medium()
-                    closeSwipe()
-                    // 延迟一点执行删除以保证动画流畅
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                        onDelete()
-                    }
-                } else if shouldReveal {
-                    HapticFeedback.light()
-                    revealSwipe()
-                } else {
-                    closeSwipe()
-                }
-            }
-    }
-    
-    private func revealSwipe() {
-        offsetX = -maxRevealOffset
-        isRevealed = true
-    }
-    
-    private func closeSwipe() {
-        offsetX = 0
-        isRevealed = false
     }
 }
 

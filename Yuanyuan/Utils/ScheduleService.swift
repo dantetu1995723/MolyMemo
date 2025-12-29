@@ -560,6 +560,7 @@ enum ScheduleService {
             guard let http = response as? HTTPURLResponse else { throw ScheduleServiceError.invalidResponse }
             if !(200...299).contains(http.statusCode) {
                 let body = String(data: data, encoding: .utf8) ?? ""
+                print("❌ [ScheduleService:delete] HTTP \(http.statusCode) url=\(url.absoluteString) remoteId=\(trimmed) body=\(body)")
                 throw ScheduleServiceError.httpStatus(http.statusCode, body)
             }
             

@@ -493,12 +493,7 @@ struct ContactDetailView: View {
         defer { isSubmitting = false }
         
         do {
-            let rid = (contact.remoteId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            if !rid.isEmpty {
-                try await ContactService.deleteContact(remoteId: rid)
-            }
-            modelContext.delete(contact)
-            try? modelContext.save()
+            try await DeleteActions.deleteContact(contact, modelContext: modelContext)
             dismiss()
         } catch {
             alertMessage = "删除失败：\(error.localizedDescription)"

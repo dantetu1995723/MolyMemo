@@ -12,6 +12,10 @@ struct ContactListView: View {
     @State private var remoteIsLoading: Bool = false
     @State private var remoteErrorText: String? = nil
     @State private var didKickoffRemoteLoad: Bool = false
+    @State private var deleteErrorText: String? = nil
+    
+    // 追踪正在删除的联系人 ID（用于显示行内 loading）
+    @State private var deletingContactIds: Set<UUID> = []
     
     // 主题色 - 统一灰色
     private let themeColor = Color(white: 0.55)
@@ -60,6 +64,14 @@ struct ContactListView: View {
                         .padding(.bottom, 6)
                 }
                 
+                if let deleteErrorText, !deleteErrorText.isEmpty {
+                    Text(deleteErrorText)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.red.opacity(0.85))
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 6)
+                }
+                
                 // 列表区域
                 ZStack(alignment: .trailing) {
                     ScrollViewReader { proxy in
@@ -68,12 +80,20 @@ struct ContactListView: View {
                                 ForEach(groupedContacts, id: \.0) { initial, contacts in
                                     Section(header: SectionHeaderView(letter: initial)) {
                                         ForEach(contacts) { contact in
-                                            ContactRowView(contact: contact)
-                                                .id(contact.id)
-                                                .onTapGesture {
+                                            SwipeToDeleteCard(
+                                                isLoading: deletingContactIds.contains(contact.id),
+                                                onTap: {
                                                     HapticFeedback.light()
                                                     selectedContact = contact
+                                                },
+                                                onDelete: {
+                                                    HapticFeedback.medium()
+                                                    requestDelete(contact)
                                                 }
+                                            ) {
+                                                ContactRowView(contact: contact)
+                                            }
+                                            .id(contact.id)
                                         }
                                     }
                                     .id(initial)
@@ -264,6 +284,24 @@ struct ContactListView: View {
         }
         
         contact.lastModified = Date()
+    }
+    
+    // MARK: - 左滑删除（与详情页同一条后端路径）
+    private func requestDelete(_ contact: Contact) {
+        Task { @MainActor in
+            deletingContactIds.insert(contact.id)
+            defer { deletingContactIds.remove(contact.id) }
+            
+            do {
+                deleteErrorText = nil
+                if let current = selectedContact, current.id == contact.id {
+                    selectedContact = nil
+                }
+                try await DeleteActions.deleteContact(contact, modelContext: modelContext)
+            } catch {
+                deleteErrorText = "删除失败：\(error.localizedDescription)"
+            }
+        }
     }
 }
 
