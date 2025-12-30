@@ -862,7 +862,7 @@ class AppState: ObservableObject {
         }
     }
 
-    private func hydrateCardBatchesIfNeeded(for messages: inout [ChatMessage], modelContext: ModelContext) {
+    func hydrateCardBatchesIfNeeded(for messages: inout [ChatMessage], modelContext: ModelContext) {
         let ids = Set(messages.map { $0.id })
         guard !ids.isEmpty else { return }
 

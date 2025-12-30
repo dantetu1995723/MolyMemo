@@ -5,6 +5,7 @@ import SwiftData
 struct ChatHistoryView: View {
     @Environment(\.dismiss) var dismiss
     @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject var appState: AppState
     @Query(sort: \DailyChatSummary.date, order: .reverse) private var dailySummaries: [DailyChatSummary]
     
     var body: some View {
@@ -104,6 +105,7 @@ struct ChatHistoryView: View {
 // 世界树节点视图
 struct WorldTreeNodeView: View {
     @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject var appState: AppState
     let summary: DailyChatSummary
     let isFirst: Bool
     let isLast: Bool
@@ -340,7 +342,10 @@ struct WorldTreeNodeView: View {
         
         do {
             let persistentMessages = try modelContext.fetch(descriptor)
-            originalMessages = persistentMessages.map { $0.toChatMessage() }
+            var msgs = persistentMessages.map { $0.toChatMessage() }
+            // 旧版本不存 segments：通过卡片批次回填，保证历史卡片也能展示
+            appState.hydrateCardBatchesIfNeeded(for: &msgs, modelContext: modelContext)
+            originalMessages = msgs
             print("✅ 加载了 \(originalMessages.count) 条原始消息")
         } catch {
             print("⚠️ 加载原始消息失败: \(error)")
@@ -352,74 +357,106 @@ struct WorldTreeNodeView: View {
 struct HistoryMessageBubble: View {
     let message: ChatMessage
     @State private var selectedImage: IdentifiableImage? = nil
+    @State private var isCardHorizontalPaging: Bool = false
     
     var body: some View {
-        HStack(alignment: .top, spacing: 6) {
+        VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 8) {
+            // 时间戳
+            Text(formattedTime)
+                .font(.system(size: 9, weight: .medium))
+                .foregroundColor(Color.white.opacity(0.4))
+            
             if message.role == .user {
-                Spacer()
-            }
-            
-            VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 6) {
-                // 时间戳
-                Text(formattedTime)
-                    .font(.system(size: 9, weight: .medium))
-                    .foregroundColor(Color.white.opacity(0.4))
-                
-                // 图片缩略图（如果有）
-                if !message.images.isEmpty {
-                    HStack(spacing: 4) {
-                        ForEach(0..<min(3, message.images.count), id: \.self) { index in
-                            Button(action: {
-                                selectedImage = IdentifiableImage(image: message.images[index])
-                            }) {
-                                Image(uiImage: message.images[index])
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fill)
-                                    .frame(width: 45, height: 45)
-                                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 8)
-                                            .stroke(Color(red: 0.85, green: 1.0, blue: 0.25).opacity(0.4), lineWidth: 1)
-                                    )
-                            }
-                        }
-                        
-                        if message.images.count > 3 {
-                            Text("+\(message.images.count - 3)")
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundColor(Color.white.opacity(0.6))
-                                .frame(width: 45, height: 45)
-                                .background(Color.black.opacity(0.5))
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
-                        }
-                    }
-                }
-                
-                // 文字内容
-                if !message.content.trimmingCharacters(in: .whitespaces).isEmpty {
-                    Text(message.content)
-                        .font(.system(size: 11, weight: .regular))
-                        .foregroundColor(message.role == .user ? Color.black : Color.white.opacity(0.9))
-                        .lineSpacing(3)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 7)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12)
-                                .fill(message.role == .user ? 
-                                    Color(red: 0.85, green: 1.0, blue: 0.25) : 
-                                    Color.white.opacity(0.15))
-                        )
-                        .frame(maxWidth: 220, alignment: message.role == .user ? .trailing : .leading)
-                }
-            }
-            
-            if message.role == .agent {
-                Spacer()
+                UserBubble(message: message)
+            } else {
+                agentMessageContent
             }
         }
         .fullScreenCover(item: $selectedImage) { identifiableImage in
             FullScreenImageView(image: identifiableImage.image) {
                 selectedImage = nil
+            }
+        }
+    }
+
+    // 让历史记录与 ChatView 的 AI 气泡/卡片顺序对齐：
+    // - 优先使用持久化的 segments（后端 chunk 顺序）
+    // - 若 segments 为空，则 fallback：文本 -> schedule -> contact -> invoice -> meeting（与 ChatView 兼容逻辑一致）
+    @ViewBuilder
+    private var agentMessageContent: some View {
+        let segments: [ChatSegment] = {
+            if let segs = message.segments, !segs.isEmpty {
+                return segs
+            }
+            var segs: [ChatSegment] = []
+            let t = message.content.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !t.isEmpty { segs.append(.text(t)) }
+            if let s = message.scheduleEvents, !s.isEmpty { segs.append(.scheduleCards(s)) }
+            if let c = message.contacts, !c.isEmpty { segs.append(.contactCards(c)) }
+            if let i = message.invoices, !i.isEmpty { segs.append(.invoiceCards(i)) }
+            if let m = message.meetings, !m.isEmpty { segs.append(.meetingCards(m)) }
+            return segs
+        }()
+        
+        let hasAnyCards = segments.contains(where: { $0.kind != .text })
+        let firstTextSegmentId = segments.first(where: { $0.kind == .text })?.id
+        
+        VStack(alignment: .leading, spacing: 12) {
+            ForEach(segments) { seg in
+                switch seg.kind {
+                case .text:
+                    AIBubble(
+                        text: seg.text ?? "",
+                        messageId: nil,
+                        shouldAnimate: false,
+                        showActionButtons: false,
+                        isInterrupted: message.isInterrupted,
+                        showAvatar: (hasAnyCards ? (seg.id == firstTextSegmentId) : true)
+                    )
+                    
+                case .scheduleCards:
+                    ScheduleCardStackView(
+                        events: .constant(seg.scheduleEvents ?? []),
+                        isParentScrollDisabled: $isCardHorizontalPaging,
+                        onDeleteRequest: nil,
+                        onOpenDetail: nil
+                    )
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, -10)
+                    .allowsHitTesting(false)
+                    
+                case .contactCards:
+                    ContactCardStackView(
+                        contacts: .constant(seg.contacts ?? []),
+                        isParentScrollDisabled: $isCardHorizontalPaging,
+                        onOpenDetail: nil,
+                        onDeleteRequest: nil
+                    )
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, -10)
+                    .allowsHitTesting(false)
+                    
+                case .invoiceCards:
+                    InvoiceCardStackView(
+                        invoices: .constant(seg.invoices ?? []),
+                        onOpenDetail: nil,
+                        onDeleteRequest: nil
+                    )
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, -10)
+                    .allowsHitTesting(false)
+                    
+                case .meetingCards:
+                    MeetingSummaryCardStackView(
+                        meetings: .constant(seg.meetings ?? []),
+                        isParentScrollDisabled: $isCardHorizontalPaging,
+                        onDeleteRequest: nil,
+                        onOpenDetail: nil
+                    )
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, -10)
+                    .allowsHitTesting(false)
+                }
             }
         }
     }
@@ -434,5 +471,6 @@ struct HistoryMessageBubble: View {
 #Preview {
     ChatHistoryView()
         .modelContainer(for: DailyChatSummary.self, inMemory: true)
+        .environmentObject(AppState())
 }
 

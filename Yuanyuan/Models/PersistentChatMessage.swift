@@ -13,6 +13,9 @@ final class PersistentChatMessage {
     var isInterrupted: Bool = false
     var messageTypeRawValue: String
     var encodedImageData: Data?
+    /// 按后端 JSON chunk 顺序的分段渲染（用于历史消息与当次会话保持一致的展示顺序）
+    /// - 旧版本可能为 nil；UI 会自动走 fallback 渲染
+    @Attribute(.externalStorage) var encodedSegments: Data?
     
     init(
         id: UUID,
@@ -22,6 +25,7 @@ final class PersistentChatMessage {
         isGreeting: Bool,
         messageTypeRawValue: String,
         encodedImageData: Data?,
+        encodedSegments: Data? = nil,
         isInterrupted: Bool = false
     ) {
         self.id = id
@@ -31,6 +35,7 @@ final class PersistentChatMessage {
         self.isGreeting = isGreeting
         self.messageTypeRawValue = messageTypeRawValue
         self.encodedImageData = encodedImageData
+        self.encodedSegments = encodedSegments
         self.isInterrupted = isInterrupted
     }
 }
@@ -57,6 +62,12 @@ extension PersistentChatMessage {
             guard !imageDataArray.isEmpty else { return nil }
             return try? JSONEncoder().encode(imageDataArray)
         }()
+
+        // segments（可选）
+        let encodedSegments: Data? = {
+            guard let segs = message.segments, !segs.isEmpty else { return nil }
+            return try? JSONEncoder().encode(segs)
+        }()
         
         return PersistentChatMessage(
             id: message.id,
@@ -66,6 +77,7 @@ extension PersistentChatMessage {
             isGreeting: message.isGreeting,
             messageTypeRawValue: messageTypeValue,
             encodedImageData: encodedData,
+            encodedSegments: encodedSegments,
             isInterrupted: message.isInterrupted
         )
     }
@@ -94,6 +106,13 @@ extension PersistentChatMessage {
         }
         mutableMessage.streamingState = .completed
         mutableMessage.isInterrupted = isInterrupted
+        
+        // 解码 segments（如果有）
+        if let encodedSegments,
+           let segs = try? JSONDecoder().decode([ChatSegment].self, from: encodedSegments),
+           !segs.isEmpty {
+            mutableMessage.segments = segs
+        }
         return mutableMessage
     }
 }
