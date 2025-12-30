@@ -26,6 +26,7 @@ final class BackendChatService {
     static func sendMessageStream(
         messages: [ChatMessage],
         mode: AppMode,
+        includeShortcut: Bool = true,
         onStructuredOutput: (@MainActor (BackendChatStructuredOutput) -> Void)? = nil,
         onComplete: @escaping (String) async -> Void,
         onError: @escaping (Error) -> Void
@@ -49,7 +50,11 @@ final class BackendChatService {
             let filtered = messages.filter { !$0.isGreeting }
             // 只发送一组 content（以最新的用户输入为主）
             let lastUser = filtered.last(where: { $0.role == .user })
-            let contentPayload = buildContentV1Payload(userMessage: lastUser, systemPrompt: systemPrompt)
+            let contentPayload = buildContentV1Payload(
+                userMessage: lastUser,
+                systemPrompt: systemPrompt,
+                includeShortcut: includeShortcut
+            )
             request.httpBody = try JSONSerialization.data(withJSONObject: contentPayload)
 
             // 线上也需要可见日志：自动脱敏/截断，避免 base64 把控制台刷爆
@@ -946,7 +951,7 @@ final class BackendChatService {
         return newImage ?? image
     }
     
-    private static func buildContentV1Payload(userMessage: ChatMessage?, systemPrompt: String) -> [String: Any] {
+    private static func buildContentV1Payload(userMessage: ChatMessage?, systemPrompt: String, includeShortcut: Bool) -> [String: Any] {
         var content: [[String: Any]] = []
         
         // 按示例：text
@@ -967,12 +972,14 @@ final class BackendChatService {
         }
         
         // shortcut（可选）
-        let shortcut = BackendChatConfig.shortcut.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !shortcut.isEmpty {
-            content.append([
-                "type": "shortcut",
-                "shortcut": ["shortcut": shortcut]
-            ])
+        if includeShortcut {
+            let shortcut = BackendChatConfig.shortcut.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !shortcut.isEmpty {
+                content.append([
+                    "type": "shortcut",
+                    "shortcut": ["shortcut": shortcut]
+                ])
+            }
         }
         
         // image_url（当前 ChatMessage 只支持图片，所以先落地图片）

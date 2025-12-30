@@ -455,6 +455,11 @@ struct ChatView: View {
             withAnimation(.easeOut(duration: 0.5)) {
                 showContent = true
             }
+
+            // 仅首次进入且内存为空时加载最近历史，避免每次进入聊天室都重载导致混乱
+            if appState.chatMessages.isEmpty {
+                appState.refreshChatMessagesFromStorageIfNeeded(modelContext: modelContext, limit: 80)
+            }
             
             // 同步初始状态
             inputViewModel.isAgentTyping = appState.isAgentTyping
@@ -486,6 +491,8 @@ struct ChatView: View {
         }
         // App 回到前台时强刷，确保“今天”切换或后台被改动后能及时同步
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+            // 前台恢复时同步一次聊天记录，确保快捷指令后台发送的消息能出现在 UI
+            appState.refreshChatMessagesFromStorageIfNeeded(modelContext: modelContext, limit: 80)
             refreshTodaySchedules(force: true)
         }
         // 系统显著时间变化（含跨天/时区变化）时强刷
@@ -696,6 +703,8 @@ struct ChatView: View {
                     UserBubble(message: message)
                         .id(message.id)
                 } else {
+                    let latestAgentId = appState.chatMessages.last(where: { $0.role == .agent })?.id
+                    let isLatestAgentMessage = (latestAgentId != nil && message.id == latestAgentId)
                     VStack(alignment: .leading, spacing: 12) {
                         // ✅ 按后端 JSON chunk 的顺序分段渲染：发什么就按什么展示，一条流程走完
                         if let msgIndex = appState.chatMessages.firstIndex(where: { $0.id == message.id }),
@@ -704,14 +713,17 @@ struct ChatView: View {
                             
                             let hasAnyCards = segments.contains(where: { $0.kind != .text })
                             let firstTextSegmentId = segments.first(where: { $0.kind == .text })?.id
+                            let lastTextSegmentId = segments.last(where: { $0.kind == .text })?.id
                             
                             ForEach(segments) { seg in
                                 switch seg.kind {
                                 case .text:
                                     let showAvatar = (seg.id == firstTextSegmentId)
+                                    let shouldAnimate = isLatestAgentMessage && (seg.id == lastTextSegmentId)
                                     AIBubble(
                                         text: seg.text ?? "",
                                         messageId: showAvatar && !hasAnyCards ? message.id : nil,
+                                        shouldAnimate: shouldAnimate,
                                         showActionButtons: showAvatar && !hasAnyCards,
                                         isInterrupted: message.isInterrupted,
                                         showAvatar: showAvatar
@@ -939,9 +951,11 @@ struct ChatView: View {
                                 }
                             } else {
                                 let text = (message.content.isEmpty && appState.isAgentTyping) ? "正在思考..." : message.content
+                                let shouldAnimate = isLatestAgentMessage && (text != "正在思考...")
                                 AIBubble(
                                     text: text,
                                     messageId: message.id,
+                                    shouldAnimate: shouldAnimate,
                                     showActionButtons: true,
                                     isInterrupted: message.isInterrupted,
                                     showAvatar: true
@@ -1238,6 +1252,8 @@ struct TypewriterBubble: View {
 struct AIBubble: View {
     let text: String
     let messageId: UUID?
+    /// 是否启用打字机效果（必须由上层保证：仅最新 AI 气泡为 true）
+    var shouldAnimate: Bool = false
     var showActionButtons: Bool = true // 控制是否显示操作按钮
     var isInterrupted: Bool = false // 是否被中断
     var showAvatar: Bool = true // 是否显示头像（用于“卡片后的续写文本”不重复头像）
@@ -1314,22 +1330,38 @@ struct AIBubble: View {
             Spacer(minLength: 20)
         }
         .onAppear {
+            // 历史消息：永远不触发打字机（避免 ScrollView 复用导致“滑到哪里打到哪里”）
+            guard shouldAnimate else {
+                renderImmediately(with: text, notify: false)
+                return
+            }
+            // 最新消息：根据当前状态继续/补齐
             if isInterrupted {
-                completeImmediately()
+                renderImmediately(with: text, notify: true)
             } else {
-                resetAndStartTypewriter(with: text)
+                applyAnimatedTextChange(text)
             }
         }
         .onChange(of: isInterrupted) { _, newValue in
             if newValue {
-                completeImmediately()
+                // 被中断：立即显示完整文本，且结束本次打字机
+                renderImmediately(with: text, notify: true)
             }
         }
         .onChange(of: text) { _, newValue in
-            guard !isInterrupted else { return }
-            resetAndStartTypewriter(with: newValue)
+            // 历史消息：文本变化（比如刷新/合并）也直接渲染，不走打字机
+            guard shouldAnimate else {
+                renderImmediately(with: newValue, notify: false)
+                return
+            }
+            guard !isInterrupted else {
+                renderImmediately(with: newValue, notify: true)
+                return
+            }
+            applyAnimatedTextChange(newValue)
         }
         .onDisappear {
+            // 只有最新气泡才有 timer；离屏停止，避免后台跑计时器
             timer?.invalidate()
             timer = nil
         }
@@ -1390,18 +1422,24 @@ struct AIBubble: View {
         }
     }
     
-    private func resetAndStartTypewriter(with newText: String) {
+    private func resetAndStartTypewriter(with newText: String, startAt startIndex: Int = 0) {
         timer?.invalidate()
         timer = nil
-        displayedText = ""
         isCompleted = false
         
         let chars = Array(newText)
         guard !chars.isEmpty else { return }
         
-        // 先立即显示第一个字符，避免闪一下空白
-        displayedText = String(chars[0])
-        var idx = 1
+        // 从指定下标继续（用于“只补齐新增尾部”）
+        var idx = max(0, min(startIndex, chars.count))
+        if idx == 0 {
+            // 先立即显示第一个字符，避免闪一下空白
+            displayedText = String(chars[0])
+            idx = 1
+        } else {
+            // 保证 displayedText 至少是 prefix
+            displayedText = String(chars.prefix(idx))
+        }
         
         timer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { t in
             if idx < chars.count {
@@ -1417,12 +1455,39 @@ struct AIBubble: View {
         }
     }
     
-    private func completeImmediately() {
+    private func renderImmediately(with newText: String, notify: Bool) {
         timer?.invalidate()
         timer = nil
-        displayedText = text
+        displayedText = newText
         isCompleted = true
-        onTypingCompleted?()
+        if notify { onTypingCompleted?() }
+    }
+
+    /// 最新气泡：尽量“增量补齐”，避免每次 text 变化都从头打字。
+    private func applyAnimatedTextChange(_ newText: String) {
+        let trimmed = newText
+        guard !trimmed.isEmpty else {
+            // 空文本不启动
+            displayedText = ""
+            isCompleted = false
+            timer?.invalidate()
+            timer = nil
+            return
+        }
+
+        // 已完成且一致：不重复触发
+        if isCompleted && displayedText == trimmed { return }
+
+        // 如果新文本以当前已显示内容为前缀：只补齐新增尾部
+        if !displayedText.isEmpty, trimmed.hasPrefix(displayedText) {
+            let start = displayedText.count
+            resetAndStartTypewriter(with: trimmed, startAt: start)
+            return
+        }
+
+        // 兜底：从头开始（例如文本被整体替换）
+        displayedText = ""
+        resetAndStartTypewriter(with: trimmed, startAt: 0)
     }
 }
 

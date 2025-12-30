@@ -12,12 +12,12 @@ struct YuanyuanApp: App {
     let modelContainer: ModelContainer
     
     init() {
-        // 统一后端接入：启动即清空本地落盘数据/文件，避免与后端冲突。
-        LocalDataPurger.purgeAll(reason: "统一后端接入：禁用本地持久化")
+        // 启动期只清理临时缓存：不要清 SwiftData store（否则会抹掉 AppIntent 写入的聊天记录）
+        LocalDataPurger.purgeCaches(reason: "启动清理临时缓存")
 
         do {
             modelContainer = try SharedModelContainer.makeContainer()
-            print("✅ SwiftData 容器初始化成功（内存库）")
+            print("✅ SwiftData 容器初始化成功")
         } catch {
             print("❌ 容器初始化失败: \(error)")
             fatalError("无法初始化 SwiftData 容器: \(error)")

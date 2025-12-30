@@ -20,6 +20,20 @@ enum LocalDataPurger {
         #endif
     }
 
+    /// 启动期清理：只清理临时文件/缓存，不触碰 SwiftData store（否则会抹掉 AppIntent 写入的聊天记录）。
+    static func purgeCaches(reason: String) {
+        #if DEBUG
+        print("🧹 [LocalDataPurger] 开始清理缓存：\(reason)")
+        #endif
+
+        purgeMeetingRecordings()
+        purgeTemporaryAudioCache()
+
+        #if DEBUG
+        print("🧹 [LocalDataPurger] 缓存清理完成")
+        #endif
+    }
+
     // MARK: - SwiftData / Store
 
     private static func purgeSwiftDataStores() {

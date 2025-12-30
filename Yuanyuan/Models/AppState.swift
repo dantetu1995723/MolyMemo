@@ -883,6 +883,51 @@ class AppState: ObservableObject {
         }
     }
 
+    /// 从 SwiftData 刷新聊天记录（用于：AppIntent/Widget 在后台写入后，主 App 拉取同步）
+    /// - 策略：
+    ///   - 若内存为空：加载最近 N 条作为初始历史
+    ///   - 若内存不为空：只追加“比最后一条更晚”的新消息，避免每次进入聊天室都重载历史导致混乱
+    func refreshChatMessagesFromStorageIfNeeded(modelContext: ModelContext, limit: Int = 80) {
+        let cap = max(10, limit)
+
+        // 1) 首次：内存为空 -> 拉一段最近消息
+        if chatMessages.isEmpty {
+            loadRecentMessages(modelContext: modelContext, limit: cap)
+            return
+        }
+
+        // 2) 增量：只拉取更新时间更晚的消息
+        let lastTs = chatMessages.last?.timestamp ?? Date.distantPast
+        var descriptor = FetchDescriptor<PersistentChatMessage>(
+            predicate: #Predicate<PersistentChatMessage> { msg in
+                msg.timestamp > lastTs
+            },
+            sortBy: [SortDescriptor(\.timestamp, order: .forward)]
+        )
+        // 增量一次最多取 cap 条（极端情况下避免一次拉爆）
+        descriptor.fetchLimit = cap
+
+        do {
+            let persistents = try modelContext.fetch(descriptor)
+            guard !persistents.isEmpty else { return }
+
+            let existingIds = Set(chatMessages.map { $0.id })
+            let incoming = persistents
+                .map { $0.toChatMessage() }
+                .filter { !existingIds.contains($0.id) }
+            guard !incoming.isEmpty else { return }
+
+            chatMessages.append(contentsOf: incoming)
+
+            // 3) 控制内存窗口大小：仅保留最后 cap 条，避免无限增长
+            if chatMessages.count > cap {
+                chatMessages.removeFirst(chatMessages.count - cap)
+            }
+        } catch {
+            print("⚠️ 刷新聊天记录失败: \(error)")
+        }
+    }
+
     /// 清空所有聊天记录（从内存和本地存储）
     func clearAllMessages(modelContext: ModelContext) {
         // 清空内存中的消息
