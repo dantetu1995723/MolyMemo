@@ -89,19 +89,6 @@
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
-/* Begin PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
-		D2C37E7A2ED037E7008A1041 /* Exceptions for "Yuanyuan" folder in "Embed Frameworks" phase from "Yuanyuan" target */ = {
-			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
-			attributesByRelativePath = {
-				AliyunOSSiOS.xcframework = (CodeSignOnCopy, RemoveHeadersOnCopy, );
-			};
-			buildPhase = D2C37E792ED037E7008A1041 /* Embed Frameworks */;
-			membershipExceptions = (
-				AliyunOSSiOS.xcframework,
-			);
-		};
-/* End PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
-
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		D23D64042ECC698E000143AD /* YuanyuanWidget */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
@@ -115,7 +102,6 @@
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				D25A850E2EA9D8AF004B6C58 /* Exceptions for "Yuanyuan" folder in "Yuanyuan" target */,
-				D2C37E7A2ED037E7008A1041 /* Exceptions for "Yuanyuan" folder in "Embed Frameworks" phase from "Yuanyuan" target */,
 				D2A60E5B2ECC79D3004F8714 /* Exceptions for "Yuanyuan" folder in "YuanyuanWidgetExtension" target */,
 			);
 			path = Yuanyuan;

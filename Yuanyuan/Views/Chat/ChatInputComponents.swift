@@ -137,6 +137,7 @@ struct CameraPicker: UIViewControllerRepresentable {
 // MARK: - Action Menu
 struct ActionMenu: View {
     @ObservedObject var viewModel: ChatInputViewModel
+    @State private var showCameraUnavailableAlert = false
     
     var body: some View {
         VStack(spacing: 12) {
@@ -145,6 +146,8 @@ struct ActionMenu: View {
                 Button(action: {
                     if UIImagePickerController.isSourceTypeAvailable(.camera) {
                         viewModel.showCamera = true
+                    } else {
+                        showCameraUnavailableAlert = true
                     }
                 }) {
                     MenuCardView(icon: "camera", label: "拍照片")
@@ -178,6 +181,11 @@ struct ActionMenu: View {
         .padding(.bottom, 24)
         .frame(maxWidth: .infinity)
         .background(Color(hex: "F7F8FA"))
+        .alert("相机不可用", isPresented: $showCameraUnavailableAlert) {
+            Button("知道了", role: .cancel) {}
+        } message: {
+            Text("当前运行环境不支持相机（例如模拟器）。请使用真机，或点击“传图片”。")
+        }
         .fullScreenCover(isPresented: $viewModel.showCamera) {
             CameraPicker { image in
                 viewModel.selectedImage = image

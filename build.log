@@ -32,23 +32,713 @@ ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeD
 
 ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ld -version_details
 
-Build description signature: 7d6a886d63a4f42ebcf9fc299c3989ef
-Build description path: /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/XCBuildData/7d6a886d63a4f42ebcf9fc299c3989ef.xcbuilddata
+Build description signature: c57b0e274782f21693b33fb552836bd0
+Build description path: /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/XCBuildData/c57b0e274782f21693b33fb552836bd0.xcbuilddata
 ClangStatCache /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang-stat-cache /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.1.sdk /Users/yansongtu/Library/Developer/Xcode/DerivedData/SDKStatCaches.noindex/iphonesimulator26.1-23B77-90cf18a4295e390e64c810bc6bd7acbc.sdkstatcache
     cd /Users/yansongtu/Documents/Yuanyuan/Yuanyuan.xcodeproj
     /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang-stat-cache /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.1.sdk -o /Users/yansongtu/Library/Developer/Xcode/DerivedData/SDKStatCaches.noindex/iphonesimulator26.1-23B77-90cf18a4295e390e64c810bc6bd7acbc.sdkstatcache
+
+ProcessProductPackaging /Users/yansongtu/Documents/Yuanyuan/YuanyuanWidgetExtension.entitlements /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/YuanyuanWidgetExtension.build/YuanyuanWidgetExtension.appex.xcent (in target 'YuanyuanWidgetExtension' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+    Entitlements:
+    
+    {
+}
+    
+    builtin-productPackagingUtility /Users/yansongtu/Documents/Yuanyuan/YuanyuanWidgetExtension.entitlements -entitlements -format xml -o /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/YuanyuanWidgetExtension.build/YuanyuanWidgetExtension.appex.xcent
+
+ProcessProductPackaging /Users/yansongtu/Documents/Yuanyuan/YuanyuanWidgetExtension.entitlements /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/YuanyuanWidgetExtension.build/YuanyuanWidgetExtension.appex-Simulated.xcent (in target 'YuanyuanWidgetExtension' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+    Entitlements:
+    
+    {
+    "application-identifier" = "PL5HSP454X.dantetu.Yuanyuan.YuanyuanWidget";
+    "com.apple.security.application-groups" =     (
+        "group.com.yuanyuan.shared"
+    );
+}
+    
+    builtin-productPackagingUtility /Users/yansongtu/Documents/Yuanyuan/YuanyuanWidgetExtension.entitlements -entitlements -format xml -o /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/YuanyuanWidgetExtension.build/YuanyuanWidgetExtension.appex-Simulated.xcent
+
+ProcessProductPackagingDER /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/YuanyuanWidgetExtension.build/YuanyuanWidgetExtension.appex-Simulated.xcent /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/YuanyuanWidgetExtension.build/YuanyuanWidgetExtension.appex-Simulated.xcent.der (in target 'YuanyuanWidgetExtension' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    /usr/bin/derq query -f xml -i /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/YuanyuanWidgetExtension.build/YuanyuanWidgetExtension.appex-Simulated.xcent -o /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/YuanyuanWidgetExtension.build/YuanyuanWidgetExtension.appex-Simulated.xcent.der --raw
+
+ProcessProductPackagingDER /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/YuanyuanWidgetExtension.build/YuanyuanWidgetExtension.appex.xcent /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/YuanyuanWidgetExtension.build/YuanyuanWidgetExtension.appex.xcent.der (in target 'YuanyuanWidgetExtension' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    /usr/bin/derq query -f xml -i /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/YuanyuanWidgetExtension.build/YuanyuanWidgetExtension.appex.xcent -o /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/YuanyuanWidgetExtension.build/YuanyuanWidgetExtension.appex.xcent.der --raw
+
+WriteAuxiliaryFile /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Objects-normal/arm64/Yuanyuan.SwiftConstValuesFileList (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    write-file /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Objects-normal/arm64/Yuanyuan.SwiftConstValuesFileList
+
+WriteAuxiliaryFile /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Objects-normal/arm64/Yuanyuan.SwiftFileList (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    write-file /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Objects-normal/arm64/Yuanyuan.SwiftFileList
+
+WriteAuxiliaryFile /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Objects-normal/arm64/Yuanyuan.LinkFileList (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    write-file /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Objects-normal/arm64/Yuanyuan.LinkFileList
+
+WriteAuxiliaryFile /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Objects-normal/arm64/Yuanyuan-OutputFileMap.json (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    write-file /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Objects-normal/arm64/Yuanyuan-OutputFileMap.json
+
+Ld /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/YuanyuanWidgetExtension.appex/__preview.dylib normal (in target 'YuanyuanWidgetExtension' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target arm64-apple-ios26.0-simulator -dynamiclib -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.1.sdk -O0 -L/Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator -F/Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator -install_name @rpath/YuanyuanWidgetExtension.debug.dylib -dead_strip -rdynamic -Xlinker -no_deduplicate -Xlinker -objc_abi_version -Xlinker 2 -Xlinker -dependency_info -Xlinker /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/YuanyuanWidgetExtension.build/Objects-normal/arm64/YuanyuanWidgetExtension_dependency_info.dat -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __entitlements -Xlinker /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/YuanyuanWidgetExtension.build/YuanyuanWidgetExtension.appex-Simulated.xcent -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __ents_der -Xlinker /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/YuanyuanWidgetExtension.build/YuanyuanWidgetExtension.appex-Simulated.xcent.der -Xlinker -no_adhoc_codesign -o /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/YuanyuanWidgetExtension.appex/__preview.dylib
 
 ProcessInfoPlistFile /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/YuanyuanWidgetExtension.appex/Info.plist /Users/yansongtu/Documents/Yuanyuan/YuanyuanWidget/Info.plist (in target 'YuanyuanWidgetExtension' from project 'Yuanyuan')
     cd /Users/yansongtu/Documents/Yuanyuan
     builtin-infoPlistUtility /Users/yansongtu/Documents/Yuanyuan/YuanyuanWidget/Info.plist -producttype com.apple.product-type.app-extension -expandbuildsettings -format binary -platform iphonesimulator -additionalcontentfile /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/YuanyuanWidgetExtension.build/assetcatalog_generated_info.plist -o /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/YuanyuanWidgetExtension.appex/Info.plist
 
+Ld /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/YuanyuanWidgetExtension.appex/YuanyuanWidgetExtension.debug.dylib normal (in target 'YuanyuanWidgetExtension' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target arm64-apple-ios26.0-simulator -dynamiclib -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.1.sdk -O0 -L/Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/EagerLinkingTBDs/Debug-iphonesimulator -L/Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator -F/Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/EagerLinkingTBDs/Debug-iphonesimulator -F/Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator -filelist /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/YuanyuanWidgetExtension.build/Objects-normal/arm64/YuanyuanWidgetExtension.LinkFileList -install_name @rpath/YuanyuanWidgetExtension.debug.dylib -Xlinker -rpath -Xlinker @executable_path/Frameworks -Xlinker -rpath -Xlinker @executable_path/../../Frameworks -dead_strip -Xlinker -object_path_lto -Xlinker /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/YuanyuanWidgetExtension.build/Objects-normal/arm64/YuanyuanWidgetExtension_lto.o -rdynamic -Xlinker -no_deduplicate -Xlinker -objc_abi_version -Xlinker 2 -Xlinker -dependency_info -Xlinker /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/YuanyuanWidgetExtension.build/Objects-normal/arm64/YuanyuanWidgetExtension_dependency_info.dat -fapplication-extension -fobjc-link-runtime -L/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/iphonesimulator -L/usr/lib/swift -Xlinker -add_ast_path -Xlinker /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/YuanyuanWidgetExtension.build/Objects-normal/arm64/YuanyuanWidgetExtension.swiftmodule @/Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/YuanyuanWidgetExtension.build/Objects-normal/arm64/YuanyuanWidgetExtension-linker-args.resp -Xlinker -alias -Xlinker _NSExtensionMain -Xlinker ___debug_main_executable_dylib_entry_point -framework SwiftUI -framework WidgetKit -Xlinker -no_adhoc_codesign -o /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/YuanyuanWidgetExtension.appex/YuanyuanWidgetExtension.debug.dylib
+
+ProcessProductPackaging /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Yuanyuan.entitlements /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Yuanyuan.app.xcent (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+    Entitlements:
+    
+    {
+}
+    
+    builtin-productPackagingUtility /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Yuanyuan.entitlements -entitlements -format xml -o /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Yuanyuan.app.xcent
+
+ProcessProductPackaging /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Yuanyuan.entitlements /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Yuanyuan.app-Simulated.xcent (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+    Entitlements:
+    
+    {
+    "application-identifier" = "PL5HSP454X.dantetu.Yuanyuan";
+    "com.apple.security.application-groups" =     (
+        "group.com.yuanyuan.shared"
+    );
+}
+    
+    builtin-productPackagingUtility /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Yuanyuan.entitlements -entitlements -format xml -o /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Yuanyuan.app-Simulated.xcent
+
+ProcessProductPackagingDER /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Yuanyuan.app.xcent /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Yuanyuan.app.xcent.der (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    /usr/bin/derq query -f xml -i /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Yuanyuan.app.xcent -o /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Yuanyuan.app.xcent.der --raw
+
+ProcessProductPackagingDER /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Yuanyuan.app-Simulated.xcent /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Yuanyuan.app-Simulated.xcent.der (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    /usr/bin/derq query -f xml -i /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Yuanyuan.app-Simulated.xcent -o /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Yuanyuan.app-Simulated.xcent.der --raw
+
+SwiftDriver Yuanyuan normal arm64 com.apple.xcode.tools.swift.compiler (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    builtin-SwiftDriver -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -module-name Yuanyuan -Onone -enforce-exclusivity\=checked @/Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Objects-normal/arm64/Yuanyuan.SwiftFileList -DDEBUG -enable-bare-slash-regex -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.1.sdk -target arm64-apple-ios26.0-simulator -g -module-cache-path /Users/yansongtu/Library/Developer/Xcode/DerivedData/ModuleCache.noindex -Xfrontend -serialize-debugging-options -enable-testing -index-store-path /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Index.noindex/DataStore -Xcc -D_LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -swift-version 5 -I /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator -F /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator -emit-localized-strings -emit-localized-strings-path /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Objects-normal/arm64 -c -j11 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc /Users/yansongtu/Library/Developer/Xcode/DerivedData/SDKStatCaches.noindex/iphonesimulator26.1-23B77-90cf18a4295e390e64c810bc6bd7acbc.sdkstatcache -output-file-map /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Objects-normal/arm64/Yuanyuan-OutputFileMap.json -use-frontend-parseable-output -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path /Users/yansongtu/Library/Developer/Xcode/DerivedData/ModuleCache.noindex -sdk-module-cache-path /Users/yansongtu/Library/Developer/Xcode/DerivedData/ModuleCache.noindex -serialize-diagnostics -emit-dependencies -emit-module -emit-module-path /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Objects-normal/arm64/Yuanyuan.swiftmodule -validate-clang-modules-once -clang-build-session-file /Users/yansongtu/Library/Developer/Xcode/DerivedData/ModuleCache.noindex/Session.modulevalidation -Xcc -I/Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/swift-overrides.hmap -emit-const-values -Xfrontend -const-gather-protocols-file -Xfrontend /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Objects-normal/arm64/Yuanyuan_const_extract_protocols.json -Xcc -iquote -Xcc /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Yuanyuan-generated-files.hmap -Xcc -I/Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Yuanyuan-own-target-headers.hmap -Xcc -I/Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Yuanyuan-all-target-headers.hmap -Xcc -iquote -Xcc /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Yuanyuan-project-headers.hmap -Xcc -I/Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/include -Xcc -I/Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/DerivedSources-normal/arm64 -Xcc -I/Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/DerivedSources/arm64 -Xcc -I/Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/DerivedSources -Xcc -DDEBUG\=1 -emit-objc-header -emit-objc-header-path /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Objects-normal/arm64/Yuanyuan-Swift.h -working-directory /Users/yansongtu/Documents/Yuanyuan -experimental-emit-module-separately -disable-cmo
+
+ConstructStubExecutorLinkFileList /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/YuanyuanWidgetExtension.build/YuanyuanWidgetExtension-ExecutorLinkFileList-normal-arm64.txt (in target 'YuanyuanWidgetExtension' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    construct-stub-executor-link-file-list /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/YuanyuanWidgetExtension.appex/YuanyuanWidgetExtension.debug.dylib /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/usr/lib/libPreviewsJITStubExecutor_no_swift_entry_point.a /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/usr/lib/libPreviewsJITStubExecutor.a --output /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/YuanyuanWidgetExtension.build/YuanyuanWidgetExtension-ExecutorLinkFileList-normal-arm64.txt
+note: Using stub executor library with Swift entry point. (in target 'YuanyuanWidgetExtension' from project 'Yuanyuan')
+
+Ld /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/YuanyuanWidgetExtension.appex/YuanyuanWidgetExtension normal (in target 'YuanyuanWidgetExtension' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target arm64-apple-ios26.0-simulator -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.1.sdk -O0 -L/Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator -F/Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator -Xlinker -rpath -Xlinker @executable_path -Xlinker -rpath -Xlinker @executable_path/Frameworks -Xlinker -rpath -Xlinker @executable_path/../../Frameworks -rdynamic -Xlinker -no_deduplicate -Xlinker -objc_abi_version -Xlinker 2 -e ___debug_blank_executor_main -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __debug_dylib -Xlinker /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/YuanyuanWidgetExtension.build/YuanyuanWidgetExtension-DebugDylibPath-normal-arm64.txt -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __debug_entry -Xlinker /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/YuanyuanWidgetExtension.build/YuanyuanWidgetExtension-DebugEntryPoint-normal-arm64.txt -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __debug_instlnm -Xlinker /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/YuanyuanWidgetExtension.build/YuanyuanWidgetExtension-DebugDylibInstallName-normal-arm64.txt -Xlinker -filelist -Xlinker /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/YuanyuanWidgetExtension.build/YuanyuanWidgetExtension-ExecutorLinkFileList-normal-arm64.txt -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __entitlements -Xlinker /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/YuanyuanWidgetExtension.build/YuanyuanWidgetExtension.appex-Simulated.xcent -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __ents_der -Xlinker /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/YuanyuanWidgetExtension.build/YuanyuanWidgetExtension.appex-Simulated.xcent.der /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/YuanyuanWidgetExtension.appex/YuanyuanWidgetExtension.debug.dylib -Xlinker -no_adhoc_codesign -o /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/YuanyuanWidgetExtension.appex/YuanyuanWidgetExtension
+
+ExtractAppIntentsMetadata (in target 'YuanyuanWidgetExtension' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/appintentsmetadataprocessor --toolchain-dir /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain --module-name YuanyuanWidgetExtension --sdk-root /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.1.sdk --xcode-version 17B100 --platform-family iOS --deployment-target 26.0 --bundle-identifier dantetu.Yuanyuan.YuanyuanWidget --output /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/YuanyuanWidgetExtension.appex --target-triple arm64-apple-ios26.0-simulator --binary-file /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/YuanyuanWidgetExtension.appex/YuanyuanWidgetExtension --dependency-file /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/YuanyuanWidgetExtension.build/Objects-normal/arm64/YuanyuanWidgetExtension_dependency_info.dat --stringsdata-file /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/YuanyuanWidgetExtension.build/Objects-normal/arm64/ExtractedAppShortcutsMetadata.stringsdata --source-file-list /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/YuanyuanWidgetExtension.build/Objects-normal/arm64/YuanyuanWidgetExtension.SwiftFileList --metadata-file-list /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/YuanyuanWidgetExtension.build/YuanyuanWidgetExtension.DependencyMetadataFileList --static-metadata-file-list /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/YuanyuanWidgetExtension.build/YuanyuanWidgetExtension.DependencyStaticMetadataFileList --swift-const-vals-list /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/YuanyuanWidgetExtension.build/Objects-normal/arm64/YuanyuanWidgetExtension.SwiftConstValuesFileList --compile-time-extraction --deployment-aware-processing --validate-assistant-intents --no-app-shortcuts-localization
+2025-12-29 18:14:45.103 appintentsmetadataprocessor[40708:1105530] Starting appintentsmetadataprocessor export
+2025-12-29 18:14:45.244 appintentsmetadataprocessor[40708:1105530] Writing Metadata.appintents
+2025-12-29 18:14:45.244 appintentsmetadataprocessor[40708:1105530] Metadata root: /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/YuanyuanWidgetExtension.appex/Metadata.appintents
+
+CodeSign /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/YuanyuanWidgetExtension.appex/YuanyuanWidgetExtension.debug.dylib (in target 'YuanyuanWidgetExtension' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+    Signing Identity:     "Sign to Run Locally"
+    
+    /usr/bin/codesign --force --sign - --timestamp\=none --generate-entitlement-der /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/YuanyuanWidgetExtension.appex/YuanyuanWidgetExtension.debug.dylib
+
+CodeSign /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/YuanyuanWidgetExtension.appex/__preview.dylib (in target 'YuanyuanWidgetExtension' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+    Signing Identity:     "Sign to Run Locally"
+    
+    /usr/bin/codesign --force --sign - --timestamp\=none --generate-entitlement-der /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/YuanyuanWidgetExtension.appex/__preview.dylib
+
+CodeSign /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/YuanyuanWidgetExtension.appex (in target 'YuanyuanWidgetExtension' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+    Signing Identity:     "Sign to Run Locally"
+    
+    /usr/bin/codesign --force --sign - --entitlements /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/YuanyuanWidgetExtension.build/YuanyuanWidgetExtension.appex.xcent --timestamp\=none --generate-entitlement-der /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/YuanyuanWidgetExtension.appex
+
+Ld /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/Yuanyuan.app/__preview.dylib normal (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target arm64-apple-ios26.0-simulator -dynamiclib -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.1.sdk -O0 -L/Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator -F/Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator -install_name @rpath/Yuanyuan.debug.dylib -dead_strip -rdynamic -Xlinker -no_deduplicate -Xlinker -objc_abi_version -Xlinker 2 -Xlinker -dependency_info -Xlinker /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Objects-normal/arm64/Yuanyuan_dependency_info.dat -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __entitlements -Xlinker /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Yuanyuan.app-Simulated.xcent -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __ents_der -Xlinker /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Yuanyuan.app-Simulated.xcent.der -Xlinker -no_adhoc_codesign -o /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/Yuanyuan.app/__preview.dylib
+
+SwiftEmitModule normal arm64 Emitting\ module\ for\ Yuanyuan (in target 'Yuanyuan' from project 'Yuanyuan')
+
+EmitSwiftModule normal arm64 (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 Compiling\ DarwinNotificationCenter.swift,\ DeleteActions.swift,\ ExpensePDFGenerator.swift,\ ExpiringAsyncCache.swift,\ FeishuAPIService.swift,\ FeishuCalendarSyncManager.swift,\ KeychainStore.swift,\ LiveRecordingManager.swift,\ LocalDataPurger.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/DarwinNotificationCenter.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/DeleteActions.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/ExpensePDFGenerator.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/ExpiringAsyncCache.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/FeishuAPIService.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/FeishuCalendarSyncManager.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/KeychainStore.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/LiveRecordingManager.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/LocalDataPurger.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/DarwinNotificationCenter.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/DeleteActions.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/ExpensePDFGenerator.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/ExpiringAsyncCache.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/FeishuAPIService.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/FeishuCalendarSyncManager.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/KeychainStore.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/LiveRecordingManager.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/LocalDataPurger.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 Compiling\ HapticFeedback.swift,\ StartMeetingRecordingIntent.swift,\ AppState.swift,\ AuthStore.swift,\ ClassificationError.swift,\ CompanyInfo.swift,\ Contact.swift,\ DailyChatSummary.swift,\ Expense.swift,\ Meeting.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Extensions/HapticFeedback.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Intents/StartMeetingRecordingIntent.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Models/AppState.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Models/AuthStore.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Models/ClassificationError.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Models/CompanyInfo.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Models/Contact.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Models/DailyChatSummary.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Models/Expense.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Models/Meeting.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Extensions/HapticFeedback.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Intents/StartMeetingRecordingIntent.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Models/AppState.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Models/AuthStore.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Models/ClassificationError.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Models/CompanyInfo.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Models/Contact.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Models/DailyChatSummary.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Models/Expense.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Models/Meeting.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 Compiling\ MeetingRecordingAttributes.swift,\ PersistentChatMessage.swift,\ ScreenshotSendAttributes.swift,\ SharedModelContainer.swift,\ StoredChatCards.swift,\ TodoItem.swift,\ ScreenshotIntent.swift,\ SendLatestScreenshotToChatIntent.swift,\ AIFormFillerService.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Models/MeetingRecordingAttributes.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Models/PersistentChatMessage.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Models/ScreenshotSendAttributes.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Models/SharedModelContainer.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Models/StoredChatCards.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Models/TodoItem.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Shortcuts/ScreenshotIntent.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Shortcuts/SendLatestScreenshotToChatIntent.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/AIFormFillerService.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Models/MeetingRecordingAttributes.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Models/PersistentChatMessage.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Models/ScreenshotSendAttributes.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Models/SharedModelContainer.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Models/StoredChatCards.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Models/TodoItem.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Shortcuts/ScreenshotIntent.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Shortcuts/SendLatestScreenshotToChatIntent.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/AIFormFillerService.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+/Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/AIFormFillerService.swift:209:21: warning: consider using asynchronous alternative function
+            webView.evaluateJavaScript(fillScript) { result, error in
+                    ^
+WebKit.WKWebView.evaluateJavaScript:2:11: note: 'evaluateJavaScript' declared here
+open func evaluateJavaScript(_ javaScriptString: String) async throws -> Any?}
+          ^
+
+SwiftCompile normal arm64 Compiling\ ExpenseListView.swift,\ MailComposeView.swift,\ ChatCardLibraryViews.swift,\ MeetingRecordView.swift,\ RemoteScheduleDetailLoaderSheet.swift,\ RemoteScheduleListView.swift,\ ModuleNavigationBar.swift,\ ReclassifyBubble.swift,\ TodoEditView.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/ExpenseView/ExpenseListView.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/ExpenseView/MailComposeView.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/Library/ChatCardLibraryViews.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/MeetingView/MeetingRecordView.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/Schedule/RemoteScheduleDetailLoaderSheet.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/Schedule/RemoteScheduleListView.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/SharedComponents/ModuleNavigationBar.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/SharedComponents/ReclassifyBubble.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/TodoView/TodoEditView.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/ExpenseView/ExpenseListView.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/ExpenseView/MailComposeView.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/Library/ChatCardLibraryViews.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/MeetingView/MeetingRecordView.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+/Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/MeetingView/MeetingRecordView.swift:420:9: warning: result of call to 'withAnimation' is unused
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+        ^            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/Schedule/RemoteScheduleDetailLoaderSheet.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/Schedule/RemoteScheduleListView.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/SharedComponents/ModuleNavigationBar.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/SharedComponents/ReclassifyBubble.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/TodoView/TodoEditView.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 Compiling\ TodoListView.swift,\ YearCalendarView.swift,\ AudioPickerView.swift,\ AutoInvoiceWebView.swift,\ BackendSettingsView.swift,\ ChatHistoryView.swift,\ CompanySettingsView.swift,\ FeishuSettingsView.swift,\ ImagePickerView.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/TodoView/TodoListView.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/TodoView/YearCalendarView.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/AudioPickerView.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/AutoInvoiceWebView.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/BackendSettingsView.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/ChatHistoryView.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/CompanySettingsView.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/FeishuSettingsView.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/ImagePickerView.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/TodoView/TodoListView.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+/Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/TodoView/TodoListView.swift:395:13: warning: immutable value 'threshold' was never used; consider replacing with '_' or removing it
+        let threshold: CGFloat = 0.3
+            ^~~~~~~~~
+            _
+/Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/TodoView/TodoListView.swift:882:21: warning: immutable value 'weekY' was never used; consider replacing with '_' or removing it
+                let weekY: CGFloat = 0
+                    ^~~~~
+                    _
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/TodoView/YearCalendarView.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/AudioPickerView.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/AutoInvoiceWebView.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/BackendSettingsView.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/ChatHistoryView.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/CompanySettingsView.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/FeishuSettingsView.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/ImagePickerView.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 Compiling\ ChatView.swift,\ ContactCardStackView.swift,\ HorizontalPanGestureInstaller.swift,\ InvoiceCardStackView.swift,\ InvoiceDetailSheet.swift,\ MeetingDetailSheet.swift,\ MeetingSummaryCardStackView.swift,\ ScheduleCardStackView.swift,\ ScheduleDetailSheet.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/Chat/ChatView.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/Components/ContactCardStackView.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/Components/HorizontalPanGestureInstaller.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/Components/InvoiceCardStackView.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/Components/InvoiceDetailSheet.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/Components/MeetingDetailSheet.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/Components/MeetingSummaryCardStackView.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/Components/ScheduleCardStackView.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/Components/ScheduleDetailSheet.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/Chat/ChatView.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/Components/ContactCardStackView.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/Components/HorizontalPanGestureInstaller.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/Components/InvoiceCardStackView.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+/Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/Components/InvoiceCardStackView.swift:86:53: warning: result of call to 'withAnimation' is unused
+                                                    withAnimation { invoices.remove(at: idx) }
+                                                    ^             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/Components/InvoiceDetailSheet.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/Components/MeetingDetailSheet.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/Components/MeetingSummaryCardStackView.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+/Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/Components/MeetingSummaryCardStackView.swift:80:49: warning: result of call to 'withAnimation' is unused
+                                                withAnimation { meetings.remove(at: idx) }
+                                                ^             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/Components/ScheduleCardStackView.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/Components/ScheduleDetailSheet.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 Compiling\ LiveRecordingView.swift,\ ModeToggleView.swift,\ ModuleContainerView.swift,\ SettingsView.swift,\ SharedComponents.swift,\ TechPlanetView.swift,\ ContentView.swift,\ YuanyuanApp.swift,\ GeneratedAssetSymbols.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/LiveRecordingView.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/ModeToggleView.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/ModuleContainerView.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/SettingsView.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/SharedComponents.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/TechPlanetView.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/ContentView.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/YuanyuanApp.swift /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/DerivedSources/GeneratedAssetSymbols.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/LiveRecordingView.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/ModeToggleView.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/ModuleContainerView.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/SettingsView.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/SharedComponents.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/TechPlanetView.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/ContentView.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/YuanyuanApp.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/DerivedSources/GeneratedAssetSymbols.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 Compiling\ AudioPlayer.swift,\ AuthService.swift,\ BackendAIService.swift,\ BackendChatConfig.swift,\ BackendChatService.swift,\ BackendChatStructuredOutput.swift,\ CalendarManager.swift,\ ContactService.swift,\ ContactsManager.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/AudioPlayer.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/AuthService.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/BackendAIService.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/BackendChatConfig.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/BackendChatService.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/BackendChatStructuredOutput.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/CalendarManager.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/ContactService.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/ContactsManager.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/AudioPlayer.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/AuthService.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/BackendAIService.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/BackendChatConfig.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/BackendChatService.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/BackendChatStructuredOutput.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/CalendarManager.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/ContactService.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/ContactsManager.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 Compiling\ ScreenshotClassifier.swift,\ ScreenshotSendLiveActivity.swift,\ SmartModelRouter.swift,\ SpeechRecognizer.swift,\ TodoVoiceParser.swift,\ LoginView.swift,\ ChatInputComponents.swift,\ ChatInputView.swift,\ ChatInputViewModel.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/ScreenshotClassifier.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/ScreenshotSendLiveActivity.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/SmartModelRouter.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/SpeechRecognizer.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/TodoVoiceParser.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/Auth/LoginView.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/Chat/ChatInputComponents.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/Chat/ChatInputView.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/Chat/ChatInputViewModel.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/ScreenshotClassifier.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/ScreenshotSendLiveActivity.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/SmartModelRouter.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/SpeechRecognizer.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/TodoVoiceParser.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/Auth/LoginView.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/Chat/ChatInputComponents.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/Chat/ChatInputView.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/Chat/ChatInputViewModel.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 Compiling\ MeetingMinutesService.swift,\ PhotoManager.swift,\ QRCodeScanner.swift,\ RecordingCommandProcessor.swift,\ RecordingDarwinObserver.swift,\ RecordingPlaybackController.swift,\ RecordingRecoveryManager.swift,\ ScheduleService.swift,\ ScreenMetrics.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/MeetingMinutesService.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/PhotoManager.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/QRCodeScanner.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/RecordingCommandProcessor.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/RecordingDarwinObserver.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/RecordingPlaybackController.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/RecordingRecoveryManager.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/ScheduleService.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/ScreenMetrics.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/MeetingMinutesService.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/PhotoManager.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/QRCodeScanner.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/RecordingCommandProcessor.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/RecordingDarwinObserver.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/RecordingPlaybackController.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/RecordingRecoveryManager.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/ScheduleService.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Utils/ScreenMetrics.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 Compiling\ StickyBallAnimationView.swift,\ SwipeToDeleteCard.swift,\ TodayScheduleNotificationBar.swift,\ VoiceRecordingOverlay.swift,\ ContactDetailView.swift,\ ContactEditView.swift,\ ContactImportView.swift,\ ContactListView.swift,\ ExpenseEditView.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/Components/StickyBallAnimationView.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/Components/SwipeToDeleteCard.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/Components/TodayScheduleNotificationBar.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/Components/VoiceRecordingOverlay.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/ContactView/ContactDetailView.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/ContactView/ContactEditView.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/ContactView/ContactImportView.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/ContactView/ContactListView.swift /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/ExpenseView/ExpenseEditView.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/Components/StickyBallAnimationView.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/Components/SwipeToDeleteCard.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/Components/TodayScheduleNotificationBar.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/Components/VoiceRecordingOverlay.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/ContactView/ContactDetailView.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/ContactView/ContactEditView.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/ContactView/ContactImportView.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/ContactView/ContactListView.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftCompile normal arm64 /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Views/ExpenseView/ExpenseEditView.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+
+SwiftDriverJobDiscovery normal arm64 Compiling DarwinNotificationCenter.swift, DeleteActions.swift, ExpensePDFGenerator.swift, ExpiringAsyncCache.swift, FeishuAPIService.swift, FeishuCalendarSyncManager.swift, KeychainStore.swift, LiveRecordingManager.swift, LocalDataPurger.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+
+SwiftDriverJobDiscovery normal arm64 Compiling MeetingRecordingAttributes.swift, PersistentChatMessage.swift, ScreenshotSendAttributes.swift, SharedModelContainer.swift, StoredChatCards.swift, TodoItem.swift, ScreenshotIntent.swift, SendLatestScreenshotToChatIntent.swift, AIFormFillerService.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+
+SwiftDriverJobDiscovery normal arm64 Emitting module for Yuanyuan (in target 'Yuanyuan' from project 'Yuanyuan')
+
+SwiftDriver\ Compilation\ Requirements Yuanyuan normal arm64 com.apple.xcode.tools.swift.compiler (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    builtin-Swift-Compilation-Requirements -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -module-name Yuanyuan -Onone -enforce-exclusivity\=checked @/Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Objects-normal/arm64/Yuanyuan.SwiftFileList -DDEBUG -enable-bare-slash-regex -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.1.sdk -target arm64-apple-ios26.0-simulator -g -module-cache-path /Users/yansongtu/Library/Developer/Xcode/DerivedData/ModuleCache.noindex -Xfrontend -serialize-debugging-options -enable-testing -index-store-path /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Index.noindex/DataStore -Xcc -D_LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -swift-version 5 -I /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator -F /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator -emit-localized-strings -emit-localized-strings-path /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Objects-normal/arm64 -c -j11 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc /Users/yansongtu/Library/Developer/Xcode/DerivedData/SDKStatCaches.noindex/iphonesimulator26.1-23B77-90cf18a4295e390e64c810bc6bd7acbc.sdkstatcache -output-file-map /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Objects-normal/arm64/Yuanyuan-OutputFileMap.json -use-frontend-parseable-output -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path /Users/yansongtu/Library/Developer/Xcode/DerivedData/ModuleCache.noindex -sdk-module-cache-path /Users/yansongtu/Library/Developer/Xcode/DerivedData/ModuleCache.noindex -serialize-diagnostics -emit-dependencies -emit-module -emit-module-path /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Objects-normal/arm64/Yuanyuan.swiftmodule -validate-clang-modules-once -clang-build-session-file /Users/yansongtu/Library/Developer/Xcode/DerivedData/ModuleCache.noindex/Session.modulevalidation -Xcc -I/Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/swift-overrides.hmap -emit-const-values -Xfrontend -const-gather-protocols-file -Xfrontend /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Objects-normal/arm64/Yuanyuan_const_extract_protocols.json -Xcc -iquote -Xcc /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Yuanyuan-generated-files.hmap -Xcc -I/Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Yuanyuan-own-target-headers.hmap -Xcc -I/Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Yuanyuan-all-target-headers.hmap -Xcc -iquote -Xcc /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Yuanyuan-project-headers.hmap -Xcc -I/Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/include -Xcc -I/Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/DerivedSources-normal/arm64 -Xcc -I/Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/DerivedSources/arm64 -Xcc -I/Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/DerivedSources -Xcc -DDEBUG\=1 -emit-objc-header -emit-objc-header-path /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Objects-normal/arm64/Yuanyuan-Swift.h -working-directory /Users/yansongtu/Documents/Yuanyuan -experimental-emit-module-separately -disable-cmo
+
+Copy /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/Yuanyuan.swiftmodule/arm64-apple-ios-simulator.swiftmodule /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Objects-normal/arm64/Yuanyuan.swiftmodule (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Objects-normal/arm64/Yuanyuan.swiftmodule /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/Yuanyuan.swiftmodule/arm64-apple-ios-simulator.swiftmodule
+
+Copy /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/Yuanyuan.swiftmodule/arm64-apple-ios-simulator.swiftdoc /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Objects-normal/arm64/Yuanyuan.swiftdoc (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Objects-normal/arm64/Yuanyuan.swiftdoc /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/Yuanyuan.swiftmodule/arm64-apple-ios-simulator.swiftdoc
+
+Copy /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/Yuanyuan.swiftmodule/arm64-apple-ios-simulator.abi.json /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Objects-normal/arm64/Yuanyuan.abi.json (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Objects-normal/arm64/Yuanyuan.abi.json /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/Yuanyuan.swiftmodule/arm64-apple-ios-simulator.abi.json
+
+Copy /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/Yuanyuan.swiftmodule/Project/arm64-apple-ios-simulator.swiftsourceinfo /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Objects-normal/arm64/Yuanyuan.swiftsourceinfo (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Objects-normal/arm64/Yuanyuan.swiftsourceinfo /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/Yuanyuan.swiftmodule/Project/arm64-apple-ios-simulator.swiftsourceinfo
+
+SwiftDriverJobDiscovery normal arm64 Compiling ScreenshotClassifier.swift, ScreenshotSendLiveActivity.swift, SmartModelRouter.swift, SpeechRecognizer.swift, TodoVoiceParser.swift, LoginView.swift, ChatInputComponents.swift, ChatInputView.swift, ChatInputViewModel.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+
+SwiftDriverJobDiscovery normal arm64 Compiling MeetingMinutesService.swift, PhotoManager.swift, QRCodeScanner.swift, RecordingCommandProcessor.swift, RecordingDarwinObserver.swift, RecordingPlaybackController.swift, RecordingRecoveryManager.swift, ScheduleService.swift, ScreenMetrics.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+
+SwiftDriverJobDiscovery normal arm64 Compiling AudioPlayer.swift, AuthService.swift, BackendAIService.swift, BackendChatConfig.swift, BackendChatService.swift, BackendChatStructuredOutput.swift, CalendarManager.swift, ContactService.swift, ContactsManager.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+
+SwiftDriverJobDiscovery normal arm64 Compiling HapticFeedback.swift, StartMeetingRecordingIntent.swift, AppState.swift, AuthStore.swift, ClassificationError.swift, CompanyInfo.swift, Contact.swift, DailyChatSummary.swift, Expense.swift, Meeting.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+
+SwiftDriverJobDiscovery normal arm64 Compiling ExpenseListView.swift, MailComposeView.swift, ChatCardLibraryViews.swift, MeetingRecordView.swift, RemoteScheduleDetailLoaderSheet.swift, RemoteScheduleListView.swift, ModuleNavigationBar.swift, ReclassifyBubble.swift, TodoEditView.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+
+SwiftDriverJobDiscovery normal arm64 Compiling TodoListView.swift, YearCalendarView.swift, AudioPickerView.swift, AutoInvoiceWebView.swift, BackendSettingsView.swift, ChatHistoryView.swift, CompanySettingsView.swift, FeishuSettingsView.swift, ImagePickerView.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+
+SwiftDriverJobDiscovery normal arm64 Compiling LiveRecordingView.swift, ModeToggleView.swift, ModuleContainerView.swift, SettingsView.swift, SharedComponents.swift, TechPlanetView.swift, ContentView.swift, YuanyuanApp.swift, GeneratedAssetSymbols.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+
+SwiftDriverJobDiscovery normal arm64 Compiling ChatView.swift, ContactCardStackView.swift, HorizontalPanGestureInstaller.swift, InvoiceCardStackView.swift, InvoiceDetailSheet.swift, MeetingDetailSheet.swift, MeetingSummaryCardStackView.swift, ScheduleCardStackView.swift, ScheduleDetailSheet.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+
+SwiftDriverJobDiscovery normal arm64 Compiling StickyBallAnimationView.swift, SwipeToDeleteCard.swift, TodayScheduleNotificationBar.swift, VoiceRecordingOverlay.swift, ContactDetailView.swift, ContactEditView.swift, ContactImportView.swift, ContactListView.swift, ExpenseEditView.swift (in target 'Yuanyuan' from project 'Yuanyuan')
+
+SwiftDriver\ Compilation Yuanyuan normal arm64 com.apple.xcode.tools.swift.compiler (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    builtin-Swift-Compilation -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -module-name Yuanyuan -Onone -enforce-exclusivity\=checked @/Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Objects-normal/arm64/Yuanyuan.SwiftFileList -DDEBUG -enable-bare-slash-regex -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.1.sdk -target arm64-apple-ios26.0-simulator -g -module-cache-path /Users/yansongtu/Library/Developer/Xcode/DerivedData/ModuleCache.noindex -Xfrontend -serialize-debugging-options -enable-testing -index-store-path /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Index.noindex/DataStore -Xcc -D_LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -swift-version 5 -I /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator -F /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator -emit-localized-strings -emit-localized-strings-path /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Objects-normal/arm64 -c -j11 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc /Users/yansongtu/Library/Developer/Xcode/DerivedData/SDKStatCaches.noindex/iphonesimulator26.1-23B77-90cf18a4295e390e64c810bc6bd7acbc.sdkstatcache -output-file-map /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Objects-normal/arm64/Yuanyuan-OutputFileMap.json -use-frontend-parseable-output -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path /Users/yansongtu/Library/Developer/Xcode/DerivedData/ModuleCache.noindex -sdk-module-cache-path /Users/yansongtu/Library/Developer/Xcode/DerivedData/ModuleCache.noindex -serialize-diagnostics -emit-dependencies -emit-module -emit-module-path /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Objects-normal/arm64/Yuanyuan.swiftmodule -validate-clang-modules-once -clang-build-session-file /Users/yansongtu/Library/Developer/Xcode/DerivedData/ModuleCache.noindex/Session.modulevalidation -Xcc -I/Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/swift-overrides.hmap -emit-const-values -Xfrontend -const-gather-protocols-file -Xfrontend /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Objects-normal/arm64/Yuanyuan_const_extract_protocols.json -Xcc -iquote -Xcc /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Yuanyuan-generated-files.hmap -Xcc -I/Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Yuanyuan-own-target-headers.hmap -Xcc -I/Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Yuanyuan-all-target-headers.hmap -Xcc -iquote -Xcc /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Yuanyuan-project-headers.hmap -Xcc -I/Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/include -Xcc -I/Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/DerivedSources-normal/arm64 -Xcc -I/Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/DerivedSources/arm64 -Xcc -I/Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/DerivedSources -Xcc -DDEBUG\=1 -emit-objc-header -emit-objc-header-path /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Objects-normal/arm64/Yuanyuan-Swift.h -working-directory /Users/yansongtu/Documents/Yuanyuan -experimental-emit-module-separately -disable-cmo
+
+Ld /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/Yuanyuan.app/Yuanyuan.debug.dylib normal (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target arm64-apple-ios26.0-simulator -dynamiclib -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.1.sdk -O0 -L/Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/EagerLinkingTBDs/Debug-iphonesimulator -L/Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator -F/Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/EagerLinkingTBDs/Debug-iphonesimulator -F/Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator -filelist /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Objects-normal/arm64/Yuanyuan.LinkFileList -install_name @rpath/Yuanyuan.debug.dylib -Xlinker -rpath -Xlinker @executable_path/Frameworks -dead_strip -Xlinker -object_path_lto -Xlinker /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Objects-normal/arm64/Yuanyuan_lto.o -rdynamic -Xlinker -no_deduplicate -Xlinker -objc_abi_version -Xlinker 2 -Xlinker -dependency_info -Xlinker /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Objects-normal/arm64/Yuanyuan_dependency_info.dat -fobjc-link-runtime -L/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/iphonesimulator -L/usr/lib/swift -Xlinker -add_ast_path -Xlinker /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Objects-normal/arm64/Yuanyuan.swiftmodule @/Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Objects-normal/arm64/Yuanyuan-linker-args.resp -ObjC -Xlinker -alias -Xlinker _main -Xlinker ___debug_main_executable_dylib_entry_point -framework CoreTelephony -framework SystemConfiguration -lresolv -Xlinker -no_adhoc_codesign -o /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/Yuanyuan.app/Yuanyuan.debug.dylib
+
+ConstructStubExecutorLinkFileList /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Yuanyuan-ExecutorLinkFileList-normal-arm64.txt (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    construct-stub-executor-link-file-list /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/Yuanyuan.app/Yuanyuan.debug.dylib /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/usr/lib/libPreviewsJITStubExecutor_no_swift_entry_point.a /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/usr/lib/libPreviewsJITStubExecutor.a --output /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Yuanyuan-ExecutorLinkFileList-normal-arm64.txt
+note: Using stub executor library with Swift entry point. (in target 'Yuanyuan' from project 'Yuanyuan')
+
+Ld /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/Yuanyuan.app/Yuanyuan normal (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target arm64-apple-ios26.0-simulator -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.1.sdk -O0 -L/Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator -F/Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator -Xlinker -rpath -Xlinker @executable_path -Xlinker -rpath -Xlinker @executable_path/Frameworks -rdynamic -Xlinker -no_deduplicate -Xlinker -objc_abi_version -Xlinker 2 -e ___debug_blank_executor_main -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __debug_dylib -Xlinker /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Yuanyuan-DebugDylibPath-normal-arm64.txt -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __debug_instlnm -Xlinker /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Yuanyuan-DebugDylibInstallName-normal-arm64.txt -Xlinker -filelist -Xlinker /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Yuanyuan-ExecutorLinkFileList-normal-arm64.txt -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __entitlements -Xlinker /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Yuanyuan.app-Simulated.xcent -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __ents_der -Xlinker /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Yuanyuan.app-Simulated.xcent.der /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/Yuanyuan.app/Yuanyuan.debug.dylib -Xlinker -no_adhoc_codesign -o /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/Yuanyuan.app/Yuanyuan
+
+Copy /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/Yuanyuan.app/PlugIns/YuanyuanWidgetExtension.appex /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/YuanyuanWidgetExtension.appex (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -exclude Headers -exclude PrivateHeaders -exclude Modules -exclude \*.tbd -resolve-src-symlinks -remove-static-executable /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/YuanyuanWidgetExtension.appex /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/Yuanyuan.app/PlugIns
+
 ProcessInfoPlistFile /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/Yuanyuan.app/Info.plist /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Info.plist (in target 'Yuanyuan' from project 'Yuanyuan')
     cd /Users/yansongtu/Documents/Yuanyuan
-    builtin-infoPlistUtility /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Info.plist -producttype com.apple.product-type.application -genpkginfo /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/Yuanyuan.app/PkgInfo -expandbuildsettings -format binary -platform iphonesimulator -additionalcontentfile /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/assetcatalog_generated_info.plist -scanforprivacyfile /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/Yuanyuan.app/Frameworks/AliyunOSSiOS.framework -scanforprivacyfile /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/Yuanyuan.app/PlugIns/YuanyuanWidgetExtension.appex -o /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/Yuanyuan.app/Info.plist
+    builtin-infoPlistUtility /Users/yansongtu/Documents/Yuanyuan/Yuanyuan/Info.plist -producttype com.apple.product-type.application -genpkginfo /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/Yuanyuan.app/PkgInfo -expandbuildsettings -format binary -platform iphonesimulator -additionalcontentfile /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/assetcatalog_generated_info.plist -scanforprivacyfile /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/Yuanyuan.app/PlugIns/YuanyuanWidgetExtension.appex -o /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/Yuanyuan.app/Info.plist
 
 CopySwiftLibs /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/Yuanyuan.app (in target 'Yuanyuan' from project 'Yuanyuan')
     cd /Users/yansongtu/Documents/Yuanyuan
     builtin-swiftStdLibTool --copy --verbose --sign - --scan-executable /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/Yuanyuan.app/Yuanyuan.debug.dylib --scan-folder /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/Yuanyuan.app/Frameworks --scan-folder /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/Yuanyuan.app/PlugIns --scan-folder /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/Yuanyuan.app/SystemExtensions --scan-folder /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/Yuanyuan.app/Extensions --scan-folder /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.1.sdk/System/Library/Frameworks/CoreTelephony.framework --scan-folder /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.1.sdk/System/Library/Frameworks/SystemConfiguration.framework --platform iphonesimulator --toolchain /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain --destination /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/Yuanyuan.app/Frameworks --strip-bitcode --strip-bitcode-tool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/bitcode_strip --emit-dependency-info /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/SwiftStdLibToolInputDependencies.dep --filter-for-swift-os
+
+ExtractAppIntentsMetadata (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/appintentsmetadataprocessor --toolchain-dir /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain --module-name Yuanyuan --sdk-root /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.1.sdk --xcode-version 17B100 --platform-family iOS --deployment-target 26.0 --bundle-identifier dantetu.Yuanyuan --output /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/Yuanyuan.app --target-triple arm64-apple-ios26.0-simulator --binary-file /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/Yuanyuan.app/Yuanyuan --dependency-file /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Objects-normal/arm64/Yuanyuan_dependency_info.dat --stringsdata-file /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Objects-normal/arm64/ExtractedAppShortcutsMetadata.stringsdata --source-file-list /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Objects-normal/arm64/Yuanyuan.SwiftFileList --metadata-file-list /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Yuanyuan.DependencyMetadataFileList --static-metadata-file-list /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Yuanyuan.DependencyStaticMetadataFileList --swift-const-vals-list /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Objects-normal/arm64/Yuanyuan.SwiftConstValuesFileList --compile-time-extraction --deployment-aware-processing --validate-assistant-intents --no-app-shortcuts-localization
+2025-12-29 18:15:09.744 appintentsmetadataprocessor[40782:1108460] Starting appintentsmetadataprocessor export
+2025-12-29 18:15:09.840 appintentsmetadataprocessor[40782:1108460] Writing Metadata.appintents
+2025-12-29 18:15:09.840 appintentsmetadataprocessor[40782:1108460] Metadata root: /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/Yuanyuan.app/Metadata.appintents
+
+CodeSign /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/Yuanyuan.app/Yuanyuan.debug.dylib (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+    Signing Identity:     "Sign to Run Locally"
+    
+    /usr/bin/codesign --force --sign - --timestamp\=none --generate-entitlement-der /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/Yuanyuan.app/Yuanyuan.debug.dylib
+
+CodeSign /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/Yuanyuan.app/__preview.dylib (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+    Signing Identity:     "Sign to Run Locally"
+    
+    /usr/bin/codesign --force --sign - --timestamp\=none --generate-entitlement-der /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/Yuanyuan.app/__preview.dylib
+
+CodeSign /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/Yuanyuan.app (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    
+    Signing Identity:     "Sign to Run Locally"
+    
+    /usr/bin/codesign --force --sign - --entitlements /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Yuanyuan.app.xcent --timestamp\=none --generate-entitlement-der /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/Yuanyuan.app
+
+Validate /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/Yuanyuan.app (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    builtin-validationUtility /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/Yuanyuan.app -shallow-bundle -infoplist-subpath Info.plist
+
+ValidateEmbeddedBinary /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/Yuanyuan.app/PlugIns/YuanyuanWidgetExtension.appex (in target 'Yuanyuan' from project 'Yuanyuan')
+    cd /Users/yansongtu/Documents/Yuanyuan
+    /Applications/Xcode.app/Contents/Developer/usr/bin/embeddedBinaryValidationUtility /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/Yuanyuan.app/PlugIns/YuanyuanWidgetExtension.appex -signing-cert - -info-plist-path /Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/Yuanyuan.app/Info.plist
+
+note: Removed stale file '/Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/AliyunOSSiOS.framework'
+
+note: Removed stale file '/Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Objects-normal/arm64/OSSUploadService.o'
+
+note: Removed stale file '/Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Objects-normal/arm64/OSSUploadService.stringsdata'
+
+note: Removed stale file '/Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Intermediates.noindex/Yuanyuan.build/Debug-iphonesimulator/Yuanyuan.build/Objects-normal/arm64/OSSUploadService.swiftconstvalues'
+
+note: Removed stale file '/Users/yansongtu/Library/Developer/Xcode/DerivedData/Yuanyuan-ecfnloftvyesvgglnbhjfjfhowdc/Build/Products/Debug-iphonesimulator/Yuanyuan.app/Frameworks'
 
 ** BUILD SUCCEEDED **
 

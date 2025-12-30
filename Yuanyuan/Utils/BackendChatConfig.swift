@@ -177,7 +177,7 @@ enum BackendChatConfig {
         set { UserDefaults.standard.set(newValue, forKey: Keys.debugLogStreamEvents) }
     }
 
-    /// Debug：是否打印解析后的 chunk 摘要（比 fullResponse 更轻，默认开启）
+    /// Debug：是否打印后端 chunk 的原始 JSON（比 fullResponse 更轻，默认开启）
     static var debugLogChunkSummary: Bool {
         get {
             if UserDefaults.standard.object(forKey: Keys.debugLogChunkSummary) == nil {

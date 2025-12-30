@@ -26,8 +26,7 @@ struct ChatView: View {
     /// 卡片横向翻页时，临时禁用外层聊天上下滚动，避免手势冲突
     @State private var isCardHorizontalPaging: Bool = false
 
-    /// 用于实现“先上方文字流式输出 -> 再渲染卡片 -> 再输出卡片下方文字”的顺序控制
-    @State private var completedTopBubbleMessageIds: Set<UUID> = []
+    // 分段渲染后不再需要“先上方文字完成再放出卡片”的顺序控制（后端 JSON chunk 自带顺序）
     
     // 删除确认弹窗状态
     @State private var showDeleteConfirmation: Bool = false
@@ -80,22 +79,25 @@ struct ChatView: View {
     @State private var lastLoadedScheduleDayKey: String = ""
     @State private var todayReadIds: Set<String> = []
 
-    // MARK: - Helpers (Text splitting for cards)
-    /// 将 AI 文本按“第一段 + 其余段”拆分，用于把卡片插到两段文字中间。
-    /// 规则：仅在存在至少一个有效的双换行分隔时拆分；否则返回原文 + nil。
-    private func splitAITextForCardInsertion(_ text: String) -> (before: String, after: String?) {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return (text, nil) }
+    // MARK: - Helpers (Segment aggregation)
+    /// 当用户在卡片里删除/编辑时，同步把 segments 展平回写到 message 的聚合字段（用于复制/详情页逻辑复用）
+    private func rebuildAggregatesFromSegments(_ segments: [ChatSegment], into message: inout ChatMessage) {
+        var schedules: [ScheduleEvent] = []
+        var contacts: [ContactCard] = []
+        var invoices: [InvoiceCard] = []
+        var meetings: [MeetingCard] = []
 
-        // 找第一个段落分隔（\n\n），保持原有换行风格
-        guard let range = text.range(of: "\n\n") else { return (text, nil) }
-        let beforeRaw = String(text[..<range.lowerBound])
-        let afterRaw = String(text[range.upperBound...])
+        for seg in segments {
+            if let s = seg.scheduleEvents, !s.isEmpty { schedules.append(contentsOf: s) }
+            if let c = seg.contacts, !c.isEmpty { contacts.append(contentsOf: c) }
+            if let i = seg.invoices, !i.isEmpty { invoices.append(contentsOf: i) }
+            if let m = seg.meetings, !m.isEmpty { meetings.append(contentsOf: m) }
+        }
 
-        let before = beforeRaw.trimmingCharacters(in: .whitespacesAndNewlines)
-        let after = afterRaw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !before.isEmpty, !after.isEmpty else { return (text, nil) }
-        return (beforeRaw, afterRaw)
+        message.scheduleEvents = schedules.isEmpty ? nil : schedules
+        message.contacts = contacts.isEmpty ? nil : contacts
+        message.invoices = invoices.isEmpty ? nil : invoices
+        message.meetings = meetings.isEmpty ? nil : meetings
     }
 
     // 联系人创建 loading 由结构化输出的 tool 中间态驱动，不再依赖把 raw JSON 当文本刷出来
@@ -695,225 +697,259 @@ struct ChatView: View {
                         .id(message.id)
                 } else {
                     VStack(alignment: .leading, spacing: 12) {
-                        // 文字部分：若存在「日程/人脉」卡片且文本为多段，则把卡片插到第一段与后续段之间
-                        // 注意：该中间态不一定发生在 streaming 状态（可能是“识别→最终生成”间的过渡），
-                        // 因此这里不依赖 streamingState，只要命中 tool start 且还没产出联系人卡片就展示 loading
-                        let isContactToolLoading =
-                        (message.contacts?.isEmpty ?? true) &&
-                        message.isContactToolRunning
-                        
-                        // 避免把后端 raw tool chunk 直接展示在气泡里；此处只替换中间态文案，不影响最终输出
-                        let fullText: String = {
-                            if isContactToolLoading { return "正在创建联系人…" }
-                            if message.content.isEmpty && appState.isAgentTyping { return "正在思考..." }
-                            return message.content
-                        }()
-                        let hasContactCards = (message.contacts?.isEmpty == false)
-                        let hasScheduleCards = (message.scheduleEvents?.isEmpty == false)
-                        let hasInsertableCards = hasContactCards || hasScheduleCards
-                        let split = hasInsertableCards ? splitAITextForCardInsertion(fullText) : (before: fullText, after: nil)
-                        let showButtonsInBubble = (message.scheduleEvents == nil || message.scheduleEvents?.isEmpty == true) &&
-                                                 (message.contacts == nil || message.contacts?.isEmpty == true) &&
-                                                 (message.invoices == nil || message.invoices?.isEmpty == true) &&
-                                                 (message.meetings == nil || message.meetings?.isEmpty == true)
-                        let hasRealText = !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                        let shouldRevealInsertedCards = hasInsertableCards && hasRealText && completedTopBubbleMessageIds.contains(message.id)
-
-                        AIBubble(
-                            text: split.before,
-                            messageId: message.id,
-                            // 联系人创建的 tool 中间态：不需要“复制/重试”等操作栏，避免干扰 loading UI
-                            showActionButtons: showButtonsInBubble && !isContactToolLoading,
-                            isInterrupted: message.isInterrupted,
-                            showAvatar: true,
-                            onTypingCompleted: {
-                                // 仅用于顺序控制：上方文字完成后，允许渲染卡片
-                                if hasInsertableCards {
-                                    completedTopBubbleMessageIds.insert(message.id)
-                                }
-                            }
-                        )
-                        
-                        // 人脉创建 loading 卡片：在“识别/工具调用中间态”展示，完成后由正式联系人卡片替换
-                        if isContactToolLoading {
-                            ContactCardLoadingStackView(
-                                title: "创建联系人",
-                                subtitle: "正在保存联系人信息…",
-                                isParentScrollDisabled: $isCardHorizontalPaging
-                            )
-                            .frame(maxWidth: .infinity)
-                            .padding(.top, -10)
-                        }
-                        
-                        // 卡片部分
-                        if let _ = message.scheduleEvents,
-                           shouldRevealInsertedCards,
-                           let index = appState.chatMessages.firstIndex(where: { $0.id == message.id }) {
-                            ScheduleCardStackView(events: Binding(
-                                get: { appState.chatMessages[index].scheduleEvents ?? [] },
-                                set: { appState.chatMessages[index].scheduleEvents = $0 }
-                            ), isParentScrollDisabled: $isCardHorizontalPaging, onDeleteRequest: { event in
-                                self.eventToDelete = event
-                                self.messageIdToDeleteFrom = message.id
-                                withAnimation {
-                                    self.showDeleteConfirmation = true
-                                }
-                            }, onOpenDetail: { event in
-                                // 若有 remoteId：先拉取后端详情（打印原始响应/错误），再打开详情页
-                                Task {
-                                    let localEventId = event.id
-                                    let msgId = message.id
+                        // ✅ 按后端 JSON chunk 的顺序分段渲染：发什么就按什么展示，一条流程走完
+                        if let msgIndex = appState.chatMessages.firstIndex(where: { $0.id == message.id }),
+                           let segments = appState.chatMessages[msgIndex].segments,
+                           !segments.isEmpty {
+                            
+                            let hasAnyCards = segments.contains(where: { $0.kind != .text })
+                            let firstTextSegmentId = segments.first(where: { $0.kind == .text })?.id
+                            
+                            ForEach(segments) { seg in
+                                switch seg.kind {
+                                case .text:
+                                    let showAvatar = (seg.id == firstTextSegmentId)
+                                    AIBubble(
+                                        text: seg.text ?? "",
+                                        messageId: showAvatar && !hasAnyCards ? message.id : nil,
+                                        showActionButtons: showAvatar && !hasAnyCards,
+                                        isInterrupted: message.isInterrupted,
+                                        showAvatar: showAvatar
+                                    )
                                     
-                                    // 再查一次 index，避免闭包捕获导致的越界
-                                    guard let msgIndex = appState.chatMessages.firstIndex(where: { $0.id == msgId }) else {
-                                        await MainActor.run {
-                                            scheduleDetailSelection = ScheduleDetailSelection(messageId: msgId, eventId: localEventId)
+                                case .scheduleCards:
+                                    ScheduleCardStackView(events: Binding(
+                                        get: {
+                                            guard let mIndex = appState.chatMessages.firstIndex(where: { $0.id == message.id }),
+                                                  let sIndex = appState.chatMessages[mIndex].segments?.firstIndex(where: { $0.id == seg.id })
+                                            else { return [] }
+                                            return appState.chatMessages[mIndex].segments?[sIndex].scheduleEvents ?? []
+                                        },
+                                        set: { newValue in
+                                            guard let mIndex = appState.chatMessages.firstIndex(where: { $0.id == message.id }) else { return }
+                                            var m = appState.chatMessages[mIndex]
+                                            guard var segs = m.segments,
+                                                  let sIndex = segs.firstIndex(where: { $0.id == seg.id })
+                                            else { return }
+                                            segs[sIndex].scheduleEvents = newValue
+                                            m.segments = segs
+                                            rebuildAggregatesFromSegments(segs, into: &m)
+                                            appState.chatMessages[mIndex] = m
                                         }
-                                        return
-                                    }
-                                    guard let eIndex = appState.chatMessages[msgIndex].scheduleEvents?.firstIndex(where: { $0.id == localEventId }) else {
-                                        await MainActor.run {
-                                            scheduleDetailSelection = ScheduleDetailSelection(messageId: msgId, eventId: localEventId)
-                                        }
-                                        return
-                                    }
-                                    
-                                    let rid = appState.chatMessages[msgIndex].scheduleEvents?[eIndex].remoteId
-                                    if let rid, !rid.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                        do {
-                                            let detail = try await ScheduleService.fetchScheduleDetail(remoteId: rid, keepLocalId: localEventId)
-                                            await MainActor.run {
-                                                appState.chatMessages[msgIndex].scheduleEvents?[eIndex] = detail
-                                                appState.saveMessageToStorage(appState.chatMessages[msgIndex], modelContext: modelContext)
-                                                scheduleDetailSelection = ScheduleDetailSelection(messageId: msgId, eventId: localEventId)
+                                    ), isParentScrollDisabled: $isCardHorizontalPaging, onDeleteRequest: { event in
+                                        self.eventToDelete = event
+                                        self.messageIdToDeleteFrom = message.id
+                                        withAnimation { self.showDeleteConfirmation = true }
+                                    }, onOpenDetail: { event in
+                                        Task {
+                                            let localEventId = event.id
+                                            let msgId = message.id
+                                            guard let mIndex = appState.chatMessages.firstIndex(where: { $0.id == msgId }),
+                                                  let sIndex = appState.chatMessages[mIndex].segments?.firstIndex(where: { $0.id == seg.id }),
+                                                  let eIndex = appState.chatMessages[mIndex].segments?[sIndex].scheduleEvents?.firstIndex(where: { $0.id == localEventId })
+                                            else {
+                                                await MainActor.run {
+                                                    scheduleDetailSelection = ScheduleDetailSelection(messageId: msgId, eventId: localEventId)
+                                                }
+                                                return
                                             }
-                                        } catch {
-                                            print("❌ [ChatView] fetch schedule detail failed rid=\(rid) error=\(error)")
-                                            await MainActor.run {
-                                                scheduleDetailSelection = ScheduleDetailSelection(messageId: msgId, eventId: localEventId)
+                                            let rid = appState.chatMessages[mIndex].segments?[sIndex].scheduleEvents?[eIndex].remoteId
+                                            if let rid, !rid.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                                do {
+                                                    let detail = try await ScheduleService.fetchScheduleDetail(remoteId: rid, keepLocalId: localEventId)
+                                                    await MainActor.run {
+                                                        appState.chatMessages[mIndex].segments?[sIndex].scheduleEvents?[eIndex] = detail
+                                                        if let segs = appState.chatMessages[mIndex].segments {
+                                                            var mm = appState.chatMessages[mIndex]
+                                                            rebuildAggregatesFromSegments(segs, into: &mm)
+                                                            appState.chatMessages[mIndex] = mm
+                                                        }
+                                                        appState.saveMessageToStorage(appState.chatMessages[mIndex], modelContext: modelContext)
+                                                        scheduleDetailSelection = ScheduleDetailSelection(messageId: msgId, eventId: localEventId)
+                                                    }
+                                                } catch {
+                                                    print("❌ [ChatView] fetch schedule detail failed rid=\(rid) error=\(error)")
+                                                    await MainActor.run {
+                                                        scheduleDetailSelection = ScheduleDetailSelection(messageId: msgId, eventId: localEventId)
+                                                    }
+                                                }
+                                            } else {
+                                                await MainActor.run {
+                                                    scheduleDetailSelection = ScheduleDetailSelection(messageId: msgId, eventId: localEventId)
+                                                }
                                             }
                                         }
-                                    } else {
-                                        await MainActor.run {
-                                            scheduleDetailSelection = ScheduleDetailSelection(messageId: msgId, eventId: localEventId)
+                                    })
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.top, -10)
+                                    
+                                case .contactCards:
+                                    ContactCardStackView(contacts: Binding(
+                                        get: {
+                                            guard let mIndex = appState.chatMessages.firstIndex(where: { $0.id == message.id }),
+                                                  let sIndex = appState.chatMessages[mIndex].segments?.firstIndex(where: { $0.id == seg.id })
+                                            else { return [] }
+                                            return appState.chatMessages[mIndex].segments?[sIndex].contacts ?? []
+                                        },
+                                        set: { newValue in
+                                            guard let mIndex = appState.chatMessages.firstIndex(where: { $0.id == message.id }) else { return }
+                                            var m = appState.chatMessages[mIndex]
+                                            guard var segs = m.segments,
+                                                  let sIndex = segs.firstIndex(where: { $0.id == seg.id })
+                                            else { return }
+                                            segs[sIndex].contacts = newValue
+                                            m.segments = segs
+                                            rebuildAggregatesFromSegments(segs, into: &m)
+                                            appState.chatMessages[mIndex] = m
                                         }
+                                    ), isParentScrollDisabled: $isCardHorizontalPaging,
+                                    onOpenDetail: { card in
+                                        selectedContact = findOrCreateContact(from: card)
+                                    }, onDeleteRequest: { card in
+                                        guard let mIndex = appState.chatMessages.firstIndex(where: { $0.id == message.id }) else { return }
+                                        withAnimation {
+                                            var m = appState.chatMessages[mIndex]
+                                            guard var segs = m.segments,
+                                                  let sIndex = segs.firstIndex(where: { $0.id == seg.id })
+                                            else { return }
+                                            segs[sIndex].contacts?.removeAll(where: { $0.id == card.id })
+                                            m.segments = segs
+                                            rebuildAggregatesFromSegments(segs, into: &m)
+                                            appState.chatMessages[mIndex] = m
+                                            appState.saveMessageToStorage(m, modelContext: modelContext)
+                                        }
+                                    })
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.top, -10)
+                                    
+                                case .invoiceCards:
+                                    InvoiceCardStackView(invoices: Binding(
+                                        get: {
+                                            guard let mIndex = appState.chatMessages.firstIndex(where: { $0.id == message.id }),
+                                                  let sIndex = appState.chatMessages[mIndex].segments?.firstIndex(where: { $0.id == seg.id })
+                                            else { return [] }
+                                            return appState.chatMessages[mIndex].segments?[sIndex].invoices ?? []
+                                        },
+                                        set: { newValue in
+                                            guard let mIndex = appState.chatMessages.firstIndex(where: { $0.id == message.id }) else { return }
+                                            var m = appState.chatMessages[mIndex]
+                                            guard var segs = m.segments,
+                                                  let sIndex = segs.firstIndex(where: { $0.id == seg.id })
+                                            else { return }
+                                            segs[sIndex].invoices = newValue
+                                            m.segments = segs
+                                            rebuildAggregatesFromSegments(segs, into: &m)
+                                            appState.chatMessages[mIndex] = m
+                                        }
+                                    ), onOpenDetail: { invoice in
+                                        invoiceDetailSelection = InvoiceDetailSelection(messageId: message.id, invoiceId: invoice.id)
+                                    }, onDeleteRequest: { invoice in
+                                        guard let mIndex = appState.chatMessages.firstIndex(where: { $0.id == message.id }) else { return }
+                                        withAnimation {
+                                            var m = appState.chatMessages[mIndex]
+                                            guard var segs = m.segments,
+                                                  let sIndex = segs.firstIndex(where: { $0.id == seg.id })
+                                            else { return }
+                                            segs[sIndex].invoices?.removeAll(where: { $0.id == invoice.id })
+                                            m.segments = segs
+                                            rebuildAggregatesFromSegments(segs, into: &m)
+                                            appState.chatMessages[mIndex] = m
+                                            appState.saveMessageToStorage(m, modelContext: modelContext)
+                                        }
+                                    })
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.top, -10)
+                                    
+                                case .meetingCards:
+                                    MeetingSummaryCardStackView(meetings: Binding(
+                                        get: {
+                                            guard let mIndex = appState.chatMessages.firstIndex(where: { $0.id == message.id }),
+                                                  let sIndex = appState.chatMessages[mIndex].segments?.firstIndex(where: { $0.id == seg.id })
+                                            else { return [] }
+                                            return appState.chatMessages[mIndex].segments?[sIndex].meetings ?? []
+                                        },
+                                        set: { newValue in
+                                            guard let mIndex = appState.chatMessages.firstIndex(where: { $0.id == message.id }) else { return }
+                                            var m = appState.chatMessages[mIndex]
+                                            guard var segs = m.segments,
+                                                  let sIndex = segs.firstIndex(where: { $0.id == seg.id })
+                                            else { return }
+                                            segs[sIndex].meetings = newValue
+                                            m.segments = segs
+                                            rebuildAggregatesFromSegments(segs, into: &m)
+                                            appState.chatMessages[mIndex] = m
+                                        }
+                                    ), isParentScrollDisabled: $isCardHorizontalPaging,
+                                    onDeleteRequest: { meeting in
+                                        guard let mIndex = appState.chatMessages.firstIndex(where: { $0.id == message.id }) else { return }
+                                        withAnimation {
+                                            var m = appState.chatMessages[mIndex]
+                                            guard var segs = m.segments,
+                                                  let sIndex = segs.firstIndex(where: { $0.id == seg.id })
+                                            else { return }
+                                            segs[sIndex].meetings?.removeAll(where: { $0.id == meeting.id })
+                                            m.segments = segs
+                                            rebuildAggregatesFromSegments(segs, into: &m)
+                                            appState.chatMessages[mIndex] = m
+                                            appState.saveMessageToStorage(m, modelContext: modelContext)
+                                        }
+                                    }, onOpenDetail: { meeting in
+                                        meetingDetailSelection = MeetingDetailSelection(messageId: message.id, meetingId: meeting.id)
+                                    })
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.top, -10)
+                                }
+                            }
+                            
+                            if hasAnyCards {
+                                HStack(alignment: .center, spacing: 0) {
+                                    Spacer()
+                                        .frame(width: agentAvatarSize + 12)
+                                    MessageActionButtons(messageId: message.id)
+                                }
+                                .padding(.top, 4)
+                            }
+                        } else {
+                            // 没有分段：展示文本（或思考中占位）
+                            // 注意：后端可能会先返回 task_id / tool start，但还没有 markdown/card 段。
+                            // 这时 content 仍为空，直接显示“正在思考...”会让用户误以为没在干活。
+                            // 这里优先用 tool 中间态展示“骨架卡片”，把等待可视化。
+                            if message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                && appState.isAgentTyping
+                                && (message.isScheduleToolRunning || message.isContactToolRunning) {
+                                
+                                VStack(alignment: .leading, spacing: 12) {
+                                    // 需要 avatar 对齐：与 AIBubble 的 left padding 逻辑保持一致
+                                    HStack(alignment: .top, spacing: 0) {
+                                        AvatarVideoView(videoName: "Agent", size: agentAvatarSize)
+                                            .padding(.top, 2)
+                                        
+                                        VStack(alignment: .leading, spacing: 14) {
+                                            if message.isScheduleToolRunning {
+                                                ScheduleCardLoadingStackView(isParentScrollDisabled: $isCardHorizontalPaging)
+                                                    .padding(.top, -10)
+                                            }
+                                            if message.isContactToolRunning {
+                                                ContactCardLoadingStackView(isParentScrollDisabled: $isCardHorizontalPaging)
+                                                    .padding(.top, -10)
+                                            }
+                                        }
+                                        .padding(.leading, 12)
                                     }
                                 }
-                            })
-                            .frame(maxWidth: .infinity)
-                            .padding(.top, -10) // Slight adjustment to bring it closer to text
-                        }
-                        
-                        // 会议纪要卡片部分
-                        if let _ = message.meetings,
-                           let index = appState.chatMessages.firstIndex(where: { $0.id == message.id }) {
-                            MeetingSummaryCardStackView(meetings: Binding(
-                                get: { appState.chatMessages[index].meetings ?? [] },
-                                set: { appState.chatMessages[index].meetings = $0 }
-                            ), isParentScrollDisabled: $isCardHorizontalPaging,
-                            onDeleteRequest: { meeting in
-                                withAnimation {
-                                    appState.chatMessages[index].meetings?.removeAll(where: { $0.id == meeting.id })
-                                    appState.saveMessageToStorage(appState.chatMessages[index], modelContext: modelContext)
-                                }
-                            }, onOpenDetail: { meeting in
-                                meetingDetailSelection = MeetingDetailSelection(messageId: message.id, meetingId: meeting.id)
-                            })
-                            .frame(maxWidth: .infinity)
-                            .padding(.top, -10)
-                            
-                            // 操作按钮
-                            HStack(alignment: .center, spacing: 0) {
-                                Spacer()
-                                    .frame(width: agentAvatarSize + 12)
-                                MessageActionButtons(messageId: message.id)
+                            } else {
+                                let text = (message.content.isEmpty && appState.isAgentTyping) ? "正在思考..." : message.content
+                                AIBubble(
+                                    text: text,
+                                    messageId: message.id,
+                                    showActionButtons: true,
+                                    isInterrupted: message.isInterrupted,
+                                    showAvatar: true
+                                )
                             }
-                            .padding(.top, 4)
-                        }
-                        
-                        // 人脉卡片部分
-                        // 优化流式体验：当正在生成且还没收到任何真实文字时，先不显示卡片，避免“卡片先于文字出现”
-                        if let _ = message.contacts,
-                           shouldRevealInsertedCards,
-                           let index = appState.chatMessages.firstIndex(where: { $0.id == message.id }) {
-                            ContactCardStackView(contacts: Binding(
-                                get: { appState.chatMessages[index].contacts ?? [] },
-                                set: { appState.chatMessages[index].contacts = $0 }
-                            ), isParentScrollDisabled: $isCardHorizontalPaging,
-                            onOpenDetail: { card in
-                                selectedContact = findOrCreateContact(from: card)
-                            }, onDeleteRequest: { card in
-                                withAnimation {
-                                    appState.chatMessages[index].contacts?.removeAll(where: { $0.id == card.id })
-                                    appState.saveMessageToStorage(appState.chatMessages[index], modelContext: modelContext)
-                                }
-                            })
-                            .frame(maxWidth: .infinity)
-                            .padding(.top, -10)
-                        }
-
-                        // 卡片后的续写文本（例如“已创建日程…” / “xxx 已添加为联系人…” / impression）
-                        // 只在「插入卡片」出现后再展示，确保顺序：上段文字 -> 卡片 -> 下段文字
-                        if shouldRevealInsertedCards,
-                           let after = split.after,
-                           !after.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            AIBubble(
-                                text: after,
-                                messageId: nil, // 避免把“续写”当作一条可重新生成的独立消息
-                                showActionButtons: false,
-                                isInterrupted: false,
-                                showAvatar: false
-                            )
-                        }
-
-                        // 统一的操作按钮（仅针对「日程/人脉」插入卡片场景放在最底部，避免夹在中间破坏顺序）
-                        if shouldRevealInsertedCards && (hasScheduleCards || hasContactCards) {
-                            HStack(alignment: .center, spacing: 0) {
-                                Spacer()
-                                    .frame(width: agentAvatarSize + 12)
-                                MessageActionButtons(messageId: message.id)
-                            }
-                            .padding(.top, 4)
-                        }
-                        
-                        // 发票卡片部分
-                        if let _ = message.invoices,
-                           let index = appState.chatMessages.firstIndex(where: { $0.id == message.id }) {
-                            InvoiceCardStackView(invoices: Binding(
-                                get: { appState.chatMessages[index].invoices ?? [] },
-                                set: { appState.chatMessages[index].invoices = $0 }
-                            ), onOpenDetail: { invoice in
-                                invoiceDetailSelection = InvoiceDetailSelection(messageId: message.id, invoiceId: invoice.id)
-                            }, onDeleteRequest: { invoice in
-                                withAnimation {
-                                    appState.chatMessages[index].invoices?.removeAll(where: { $0.id == invoice.id })
-                                    appState.saveMessageToStorage(appState.chatMessages[index], modelContext: modelContext)
-                                }
-                            })
-                            .frame(maxWidth: .infinity)
-                            .padding(.top, -10)
-                            
-                            // 操作按钮
-                            HStack(alignment: .center, spacing: 0) {
-                                Spacer()
-                                    .frame(width: agentAvatarSize + 12)
-                                MessageActionButtons(messageId: message.id)
-                            }
-                            .padding(.top, 4)
                         }
                     }
                     .id(message.id)
-                    // 重要：当消息从“正在思考...”切换为真实内容时，重置顺序控制状态，避免卡片提前放出
-                    .onChange(of: message.content) { oldValue, newValue in
-                        let oldTrim = oldValue.trimmingCharacters(in: .whitespacesAndNewlines)
-                        let newTrim = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
-                        if oldTrim.isEmpty && !newTrim.isEmpty {
-                            completedTopBubbleMessageIds.remove(message.id)
-                        }
-                        if newTrim.isEmpty {
-                            completedTopBubbleMessageIds.remove(message.id)
-                        }
-                    }
                 }
             }
             
@@ -1214,12 +1250,6 @@ struct AIBubble: View {
     @State private var isCompleted: Bool = false
     @State private var timer: Timer?
     
-    /// 目标文本（允许在流式阶段持续增长）
-    @State private var targetText: String = ""
-    @State private var targetChars: [Character] = []
-    /// 已打出的字符数（基于 targetChars）
-    @State private var typedCount: Int = 0
-    
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             // 头像（或占位，确保对齐一致）
@@ -1285,53 +1315,19 @@ struct AIBubble: View {
         }
         .onAppear {
             if isInterrupted {
-                isCompleted = true
-                displayedText = text
-                targetText = text
-                targetChars = Array(text)
-                typedCount = targetChars.count
-                onTypingCompleted?()
+                completeImmediately()
             } else {
-                // 初始化：以当前 text 作为 target，开始打字（支持后续增量扩展）
-                targetText = text
-                targetChars = Array(text)
-                typedCount = 0
-                displayedText = ""
-                startOrContinueTypewriter()
+                resetAndStartTypewriter(with: text)
             }
         }
         .onChange(of: isInterrupted) { _, newValue in
             if newValue {
-                timer?.invalidate()
-                timer = nil
-                isCompleted = true
-                displayedText = text
-                targetText = text
-                targetChars = Array(text)
-                typedCount = targetChars.count
-                onTypingCompleted?()
+                completeImmediately()
             }
         }
-        .onChange(of: text) { oldValue, newValue in
+        .onChange(of: text) { _, newValue in
             guard !isInterrupted else { return }
-            guard oldValue != newValue else { return }
-            
-            // 流式阶段：newValue 通常是 oldValue 的前缀扩展（追加内容）
-            if newValue.hasPrefix(oldValue) {
-                targetText = newValue
-                targetChars = Array(newValue)
-                
-                // 如果 displayedText 被外部替换过，纠正 typedCount
-                let currentDisplayedCount = displayedText.count
-                if typedCount != currentDisplayedCount {
-                    typedCount = min(currentDisplayedCount, targetChars.count)
-                }
-                
-                startOrContinueTypewriter()
-            } else {
-                // 非前缀扩展：例如最终清洗/替换、回退、重新生成清空等，才允许重置
-                resetAndStartTypewriter(with: newValue)
-            }
+            resetAndStartTypewriter(with: newValue)
         }
         .onDisappear {
             timer?.invalidate()
@@ -1360,6 +1356,11 @@ struct AIBubble: View {
         
         // 清空当前AI消息内容，准备重新生成
         appState.chatMessages[currentIndex].content = ""
+        appState.chatMessages[currentIndex].segments = nil
+        appState.chatMessages[currentIndex].scheduleEvents = nil
+        appState.chatMessages[currentIndex].contacts = nil
+        appState.chatMessages[currentIndex].invoices = nil
+        appState.chatMessages[currentIndex].meetings = nil
         appState.chatMessages[currentIndex].streamingState = .idle
         
         // 重新调用API
@@ -1389,55 +1390,24 @@ struct AIBubble: View {
         }
     }
     
-    /// 继续打“目标文本剩余部分”，不会把已打内容从头重来（用于流式追加）
-    private func startOrContinueTypewriter() {
-        if isInterrupted {
-            isCompleted = true
-            displayedText = targetText
-            typedCount = targetChars.count
-            onTypingCompleted?()
-            return
-        }
-        
-        // 无内容：保持空
-        if targetChars.isEmpty {
-            timer?.invalidate()
-            timer = nil
-            displayedText = ""
-            typedCount = 0
-            isCompleted = false
-            return
-        }
-        
-        // 已全部打完：直接完成（但保留随时可追加的能力）
-        if typedCount >= targetChars.count {
-            timer?.invalidate()
-            timer = nil
-            displayedText = String(targetChars)
-            isCompleted = true
-            onTypingCompleted?()
-            return
-        }
-        
-        // 确保 displayedText 与 typedCount 对齐（避免外部直接赋值导致错位）
-        if displayedText.count != typedCount {
-            typedCount = min(displayedText.count, targetChars.count)
-        }
-        
+    private func resetAndStartTypewriter(with newText: String) {
+        timer?.invalidate()
+        timer = nil
+        displayedText = ""
         isCompleted = false
         
-        // 已有计时器在跑就不重复创建
-        if timer != nil { return }
+        let chars = Array(newText)
+        guard !chars.isEmpty else { return }
         
-        // 启动/续跑定时器：只打新增 delta
+        // 先立即显示第一个字符，避免闪一下空白
+        displayedText = String(chars[0])
+        var idx = 1
+        
         timer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { t in
-            // 目标可能在流式阶段继续增长，这里每 tick 都以最新 targetChars 为准
-            if typedCount < targetChars.count {
-                displayedText.append(targetChars[typedCount])
-                typedCount += 1
-                if typedCount % 2 == 0 {
-                    HapticFeedback.soft()
-                }
+            if idx < chars.count {
+                displayedText.append(chars[idx])
+                idx += 1
+                if idx % 2 == 0 { HapticFeedback.soft() }
             } else {
                 t.invalidate()
                 timer = nil
@@ -1447,15 +1417,12 @@ struct AIBubble: View {
         }
     }
     
-    private func resetAndStartTypewriter(with newText: String) {
+    private func completeImmediately() {
         timer?.invalidate()
         timer = nil
-        targetText = newText
-        targetChars = Array(newText)
-        displayedText = ""
-        typedCount = 0
-        isCompleted = false
-        startOrContinueTypewriter()
+        displayedText = text
+        isCompleted = true
+        onTypingCompleted?()
     }
 }
 
@@ -1719,6 +1686,7 @@ struct MessageActionButtons: View {
         
         // 清空当前AI消息内容和卡片，准备重新生成
         appState.chatMessages[currentIndex].content = ""
+        appState.chatMessages[currentIndex].segments = nil
         appState.chatMessages[currentIndex].scheduleEvents = nil
         appState.chatMessages[currentIndex].contacts = nil
         appState.chatMessages[currentIndex].invoices = nil

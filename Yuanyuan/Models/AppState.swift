@@ -257,6 +257,9 @@ struct ChatMessage: Identifiable, Equatable {
     let role: MessageRole
     
     var content: String
+    /// 按后端 JSON chunk 顺序的分段内容（用于“按 JSON 分段输出”渲染）
+    /// - 仅运行态使用：当前 SwiftData 持久化仅保存 content/images
+    var segments: [ChatSegment]? = nil
     var streamingState: StreamingState = .idle
     var timestamp: Date
     var isGreeting: Bool = false
@@ -273,6 +276,7 @@ struct ChatMessage: Identifiable, Equatable {
     var meetings: [MeetingCard]? = nil // 会议纪要卡片列表
     var notes: String? = nil  // 临时存储数据（如待处理的报销信息）
     var isContactToolRunning: Bool = false // tool 中间态：用于联系人创建 loading
+    var isScheduleToolRunning: Bool = false // tool 中间态：用于日程创建/更新 loading
     var showIntentSelection: Bool = false  // 是否显示意图选择器
     var isWrongClassification: Bool = false  // 是否是错误识别（用于"识别错了"按钮）
     var showReclassifyBubble: Bool = false  // 是否显示重新分类气泡
@@ -321,6 +325,7 @@ struct ChatMessage: Identifiable, Equatable {
     static func == (lhs: ChatMessage, rhs: ChatMessage) -> Bool {
         lhs.id == rhs.id &&
         lhs.content == rhs.content &&
+        lhs.segments == rhs.segments &&
         lhs.streamingState == rhs.streamingState &&
         lhs.images.count == rhs.images.count &&
         lhs.pendingAction == rhs.pendingAction &&
@@ -333,6 +338,7 @@ struct ChatMessage: Identifiable, Equatable {
         lhs.invoices == rhs.invoices &&
         lhs.meetings == rhs.meetings &&
         lhs.isContactToolRunning == rhs.isContactToolRunning &&
+        lhs.isScheduleToolRunning == rhs.isScheduleToolRunning &&
         lhs.showIntentSelection == rhs.showIntentSelection &&
         lhs.isWrongClassification == rhs.isWrongClassification &&
         lhs.showReclassifyBubble == rhs.showReclassifyBubble &&
@@ -587,22 +593,81 @@ class AppState: ObservableObject {
 
         // tool 中间态（用于 loading 卡片）
         msg.isContactToolRunning = output.isContactToolRunning
+        msg.isScheduleToolRunning = output.isScheduleToolRunning
 
-        // 流式阶段：结构化输出里往往已包含 markdown 文本（按 chunk 累积）。
-        // 如果等到 onComplete 再一次性设置，会导致“卡片先出现、文字后打字”的视觉错序。
-        // 这里做最小策略：仅当新文本更长且非空时更新 content（避免回退/抖动）。
+        // ✅ 即时输出（delta）：每来一个 chunk 就追加 segments / 合并卡片
+        if output.isDelta {
+            // 1) segments：追加（并对 text 做展示清洗）
+            if !output.segments.isEmpty {
+                var existing = msg.segments ?? []
+                existing.reserveCapacity(existing.count + output.segments.count)
+                for seg in output.segments {
+                    switch seg.kind {
+                    case .text:
+                        let t = BackendChatService.normalizeDisplayText(seg.text ?? "")
+                        if !t.isEmpty { existing.append(.text(t)) }
+                    case .scheduleCards, .contactCards, .invoiceCards, .meetingCards:
+                        existing.append(seg)
+                    }
+                }
+                msg.segments = existing.isEmpty ? nil : existing
+            }
+
+            // 2) 文本聚合：只用于复制/搜索（UI 以 segments 为准）
+            let incomingText = BackendChatService.normalizeDisplayText(output.text)
+            if !incomingText.isEmpty {
+                let base = msg.content.trimmingCharacters(in: .whitespacesAndNewlines)
+                if base.isEmpty {
+                    msg.content = incomingText
+                } else if !base.hasSuffix(incomingText) {
+                    msg.content = base + "\n\n" + incomingText
+                }
+            }
+
+            // 3) 卡片聚合字段：合并去重（用于详情页/复制卡片信息复用）
+            if !output.scheduleEvents.isEmpty {
+                msg.scheduleEvents = mergeReplacingById(existing: msg.scheduleEvents, incoming: output.scheduleEvents)
+            }
+            if !output.contacts.isEmpty {
+                msg.contacts = mergeReplacingById(existing: msg.contacts, incoming: output.contacts)
+            }
+            if !output.invoices.isEmpty {
+                msg.invoices = mergeReplacingById(existing: msg.invoices, incoming: output.invoices)
+            }
+            if !output.meetings.isEmpty {
+                msg.meetings = mergeReplacingById(existing: msg.meetings, incoming: output.meetings)
+            }
+
+            // taskId：保持最后一次为准
+            if let taskId = output.taskId, !taskId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                msg.notes = taskId
+            }
+
+            chatMessages[index] = msg
+            return
+        }
+
+        // ✅ 最终输出（非 delta）：以整包结构化结果为准，覆盖写入
         let incomingText = BackendChatService.normalizeDisplayText(output.text)
-        // 关键修复：只在“文本确实变长/变更”时才更新 content。
-        // 否则在 tool start/success 等非文本 chunk 到来时，会把同一段文本反复赋值，
-        // 触发 AIBubble 的打字机动画反复重置，从而造成“文字重复打印”。
-        if !incomingText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-           incomingText != msg.content,
-           incomingText.count > msg.content.count {
-            msg.content = incomingText
+        if !incomingText.isEmpty { msg.content = incomingText }
+
+        if !output.segments.isEmpty {
+            var normalized: [ChatSegment] = []
+            normalized.reserveCapacity(output.segments.count)
+            for seg in output.segments {
+                switch seg.kind {
+                case .text:
+                    let t = BackendChatService.normalizeDisplayText(seg.text ?? "")
+                    if !t.isEmpty { normalized.append(.text(t)) }
+                case .scheduleCards, .contactCards, .invoiceCards, .meetingCards:
+                    normalized.append(seg)
+                }
+            }
+            msg.segments = normalized.isEmpty ? nil : normalized
         }
 
         if !output.scheduleEvents.isEmpty {
-            msg.scheduleEvents = mergeReplacingById(existing: msg.scheduleEvents, incoming: output.scheduleEvents)
+            msg.scheduleEvents = output.scheduleEvents
 
             // 若日程卡片发生实质变化（新增/补齐 remoteId），触发远端日程缓存失效 + UI 强刷
             let afterScheduleCount = msg.scheduleEvents?.count ?? 0
@@ -618,14 +683,13 @@ class AppState: ObservableObject {
             }
         }
         if !output.contacts.isEmpty {
-            // 联系人卡片需要“字段级合并”：避免后续 card chunk 覆盖掉 tool observation 里带回的 impression/notes
-            msg.contacts = mergeContactsPreservingImpression(existing: msg.contacts, incoming: output.contacts)
+            msg.contacts = output.contacts
         }
         if !output.invoices.isEmpty {
-            msg.invoices = mergeReplacingById(existing: msg.invoices, incoming: output.invoices)
+            msg.invoices = output.invoices
         }
         if !output.meetings.isEmpty {
-            msg.meetings = mergeReplacingById(existing: msg.meetings, incoming: output.meetings)
+            msg.meetings = output.meetings
         }
 
         chatMessages[index] = msg

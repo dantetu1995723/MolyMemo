@@ -59,7 +59,7 @@ final class BackendChatService {
             debugPrintBody(request)
             print("===========================================================\n")
 
-            // ✅ 真流式：边收边解析（SSE / NDJSON），每个 chunk 解析完立即 onStructuredOutput -> UI 渲染
+            // ✅ 即时前端输出：边收边解析，每来一个 json chunk 就回调一次（追加 segments）
             let (bytes, response) = try await URLSession.shared.bytes(for: request)
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw BackendChatError.invalidResponse
@@ -70,7 +70,7 @@ final class BackendChatService {
             debugPrintHTTPHeaders(httpResponse)
             print("===========================================================\n")
 
-            // 非 200：读完整 body 作为错误信息（不做流式）
+            // 非 200：读完整 body 作为错误信息
             if httpResponse.statusCode != 200 {
                 var errorData = Data()
                 for try await b in bytes {
@@ -87,18 +87,28 @@ final class BackendChatService {
             enum StreamFormat { case unknown, sse, ndjson }
             var format: StreamFormat = .unknown
             var sseDataLines: [String] = []
-            var parsedChunks: [[String: Any]] = []
-            var rawFallbackLines: [String] = [] // 兜底：如果解析不出 chunk，最后当整包再 parse
-            var rawOriginalLines: [String] = [] // 原始：保留后端逐行输出（含空行），用于完整打印/落盘
-            var latestStructured: BackendChatStructuredOutput? = nil
+            var rawFallbackLines: [String] = []
 
-            func emitChunk(_ obj: [String: Any]) async {
-                parsedChunks.append(obj)
-                let structured = reduceChunks(parsedChunks)
-                latestStructured = structured
-                await MainActor.run {
-                    onStructuredOutput?(structured)
+            // 仅用于最终 onComplete 的文本聚合（UI 以 segments 为准）
+            var accumulatedTextParts: [String] = []
+
+            func emitDeltaChunk(_ obj: [String: Any]) async {
+                let delta = parseChunkDelta(obj)
+                if delta.segments.isEmpty,
+                   delta.scheduleEvents.isEmpty,
+                   delta.contacts.isEmpty,
+                   delta.invoices.isEmpty,
+                   delta.meetings.isEmpty,
+                   !delta.isContactToolRunning,
+                   !delta.isScheduleToolRunning,
+                   (delta.taskId ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                {
+                    return
                 }
+                // 用于最终完成：把 delta.text 的每段累积起来
+                let t = normalizeDisplayText(delta.text)
+                if !t.isEmpty { accumulatedTextParts.append(t) }
+                await MainActor.run { onStructuredOutput?(delta) }
             }
 
             func flushSSEEventIfNeeded() async {
@@ -109,33 +119,20 @@ final class BackendChatService {
                 if joined == "[DONE]" { return }
                 guard let d = joined.data(using: .utf8),
                       let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any]
-                else {
-#if DEBUG
-                    if BackendChatConfig.debugLogChunkSummary {
-                        print("⚠️ [BackendChat] SSE event json parse failed preview: \(truncate(joined, limit: 220))")
-                    }
-#endif
-                    return
-                }
-                await emitChunk(o)
+                else { return }
+                await emitDeltaChunk(o)
             }
 
             do {
                 for try await line in bytes.lines {
                     if Task.isCancelled { throw CancellationError() }
-                    rawOriginalLines.append(line)
 
                     let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !trimmedLine.isEmpty {
-                        rawFallbackLines.append(trimmedLine)
-                    }
+                    if !trimmedLine.isEmpty { rawFallbackLines.append(trimmedLine) }
 
-                    // 自动探测格式：先看到 data: 就按 SSE；否则按 NDJSON（每行一个 json）
-                    if format == .unknown, trimmedLine.hasPrefix("data:") {
-                        format = .sse
-                    } else if format == .unknown, trimmedLine.hasPrefix("{") {
-                        format = .ndjson
-                    }
+                    // 自动探测：先看到 data: 按 SSE，否则按 NDJSON
+                    if format == .unknown, trimmedLine.hasPrefix("data:") { format = .sse }
+                    else if format == .unknown, trimmedLine.hasPrefix("{") { format = .ndjson }
 
                     switch format {
                     case .sse:
@@ -144,94 +141,38 @@ final class BackendChatService {
                             await flushSSEEventIfNeeded()
                             continue
                         }
-                        // data 行：可能是一行 json，也可能多行拼起来
                         if trimmedLine.hasPrefix("data:") {
-                            let payload = trimmedLine
-                                .dropFirst("data:".count)
-                                .trimmingCharacters(in: .whitespacesAndNewlines)
+                            let payload = trimmedLine.dropFirst("data:".count).trimmingCharacters(in: .whitespacesAndNewlines)
                             guard !payload.isEmpty else { continue }
-
-#if DEBUG
-                            if BackendChatConfig.debugLogStreamEvents {
-                                if BackendChatConfig.debugLogFullResponse {
-                                    print("📡 [SSE data RAW] \(payload)")
-                                } else {
-                                    print("📡 [SSE data] \(truncate(redactBase64(payload), limit: 520))")
-                                }
-                            }
-#endif
-
                             sseDataLines.append(payload)
-
-                            // 常见情况：单行就是完整 json，尽快 flush 以实现“输出完就渲染”
-                            if sseDataLines.count == 1 {
-                                let s = payload
-                                if let d = s.data(using: .utf8),
-                                   (try? JSONSerialization.jsonObject(with: d) as? [String: Any]) != nil {
-                                    await flushSSEEventIfNeeded()
-                                }
+                            // 常见：单行就是完整 json，尽快 flush
+                            if sseDataLines.count == 1,
+                               let d = payload.data(using: .utf8),
+                               (try? JSONSerialization.jsonObject(with: d) as? [String: Any]) != nil {
+                                await flushSSEEventIfNeeded()
                             }
                         }
-                        // 其它 SSE meta 行（event/id/retry等）忽略
 
                     case .ndjson:
                         guard !trimmedLine.isEmpty else { continue }
-
-#if DEBUG
-                        if BackendChatConfig.debugLogStreamEvents {
-                            if BackendChatConfig.debugLogFullResponse {
-                                print("🧱 [NDJSON line RAW] \(trimmedLine)")
-                            } else {
-                                print("🧱 [NDJSON line] \(truncate(redactBase64(trimmedLine), limit: 520))")
-                            }
-                        }
-#endif
-
                         guard let d = trimmedLine.data(using: .utf8),
                               let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any]
-                        else {
-#if DEBUG
-                            if BackendChatConfig.debugLogChunkSummary {
-                                print("⚠️ [BackendChat] NDJSON json parse failed preview: \(truncate(trimmedLine, limit: 220))")
-                            }
-#endif
-                            continue
-                        }
-                        await emitChunk(o)
+                        else { continue }
+                        await emitDeltaChunk(o)
 
                     case .unknown:
-                        // 还没判断出来：继续收集，最后用整包 parseStructuredOutput 兜底
                         continue
                     }
                 }
-
-                // 结束时再 flush 一次（防止最后一个 event 没有空行）
-                if format == .sse {
-                    await flushSSEEventIfNeeded()
-                }
+                if format == .sse { await flushSSEEventIfNeeded() }
             } catch is CancellationError {
-                // 用户中止：不回调 onError，交给上层 stopGeneration 处理 UI
+                // 用户中止：不回调 onError
                 return
             }
 
-#if DEBUG
-            // ✅ 聊天联调：打印“原始后端输出”（完整/落盘），不依赖后续 parseStructuredOutput 是否命中
-            if BackendChatConfig.debugLogFullResponse || BackendChatConfig.debugDumpResponseToFile {
-                let rawStream = rawOriginalLines.joined(separator: "\n")
-                print("\n========== 📥 Backend Chat Raw Stream (joined lines) ==========")
-                print("Raw(\(rawStream.count)):")
-                debugPrintResponseBody(rawStream)
-                print("==============================================================\n")
-            }
-#endif
-
-            // 最终：如果流式解析成功，直接用最新结构化结果完成；否则兜底整包解析
-            if let structured = latestStructured, !structured.isEmpty {
-                let cleaned = normalizeDisplayText(structured.text)
-                if cleaned.isEmpty, structured.scheduleEvents.isEmpty, structured.contacts.isEmpty, structured.invoices.isEmpty, structured.meetings.isEmpty, !structured.isContactToolRunning {
-                    throw BackendChatError.emptyResponse
-                }
-                print("✅ [BackendChat] streamingComplete text(\(cleaned.count)) cards(schedule:\(structured.scheduleEvents.count), contact:\(structured.contacts.count), invoice:\(structured.invoices.count), meeting:\(structured.meetings.count)) tool(contactRunning:\(structured.isContactToolRunning))")
+            // 最终完成：优先用流式累积文本；若为空再兜底整包解析
+            let cleaned = normalizeDisplayText(accumulatedTextParts.joined(separator: "\n\n"))
+            if !cleaned.isEmpty {
                 await onComplete(cleaned)
                 return
             }
@@ -240,23 +181,77 @@ final class BackendChatService {
             let fallbackData = rawFallback.data(using: .utf8) ?? Data()
             if let structured = parseStructuredOutput(from: fallbackData) {
                 await MainActor.run { onStructuredOutput?(structured) }
-                let cleaned = normalizeDisplayText(structured.text)
-                if cleaned.isEmpty, structured.scheduleEvents.isEmpty, structured.contacts.isEmpty, structured.invoices.isEmpty, structured.meetings.isEmpty, !structured.isContactToolRunning {
-                    throw BackendChatError.emptyResponse
-                }
-                print("✅ [BackendChat] fallbackParsedStructured text(\(cleaned.count))")
-                await onComplete(cleaned)
+                let cleanedFallback = normalizeDisplayText(structured.text)
+                if cleanedFallback.isEmpty { throw BackendChatError.emptyResponse }
+                await onComplete(cleanedFallback)
             } else {
                 let text = extractTextFromResponseData(fallbackData)
-                let cleaned = normalizeDisplayText(text)
-                if cleaned.isEmpty { throw BackendChatError.emptyResponse }
-                print("✅ [BackendChat] fallbackParsedText(\(cleaned.count)) preview: \(truncate(cleaned, limit: 200))")
-                await onComplete(cleaned)
+                let cleanedText = normalizeDisplayText(text)
+                if cleanedText.isEmpty { throw BackendChatError.emptyResponse }
+                await onComplete(cleanedText)
             }
         } catch {
             await MainActor.run {
                 onError(error)
             }
+        }
+    }
+
+    /// 把单个后端 json chunk 解析成“增量输出”（delta）：用于即时追加到 UI
+    private static func parseChunkDelta(_ chunk: [String: Any]) -> BackendChatStructuredOutput {
+        var out = BackendChatStructuredOutput()
+        out.isDelta = true
+
+        guard let type = chunk["type"] as? String else { return out }
+        switch type {
+        case "task_id":
+            if let taskId = chunk["task_id"] as? String, !taskId.isEmpty {
+                out.taskId = taskId
+            }
+            return out
+
+        case "markdown":
+            guard let content = chunk["content"] as? String else { return out }
+            let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty || trimmed == "处理完成" { return out }
+            out.text = trimmed
+            out.segments = [.text(trimmed)]
+            return out
+
+        case "tool":
+            if let tool = chunk["content"] as? [String: Any] {
+                let toolName = (tool["name"] as? String)?.lowercased() ?? ""
+                let toolStatus = (tool["status"] as? String)?.lowercased() ?? ""
+                if toolName == "contacts_create" || toolName == "contacts_update" {
+                    out.isContactToolRunning = (toolStatus == "start")
+                    if toolStatus == "success" || toolStatus == "error" || toolStatus == "failed" {
+                        out.isContactToolRunning = false
+                    }
+                }
+                if toolName == "schedules_create" || toolName == "schedules_update" {
+                    out.isScheduleToolRunning = (toolStatus == "start")
+                    if toolStatus == "success" || toolStatus == "error" || toolStatus == "failed" {
+                        out.isScheduleToolRunning = false
+                    }
+                }
+                applyTool(tool, into: &out)
+            }
+            return out
+
+        case "card":
+            guard let content = chunk["content"] as? [String: Any] else { return out }
+            let segs = parseCardSegments(content, into: &out)
+            if !segs.isEmpty { out.segments = segs }
+            return out
+
+        default:
+            if let content = chunk["content"] as? String {
+                let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+                if trimmed.isEmpty { return out }
+                out.text = trimmed
+                out.segments = [.text(trimmed)]
+            }
+            return out
         }
     }
     
@@ -425,9 +420,8 @@ final class BackendChatService {
         for (idx, chunk) in chunks.enumerated() {
             guard let type = chunk["type"] as? String else { continue }
 #if DEBUG
-            // 降噪：reduce 每次都会从头遍历 chunks；只打印“最新 chunk”，避免造成“重复执行/重复触发”的错觉
-            if BackendChatConfig.debugLogChunkSummary, idx == chunks.count - 1 {
-                debugPrintSingleChunkSummary(chunk, source: "reduceLatest", index: idx)
+            if BackendChatConfig.debugLogChunkSummary {
+                debugPrintSingleChunkSummary(chunk, source: "reduce", index: idx)
             }
 #endif
             switch type {
@@ -437,18 +431,16 @@ final class BackendChatService {
                 }
 
             case "markdown":
-                if let content = chunk["content"] as? String {
-                    let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
-                    // 约定：后端有时会额外输出“处理完成”作为收尾提示，正式 UI 不展示
-                    if trimmed == "处理完成" { continue }
-                    if !trimmed.isEmpty { textParts.append(trimmed) }
-                }
+                guard let content = chunk["content"] as? String else { continue }
+                let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+                if trimmed == "处理完成" { continue }
+                guard !trimmed.isEmpty else { continue }
+                textParts.append(trimmed)
+                output.segments.append(.text(trimmed))
 
             case "tool":
-                // 正式 UI 默认不展示 tool chunk（避免刷屏）
-                // 但：部分后端会把“创建/更新日程”的结构化结果放在 observation 里，这里兜底解析成卡片
+                // UI 不展示 tool chunk；但保留 tool 中间态与 observation 兜底解析
                 if let tool = chunk["content"] as? [String: Any] {
-                    // tool 中间态：用于前端展示 loading（不依赖 raw tool 文本）
                     let toolName = (tool["name"] as? String)?.lowercased() ?? ""
                     let toolStatus = (tool["status"] as? String)?.lowercased() ?? ""
                     if toolName == "contacts_create" || toolName == "contacts_update" {
@@ -458,25 +450,118 @@ final class BackendChatService {
                             output.isContactToolRunning = false
                         }
                     }
+                    if toolName == "schedules_create" || toolName == "schedules_update" {
+                        if toolStatus == "start" {
+                            output.isScheduleToolRunning = true
+                        } else if toolStatus == "success" || toolStatus == "error" || toolStatus == "failed" {
+                            output.isScheduleToolRunning = false
+                        }
+                    }
                     applyTool(tool, into: &output)
                 }
-                continue
 
             case "card":
                 guard let content = chunk["content"] as? [String: Any] else { continue }
-                applyCard(content, into: &output)
+                let segs = parseCardSegments(content, into: &output)
+                if !segs.isEmpty {
+                    output.segments.append(contentsOf: segs)
+                }
 
             default:
                 // 兼容：如果后端未来直接发 text chunk
                 if let content = chunk["content"] as? String {
                     let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !trimmed.isEmpty { textParts.append(trimmed) }
+                    guard !trimmed.isEmpty else { continue }
+                    textParts.append(trimmed)
+                    output.segments.append(.text(trimmed))
                 }
             }
         }
 
+        // 用双换行拼接文本 chunk（与“分段”一致），便于复制/搜索
         output.text = textParts.joined(separator: "\n\n")
         return output
+    }
+
+    /// 将一个 card chunk 解析成可渲染分段，同时回填到聚合字段（scheduleEvents/contacts/...）
+    private static func parseCardSegments(_ card: [String: Any], into output: inout BackendChatStructuredOutput) -> [ChatSegment] {
+        let cardType = (card["card_type"] as? String)?.lowercased() ?? ""
+        let cardIdString = card["card_id"] as? String
+        let cardId = cardIdString.flatMap { UUID(uuidString: $0) }
+        let data = card["data"]
+
+        func appendUnique<T: Identifiable>(_ incoming: [T], to list: inout [T]) where T.ID: Equatable {
+            for item in incoming {
+                if list.contains(where: { $0.id == item.id }) { continue }
+                list.append(item)
+            }
+        }
+
+        switch cardType {
+        case "schedule":
+            var events: [ScheduleEvent] = []
+            if let dict = data as? [String: Any] {
+                if let e = parseScheduleEvent(dict, forceId: cardId) { events.append(e) }
+            } else if let arr = data as? [[String: Any]] {
+                for d in arr {
+                    if let e = parseScheduleEvent(d, forceId: nil) { events.append(e) }
+                }
+            }
+            if !events.isEmpty {
+                // 聚合字段仍做去重合并（便于详情/删除等逻辑复用）
+                for e in events { upsertScheduleEvent(e, into: &output, preferIncoming: true) }
+                return [.scheduleCards(events)]
+            }
+            return []
+
+        case "contact", "contacts", "person", "people":
+            var cards: [ContactCard] = []
+            if let dict = data as? [String: Any] {
+                if let c = parseContact(dict, forceId: cardId) { cards.append(c) }
+            } else if let arr = data as? [[String: Any]] {
+                for d in arr {
+                    if let c = parseContact(d, forceId: nil) { cards.append(c) }
+                }
+            }
+            if !cards.isEmpty {
+                appendUnique(cards, to: &output.contacts)
+                return [.contactCards(cards)]
+            }
+            return []
+
+        case "invoice", "reimbursement", "expense":
+            var cards: [InvoiceCard] = []
+            if let dict = data as? [String: Any] {
+                if let i = parseInvoice(dict, forceId: cardId) { cards.append(i) }
+            } else if let arr = data as? [[String: Any]] {
+                for d in arr {
+                    if let i = parseInvoice(d, forceId: nil) { cards.append(i) }
+                }
+            }
+            if !cards.isEmpty {
+                appendUnique(cards, to: &output.invoices)
+                return [.invoiceCards(cards)]
+            }
+            return []
+
+        case "meeting":
+            var cards: [MeetingCard] = []
+            if let dict = data as? [String: Any] {
+                if let m = parseMeeting(dict, forceId: cardId) { cards.append(m) }
+            } else if let arr = data as? [[String: Any]] {
+                for d in arr {
+                    if let m = parseMeeting(d, forceId: nil) { cards.append(m) }
+                }
+            }
+            if !cards.isEmpty {
+                appendUnique(cards, to: &output.meetings)
+                return [.meetingCards(cards)]
+            }
+            return []
+
+        default:
+            return []
+        }
     }
 
     private static func applyTool(_ tool: [String: Any], into output: inout BackendChatStructuredOutput) {
@@ -1101,25 +1186,13 @@ final class BackendChatService {
 
     private static func debugPrintSingleChunkSummary(_ chunk: [String: Any], source: String, index: Int) {
         guard BackendChatConfig.debugLogChunkSummary else { return }
-        let type = (chunk["type"] as? String) ?? "<nil>"
-        let role = (chunk["role"] as? String) ?? ""
-
-        var extra: String = ""
-        if type == "tool", let c = chunk["content"] as? [String: Any] {
-            let name = (c["name"] as? String) ?? ""
-            let status = (c["status"] as? String) ?? ""
-            let msgId = (c["message_id"] as? String) ?? ""
-            extra = " name=\(name) status=\(status)\(msgId.isEmpty ? "" : " message_id=\(msgId)")"
-        } else if type == "card", let c = chunk["content"] as? [String: Any] {
-            let cardType = (c["card_type"] as? String) ?? ""
-            let cardId = (c["card_id"] as? String) ?? ""
-            extra = " card_type=\(cardType)\(cardId.isEmpty ? "" : " card_id=\(cardId)")"
-        } else if type == "markdown", let s = chunk["content"] as? String {
-            extra = " contentLen=\(s.count) preview=\(truncate(s, limit: 80))"
+        // 需求：控制台 chunk 打印改为后端 chunk 的原始 JSON 内容（不做摘要/preview）
+        if let data = try? JSONSerialization.data(withJSONObject: chunk, options: []),
+           let json = String(data: data, encoding: .utf8) {
+            print("🧱 [BackendChat] chunk[\(source)#\(index)] \(json)")
+        } else {
+            print("🧱 [BackendChat] chunk[\(source)#\(index)] \(chunk)")
         }
-
-        let rolePart = role.isEmpty ? "" : " role=\(role)"
-        print("🧱 [BackendChat] chunk[\(source)#\(index)] type=\(type)\(rolePart)\(extra)")
     }
 #endif
 }

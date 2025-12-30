@@ -218,6 +218,144 @@ struct ScheduleCardStackView: View {
     }
 }
 
+// MARK: - Loading (Skeleton) Card
+/// 与正式日程卡片同规格的 loading 卡片，用于工具调用期间占位（避免展示 raw tool 文本）
+struct ScheduleCardLoadingStackView: View {
+    var title: String = "创建日程"
+    var subtitle: String = "正在保存日程信息…"
+
+    /// 横向翻页时，用于通知外层 ScrollView 临时禁用上下滚动，避免手势冲突（与正式卡片保持签名一致，方便替换）
+    @Binding var isParentScrollDisabled: Bool
+
+    // 与 ScheduleCardStackView 保持一致
+    private let cardHeight: CGFloat = 300
+    private let cardWidth: CGFloat = 300
+
+    init(
+        title: String = "创建日程",
+        subtitle: String = "正在保存日程信息…",
+        isParentScrollDisabled: Binding<Bool>
+    ) {
+        self.title = title
+        self.subtitle = subtitle
+        self._isParentScrollDisabled = isParentScrollDisabled
+    }
+
+    var body: some View {
+        VStack(spacing: 8) {
+            ZStack {
+                ScheduleCardLoadingView(title: title, subtitle: subtitle)
+                    .frame(width: cardWidth, height: cardHeight)
+                    .shadow(color: Color.black.opacity(0.10), radius: 10, x: 0, y: 5)
+            }
+            .frame(height: cardHeight + 20)
+            .padding(.horizontal)
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 20)
+                    .onChanged { value in
+                        let dx = value.translation.width
+                        let dy = value.translation.height
+                        guard abs(dx) > abs(dy) else { return }
+                        isParentScrollDisabled = true
+                    }
+                    .onEnded { _ in
+                        isParentScrollDisabled = false
+                    }
+            )
+        }
+    }
+}
+
+struct ScheduleCardLoadingView: View {
+    let title: String
+    let subtitle: String
+
+    private let primaryText = Color(red: 0.2, green: 0.2, blue: 0.2)
+    private let skeleton = Color.black.opacity(0.06)
+    private let skeletonStrong = Color.black.opacity(0.10)
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .lastTextBaseline, spacing: 10) {
+                Text(title)
+                    .font(.custom("SourceHanSerifSC-Bold", size: 24))
+                    .foregroundColor(primaryText)
+
+                Spacer()
+
+                ProgressView()
+                    .progressViewStyle(.circular)
+            }
+            .padding(.bottom, 8)
+
+            Text(subtitle)
+                .font(.system(size: 14))
+                .foregroundColor(.gray)
+                .padding(.bottom, 14)
+
+            // Skeleton blocks：模拟标题/时间/地点/描述
+            RoundedRectangle(cornerRadius: 6)
+                .fill(skeletonStrong)
+                .frame(width: 180, height: 16)
+                .padding(.bottom, 10)
+
+            RoundedRectangle(cornerRadius: 6)
+                .fill(skeleton)
+                .frame(width: 220, height: 14)
+                .padding(.bottom, 10)
+
+            RoundedRectangle(cornerRadius: 6)
+                .fill(skeleton)
+                .frame(width: 150, height: 14)
+                .padding(.bottom, 18)
+
+            HStack(spacing: 6) {
+                Rectangle()
+                    .fill(Color(hex: "EEEEEE"))
+                    .frame(height: 1)
+
+                Circle()
+                    .stroke(Color(hex: "E5E5E5"), lineWidth: 1)
+                    .background(Circle().fill(Color.white))
+                    .frame(width: 7, height: 7)
+            }
+            .padding(.bottom, 18)
+
+            HStack(spacing: 8) {
+                Image(systemName: "clock")
+                    .font(.system(size: 14))
+                    .foregroundColor(.gray.opacity(0.7))
+                    .frame(width: 20)
+
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(skeleton)
+                    .frame(width: 170, height: 14)
+            }
+            .padding(.bottom, 12)
+
+            HStack(spacing: 8) {
+                Image(systemName: "mappin.and.ellipse")
+                    .font(.system(size: 14))
+                    .foregroundColor(.gray.opacity(0.7))
+                    .frame(width: 20)
+
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(skeleton)
+                    .frame(width: 120, height: 14)
+            }
+
+            Spacer()
+        }
+        .padding(14)
+        .background(Color.white)
+        .cornerRadius(24)
+        .overlay(
+            RoundedRectangle(cornerRadius: 24)
+                .stroke(Color.gray.opacity(0.1), lineWidth: 1)
+        )
+    }
+}
+
 // MARK: - 简化的胶囊菜单
 struct CardCapsuleMenuView: View {
     var onEdit: () -> Void
