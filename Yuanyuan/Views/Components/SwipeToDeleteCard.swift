@@ -50,15 +50,71 @@ struct SwipeToDeleteCard<Content: View>: View {
                 .contentShape(Rectangle())
                 .offset(x: offsetX)
                 .overlay(loadingOverlay) // 叠加加载效果
-                .simultaneousGesture(isLoading ? nil : dragGesture) // 加载中禁用手势
-                .onTapGesture {
-                    if isLoading { return }
-                    if isRevealed {
-                        closeSwipe()
+        }
+        // 这里必须把“点击”挂到容器上（而不是 content 上），因为我们会用一个透明的 UIKit Pan overlay 来捕获左滑。
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if isLoading { return }
+            if isRevealed {
+                closeSwipe()
+            } else {
+                onTap()
+            }
+        }
+        // 使用 UIKit 的 UIPanGestureRecognizer，仅在“横向”时才会 begin，避免与 ScrollView 的纵向滚动互相抢手势
+        .overlay {
+            HorizontalPanCaptureView(
+                isEnabled: !isLoading,
+                onChanged: { dx, _ in
+                    if !isSwiping {
+                        isSwiping = true
+                        HapticFeedback.light()
+                    }
+                    
+                    let baseOffset = isRevealed ? -maxRevealOffset : 0
+                    var newOffset = baseOffset + dx
+                    
+                    if newOffset > 0 {
+                        newOffset = newOffset / 5
+                    }
+                    
+                    if newOffset < -maxRevealOffset {
+                        let extra = newOffset + maxRevealOffset
+                        newOffset = -maxRevealOffset + extra / 2.5
+                    }
+                    
+                    offsetX = newOffset
+                },
+                onEnded: { dx, _, _, _ in
+                    guard isSwiping else { return }
+                    defer { isSwiping = false }
+                    
+                    let baseOffset = isRevealed ? -maxRevealOffset : 0
+                    let finalOffset = baseOffset + dx
+                    
+                    // 深度滑动删除阈值
+                    let deleteThreshold = -maxRevealOffset * 1.6
+                    
+                    if finalOffset < deleteThreshold {
+                        HapticFeedback.medium()
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            offsetX = -1000 // 划出屏幕
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                            onDelete()
+                            // 删除后重置状态，以便复用
+                            offsetX = 0
+                            isRevealed = false
+                        }
+                    } else if -finalOffset > revealThreshold {
+                        HapticFeedback.light()
+                        revealSwipe()
                     } else {
-                        onTap()
+                        closeSwipe()
                     }
                 }
+            )
+            .allowsHitTesting(!isLoading)
         }
         .animation(.spring(response: 0.35, dampingFraction: 0.8), value: offsetX)
         .animation(.easeInOut(duration: 0.3), value: isLoading)
@@ -148,61 +204,8 @@ struct SwipeToDeleteCard<Content: View>: View {
         )
     }
 
-    private var dragGesture: some Gesture {
-        DragGesture(minimumDistance: 15)
-            .onChanged { value in
-                if !isSwiping {
-                    if abs(value.translation.width) > abs(value.translation.height) {
-                        isSwiping = true
-                        HapticFeedback.light()
-                    } else {
-                        return
-                    }
-                }
-                
-                let baseOffset = isRevealed ? -maxRevealOffset : 0
-                var newOffset = baseOffset + value.translation.width
-                
-                if newOffset > 0 {
-                    newOffset = newOffset / 5
-                }
-                
-                if newOffset < -maxRevealOffset {
-                    let extra = newOffset + maxRevealOffset
-                    newOffset = -maxRevealOffset + extra / 2.5
-                }
-                
-                offsetX = newOffset
-            }
-            .onEnded { value in
-                guard isSwiping else { return }
-                defer { isSwiping = false }
-                
-                let baseOffset = isRevealed ? -maxRevealOffset : 0
-                let finalOffset = baseOffset + value.translation.width
-                
-                // 深度滑动删除阈值
-                let deleteThreshold = -maxRevealOffset * 1.6
-                
-                if finalOffset < deleteThreshold {
-                    HapticFeedback.medium()
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                        offsetX = -1000 // 划出屏幕
-                    }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                        onDelete()
-                        // 删除后重置状态，以便复用
-                        offsetX = 0
-                        isRevealed = false
-                    }
-                } else if -finalOffset > revealThreshold {
-                    HapticFeedback.light()
-                    revealSwipe()
-                } else {
-                    closeSwipe()
-                }
-            }
-    }
+    // 说明：左滑删除不再使用 SwiftUI DragGesture（它会和 ScrollView 纵向滚动间歇性抢手势），
+    // 改用 HorizontalPanCaptureView（UIKit），仅当明确横向拖拽才会 begin。
     
     private func revealSwipe() {
         offsetX = -maxRevealOffset
@@ -212,5 +215,68 @@ struct SwipeToDeleteCard<Content: View>: View {
     private func closeSwipe() {
         offsetX = 0
         isRevealed = false
+    }
+}
+
+// MARK: - UIKit horizontal pan (only begins when horizontal-dominant)
+private struct HorizontalPanCaptureView: UIViewRepresentable {
+    var isEnabled: Bool
+    var onChanged: (CGFloat, CGFloat) -> Void // dx, dy
+    var onEnded: (CGFloat, CGFloat, CGFloat, CGFloat) -> Void // dx, dy, vx, vy
+    
+    func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
+    
+    func makeUIView(context: Context) -> UIView {
+        let v = UIView()
+        v.backgroundColor = .clear
+        
+        let pan = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handlePan(_:)))
+        pan.delegate = context.coordinator
+        pan.cancelsTouchesInView = false // 不要吞掉点击
+        v.addGestureRecognizer(pan)
+        
+        return v
+    }
+    
+    func updateUIView(_ uiView: UIView, context: Context) {
+        context.coordinator.parent = self
+        // enable/disable recognizer
+        uiView.gestureRecognizers?.forEach { $0.isEnabled = isEnabled }
+    }
+    
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var parent: HorizontalPanCaptureView
+        
+        init(parent: HorizontalPanCaptureView) {
+            self.parent = parent
+        }
+        
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            guard parent.isEnabled else { return false }
+            guard let pan = gestureRecognizer as? UIPanGestureRecognizer, let view = pan.view else { return false }
+            let v = pan.velocity(in: view)
+            // 明确横向才开始：避免上下滚动时误触发
+            return abs(v.x) > abs(v.y) + 40
+        }
+        
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+            // 允许与 ScrollView 的手势并存（纵向滚动时我们根本不会 begin；横向时 ScrollView 也不会有效滚动）
+            true
+        }
+        
+        @objc func handlePan(_ pan: UIPanGestureRecognizer) {
+            guard let view = pan.view else { return }
+            let t = pan.translation(in: view)
+            let v = pan.velocity(in: view)
+            
+            switch pan.state {
+            case .began, .changed:
+                parent.onChanged(t.x, t.y)
+            case .ended, .cancelled, .failed:
+                parent.onEnded(t.x, t.y, v.x, v.y)
+            default:
+                break
+            }
+        }
     }
 }

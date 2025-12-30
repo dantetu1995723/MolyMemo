@@ -194,74 +194,7 @@ private struct ContactCardBatchList: View {
     }
     
     private func findOrCreateContact(from card: ContactCard) -> Contact {
-        // 先尝试根据 ID 查找
-        if let existing = allContacts.first(where: { $0.id == card.id }) {
-            // 绑定远端 id（用于后续详情/更新/删除）
-            if let rid = card.remoteId?.trimmingCharacters(in: .whitespacesAndNewlines), !rid.isEmpty {
-                if (existing.remoteId ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    existing.remoteId = rid
-                    try? modelContext.save()
-                }
-            }
-            // 备注：只使用后端 note/notes（ContactCard.notes）回填，避免把 impression 混进备注
-            let n = (card.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            if !n.isEmpty {
-                let current = (existing.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                if current.isEmpty {
-                    existing.notes = n
-                    try? modelContext.save()
-                } else if !current.contains(n) {
-                    existing.notes = current + "\n\n" + n
-                    try? modelContext.save()
-                }
-            }
-            return existing
-        }
-        
-        // 如果找不到，尝试根据名字和电话查找
-        if let phone = card.phone, !phone.isEmpty,
-           let existing = allContacts.first(where: { $0.name == card.name && $0.phoneNumber == phone }) {
-            if let rid = card.remoteId?.trimmingCharacters(in: .whitespacesAndNewlines), !rid.isEmpty {
-                if (existing.remoteId ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    existing.remoteId = rid
-                    try? modelContext.save()
-                }
-            }
-            let n = (card.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            if !n.isEmpty {
-                let current = (existing.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                if current.isEmpty {
-                    existing.notes = n
-                    try? modelContext.save()
-                } else if !current.contains(n) {
-                    existing.notes = current + "\n\n" + n
-                    try? modelContext.save()
-                }
-            }
-            return existing
-        }
-        
-        // 如果都找不到，创建一个新的 Contact
-        let newContact = Contact(
-            name: card.name,
-            remoteId: {
-                let rid = (card.remoteId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                return rid.isEmpty ? nil : rid
-            }(),
-            phoneNumber: card.phone,
-            company: card.company,
-            identity: card.title,
-            notes: {
-                let n = (card.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                return n.isEmpty ? nil : n
-            }(),
-            avatarData: card.avatarData
-        )
-        
-        modelContext.insert(newContact)
-        try? modelContext.save()
-        
-        return newContact
+        ContactCardLocalSync.findOrCreateContact(from: card, allContacts: allContacts, modelContext: modelContext)
     }
 }
 

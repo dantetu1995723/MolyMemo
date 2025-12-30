@@ -442,7 +442,8 @@ struct ContactDetailView: View {
     @MainActor
     private func refreshRemoteDetailSilently(rid: String) async {
         do {
-            let card = try await ContactService.fetchContactDetail(remoteId: rid, keepLocalId: contact.id)
+            // 关键：静默刷新也要绕开详情缓存，否则会被 10min TTL 卡住，导致“卡片已更新但详情页仍旧不变”
+            let card = try await ContactService.fetchContactDetail(remoteId: rid, keepLocalId: contact.id, forceRefresh: true)
             applyRemoteDetailCard(card, rid: rid)
         } catch {
             // 静默刷新失败不打扰用户

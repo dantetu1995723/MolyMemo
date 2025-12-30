@@ -6,10 +6,12 @@ struct ChatInputView: View {
     var namespace: Namespace.ID
     
     @FocusState private var isFocused: Bool
+    @Environment(\.scenePhase) private var scenePhase
     
     // 手势状态
     @State private var isPressing = false
-    @State private var pressStartTime: Date?
+    @State private var pressBeganAt: Date?
+    @State private var didMoveDuringPress = false
     // 仅允许“用户触摸触发”的聚焦：用于拦截 SwiftUI/系统在状态切换时的自动 focus
     @State private var lastUserInteractionAt: Date?
     
@@ -82,7 +84,8 @@ struct ChatInputView: View {
             // AI 输入时：除“中止”外全部禁用，主动收起键盘/菜单/建议，并打断长按录音手势
             guard isTyping else { return }
             isPressing = false
-            pressStartTime = nil
+            pressBeganAt = nil
+            didMoveDuringPress = false
             if isFocused { isFocused = false }
             if viewModel.isInputFocused { viewModel.isInputFocused = false }
             if viewModel.showMenu {
@@ -122,6 +125,13 @@ struct ChatInputView: View {
         .onChange(of: viewModel.selectedPhotoItem) { _, newItem in
             viewModel.handlePhotoSelection(newItem)
         }
+        .onChange(of: scenePhase) { _, phase in
+            // 系统上滑回桌面/切后台时，手势的 ended 有时不会可靠回调；
+            // 这里兜底结束“按住说话”的状态，防止延迟触发误开录音。
+            if phase != .active {
+                forceEndHoldToTalk()
+            }
+        }
     }
     
     // 输入框容器组件
@@ -129,7 +139,16 @@ struct ChatInputView: View {
     private var inputContainer: some View {
         let isLocked = viewModel.isAgentTyping
         
-        VStack(alignment: .leading, spacing: 0) {
+        // 只在“输入框未聚焦且为空”的状态启用按住说话，避免和正常滚动/系统返回桌面手势冲突。
+        // 关键：录音开始后不要把手势移除，否则 SwiftUI 会取消正在进行的 long-press，
+        // 触发 pressing(false) 从而立刻 stopRecording，造成“蓝色球闪一下又退回”的问题。
+        let holdToTalkEnabled =
+            !isLocked &&
+            !isFocused &&
+            viewModel.inputText.isEmpty &&
+            viewModel.selectedImage == nil
+        
+        let base = VStack(alignment: .leading, spacing: 0) {
             // 选中的图片展示区 (图中标注间距 12)
             if let image = viewModel.selectedImage {
                 VStack(alignment: .leading, spacing: 12) {
@@ -225,7 +244,136 @@ struct ChatInputView: View {
                 }
             }
         }
-        .background(
+        .modifier(InputContainerFrameReporter(viewModel: viewModel))
+        .overlay(
+            RoundedRectangle(cornerRadius: 24)
+                .inset(by: 0.5)
+                .stroke(Color(red: 0.88, green: 0.88, blue: 0.88), lineWidth: 1)
+        )
+        
+        if holdToTalkEnabled {
+            base
+                // 真正的长按：最大移动距离限制可以有效避免“上滑回桌面/关掉界面”时误触发录音
+                .onLongPressGesture(
+                    minimumDuration: 0.3,
+                    maximumDistance: 12,
+                    pressing: { isDown in
+                        handleHoldToTalkPressingChanged(isDown)
+                    },
+                    perform: {
+                        handleHoldToTalkLongPressRecognized()
+                    }
+                )
+                // 仅用于：
+                // - 识别“按住过程中发生了明显移动”，避免把滑动当成轻点去 focus
+                // - 录音时用于“上划取消”的实时判定
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 10)
+                        .onChanged { value in
+                            handleHoldToTalkDragChanged(value)
+                        }
+                        .onEnded { _ in
+                            if !isPressing {
+                                didMoveDuringPress = false
+                            }
+                        }
+                )
+        } else {
+            base
+        }
+    }
+    
+    // MARK: - Gesture Logic
+    
+    private func handleHoldToTalkPressingChanged(_ isDown: Bool) {
+        guard !viewModel.isAgentTyping else { return }
+        
+        if isDown {
+            // 记录一次用户触摸（用于允许随后的聚焦）
+            lastUserInteractionAt = Date()
+            isPressing = true
+            pressBeganAt = Date()
+            didMoveDuringPress = false
+            return
+        }
+        
+        // 手指抬起：结束按压
+        isPressing = false
+        let beganAt = pressBeganAt
+        pressBeganAt = nil
+        
+        if viewModel.isRecording {
+            // 录音结束：根据是否处于“取消”状态决定 stop / cancel
+            if viewModel.isCanceling {
+                viewModel.cancelRecording()
+            } else {
+                viewModel.stopRecording()
+            }
+            return
+        }
+        
+        // 非录音：把“轻点中间区域”当作 focus 输入框（但滑动/明显移动不算轻点）
+        if !didMoveDuringPress,
+           !isFocused,
+           viewModel.inputText.isEmpty,
+           viewModel.selectedImage == nil
+        {
+            let isQuickTap = beganAt.map { Date().timeIntervalSince($0) < 0.25 } ?? true
+            if isQuickTap {
+                lastUserInteractionAt = Date()
+                isFocused = true
+            }
+        }
+        
+        didMoveDuringPress = false
+    }
+    
+    private func handleHoldToTalkLongPressRecognized() {
+        guard !viewModel.isAgentTyping else { return }
+        guard !isFocused else { return }
+        guard viewModel.inputText.isEmpty, viewModel.selectedImage == nil else { return }
+        guard !viewModel.isRecording else { return }
+        
+        HapticFeedback.medium()
+        viewModel.startRecording()
+    }
+    
+    private func handleHoldToTalkDragChanged(_ value: DragGesture.Value) {
+        guard !viewModel.isAgentTyping else { return }
+        
+        // 只要按压中发生了明显移动，就不再把它当成“轻点 focus”
+        if isPressing && !viewModel.isRecording {
+            didMoveDuringPress = true
+        }
+        
+        // 如果正在录音，更新拖拽位置以检测取消
+        if viewModel.isRecording {
+            let dragPoint = CGPoint(x: value.translation.width, y: value.translation.height)
+            viewModel.updateDragLocation(dragPoint, in: .zero)
+        }
+    }
+    
+    private func forceEndHoldToTalk() {
+        isPressing = false
+        pressBeganAt = nil
+        didMoveDuringPress = false
+        
+        // 进入后台/非活跃：停止录音但不要发送
+        if viewModel.isRecording {
+            viewModel.isCanceling = true
+            viewModel.stopRecording()
+        }
+    }
+}
+
+// MARK: - Helpers
+
+/// 把输入框 frame 上报给 VM（避免把这段逻辑散落在主 view 里导致类型推断变慢）
+private struct InputContainerFrameReporter: ViewModifier {
+    @ObservedObject var viewModel: ChatInputViewModel
+    
+    func body(content: Content) -> some View {
+        content.background(
             RoundedRectangle(cornerRadius: 24)
                 .fill(Color(hex: "F7F8FA"))
                 .background(
@@ -244,103 +392,5 @@ struct ChatInputView: View {
                     }
                 )
         )
-        .overlay(
-            RoundedRectangle(cornerRadius: 24)
-                .inset(by: 0.5)
-                .stroke(Color(red: 0.88, green: 0.88, blue: 0.88), lineWidth: 1)
-        )
-        // 手势处理
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { value in
-                    handleDragChanged(value)
-                }
-                .onEnded { value in
-                    handleDragEnded(value)
-                }
-        )
-    }
-    
-    // MARK: - Gesture Logic
-    
-    private func handleDragChanged(_ value: DragGesture.Value) {
-        // AI 正在输入时：整体锁定，禁止长按录音
-        guard !viewModel.isAgentTyping else { return }
-        
-        // 排除按钮区域，避免干扰按钮点击
-        let startX = value.startLocation.x
-        // 加号按钮区域 (左侧约 52px)
-        if startX < 52 { return }
-        // 右侧按钮区域（Stop 或 Send）
-        // 这里同样不要用 hasContent，避免发送后状态变化导致误判
-        let inputWidth = viewModel.inputFrame.width
-        if inputWidth > 0, startX > (inputWidth - 52) { return }
-        
-        // 记录一次用户触摸（用于允许随后的聚焦）
-        if !isPressing {
-            lastUserInteractionAt = Date()
-        }
-        
-        // 检测是否是新点击
-        if !isPressing {
-            isPressing = true
-            pressStartTime = Date()
-            
-            // 延迟触发录音，避免普通点击触发录音
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                if isPressing, let startTime = pressStartTime, Date().timeIntervalSince(startTime) >= 0.3 {
-                    // 触发录音
-                    if !viewModel.isRecording {
-                        HapticFeedback.medium()
-                        viewModel.startRecording()
-                    }
-                }
-            }
-        }
-        
-        // 如果正在录音，更新拖拽位置以检测取消
-        if viewModel.isRecording {
-            let dragPoint = CGPoint(x: value.translation.width, y: value.translation.height)
-            viewModel.updateDragLocation(dragPoint, in: .zero)
-        }
-    }
-    
-    private func handleDragEnded(_ value: DragGesture.Value) {
-        // AI 正在输入时：整体锁定，结束手势即可
-        guard !viewModel.isAgentTyping else {
-            isPressing = false
-            pressStartTime = nil
-            return
-        }
-        
-        // 排除按钮区域
-        let startX = value.startLocation.x
-        // 注意：这里不要用 hasContent 来判断右侧按钮区域。
-        // 因为“发送”会立刻清空 inputText，导致 hasContent 在手势 ended 时变为 false，
-        // 从而误把“点发送按钮”当成“点空白区域”，进而把输入框又 focus 回来。
-        let inputWidth = viewModel.inputFrame.width
-        let isInRightButtonArea = (inputWidth > 0) ? (startX > (inputWidth - 52)) : false
-        if startX < 52 || isInRightButtonArea {
-            isPressing = false
-            pressStartTime = nil
-            return
-        }
-
-        isPressing = false
-        pressStartTime = nil
-        
-        if viewModel.isRecording {
-            if viewModel.isCanceling {
-                viewModel.cancelRecording()
-            } else {
-                viewModel.stopRecording()
-            }
-        } else {
-            // 如果只是轻点中间区域，且没有聚焦，则聚焦输入框
-            if !isFocused && viewModel.inputText.isEmpty && viewModel.selectedImage == nil {
-                lastUserInteractionAt = Date()
-                isFocused = true
-            }
-        }
     }
 }

@@ -252,18 +252,20 @@ struct TodoListView: View {
                 // 这样在月视图下，手指滑动会优先触发日历折叠
                 .scrollDisabled(calendarProgress < 1.0 && listScrollOffset >= 0)
             }
-            // 整体手势监听：只在「日历未完全折叠 & 列表在顶」时拦截，
-            // 否则把滚动手势交还给 ScrollView（这样上滑就能正常滚动列表）
-            .highPriorityGesture(
+            // 整体手势监听：用于“上滑折叠月历/下拉展开月历”
+            //
+            // 之前这里使用 highPriorityGesture + including: .all，会把子视图（尤其是日历 TabView 的 page 横滑）
+            // 的单指手势抢走，导致“翻月必须双指”。
+            //
+            // 改为 simultaneousGesture：不阻塞子视图手势，只在 handleDragChange/End 内部按需处理“纵向”拖拽即可。
+            .simultaneousGesture(
                 DragGesture()
                     .onChanged { value in
                         handleDragChange(value)
                     }
                     .onEnded { value in
                         handleDragEnd(value)
-                    },
-                // 额外支持：当处于周视图且列表已经到底部时，继续“下拉回弹”可把周视图展开回月视图
-                including: ((calendarProgress < 1.0 && listScrollOffset >= 0) || (calendarProgress >= 0.999 && isListAtBottom)) ? .all : .subviews
+                    }
             )
             
             // 底部操作栏（选中事项时显示）
@@ -350,10 +352,17 @@ struct TodoListView: View {
         let verticalTranslation = value.translation.height
         let horizontalTranslation = value.translation.width
         
-        // 关键修复：如果横向位移明显大于纵向，且还没开始折叠流程，则不拦截手势
-        // 这让下层的左滑删除组件有机会获得手势
-        if abs(horizontalTranslation) > abs(verticalTranslation) + 10 && dragStartProgress == nil {
-            return
+        // 关键修复：
+        // 这里需要“放行横滑”给 SwipeToDeleteCard（左滑删除），但如果判定过于敏感，
+        // 用户在列表项上做“上下拖拽切换周/月”时会因为轻微横向抖动而被误判为横滑，导致折叠/展开失效。
+        //
+        // 因此仅在“横向明显占优 + 横向位移也足够大”时才放行。
+        if dragStartProgress == nil {
+            let horizontalDominant = abs(horizontalTranslation) > abs(verticalTranslation) + 18
+            let horizontalIsMeaningful = abs(horizontalTranslation) > 24
+            if horizontalDominant && horizontalIsMeaningful {
+                return
+            }
         }
         
         // ✅ 反向操作：周视图 + 列表到底部时，继续下拉（回弹）允许展开月历

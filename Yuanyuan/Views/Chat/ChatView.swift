@@ -104,72 +104,7 @@ struct ChatView: View {
 
     // MARK: - Helpers (Chat Card -> SwiftData Model)
     private func findOrCreateContact(from card: ContactCard) -> Contact {
-        // 先尝试根据 id 查找（如果之前创建时同步了 id，可命中）
-        if let existing = allContacts.first(where: { $0.id == card.id }) {
-            // 绑定远端 id（用于后续详情/更新/删除）
-            if let rid = card.remoteId?.trimmingCharacters(in: .whitespacesAndNewlines), !rid.isEmpty {
-                if (existing.remoteId ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    existing.remoteId = rid
-                    try? modelContext.save()
-                }
-            }
-            // 备注：只使用后端 note/notes（ContactCard.notes）回填，避免把 impression 混进备注
-            let n = (card.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            if !n.isEmpty {
-                let current = (existing.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                if current.isEmpty {
-                    existing.notes = n
-                    try? modelContext.save()
-                } else if !current.contains(n) {
-                    existing.notes = current + "\n\n" + n
-                    try? modelContext.save()
-                }
-            }
-            return existing
-        }
-        // 再尝试根据名字 + 电话查找
-        if let phone = card.phone, !phone.isEmpty,
-           let existing = allContacts.first(where: { $0.name == card.name && $0.phoneNumber == phone }) {
-            if let rid = card.remoteId?.trimmingCharacters(in: .whitespacesAndNewlines), !rid.isEmpty {
-                if (existing.remoteId ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    existing.remoteId = rid
-                    try? modelContext.save()
-                }
-            }
-            let n = (card.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            if !n.isEmpty {
-                let current = (existing.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                if current.isEmpty {
-                    existing.notes = n
-                    try? modelContext.save()
-                } else if !current.contains(n) {
-                    existing.notes = current + "\n\n" + n
-                    try? modelContext.save()
-                }
-            }
-            return existing
-        }
-        // 创建新的 SwiftData Contact（保持 UI 不变，只是为了复用现有详情页）
-        let newContact = Contact(
-            name: card.name,
-            remoteId: {
-                let rid = (card.remoteId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                return rid.isEmpty ? nil : rid
-            }(),
-            phoneNumber: card.phone,
-            company: card.company,
-            identity: card.title,
-            notes: {
-                let n = (card.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                return n.isEmpty ? nil : n
-            }(),
-            avatarData: card.avatarData
-        )
-        // 关键：让 id 跟卡片 id 对齐，后续能稳定复用同一联系人
-        newContact.id = card.id
-        modelContext.insert(newContact)
-        try? modelContext.save()
-        return newContact
+        ContactCardLocalSync.findOrCreateContact(from: card, allContacts: allContacts, modelContext: modelContext)
     }
     
     var body: some View {
