@@ -2,6 +2,7 @@ import WidgetKit
 import SwiftUI
 import ActivityKit
 import AppIntents
+import UIKit
 
 // MARK: - Widget Provider
 struct MeetingRecordingProvider: TimelineProvider {
@@ -219,14 +220,22 @@ struct ScreenshotSendLiveActivity: Widget {
             // 锁屏：简洁提示
             Link(destination: URL(string: "yuanyuan://chat")!) {
                 HStack(spacing: 12) {
-                    ZStack {
-                        Circle()
-                            .fill(.black)
+                    if let uiImage = loadThumbnail(from: context.state.thumbnailRelativePath) {
+                        Image(uiImage: uiImage)
+                            .resizable()
+                            .scaledToFill()
                             .frame(width: 32, height: 32)
+                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    } else {
+                        ZStack {
+                            Circle()
+                                .fill(.black)
+                                .frame(width: 32, height: 32)
 
-                        Image(systemName: iconName(for: context.state.status))
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundColor(.white)
+                            Image(systemName: iconName(for: context.state.status))
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundColor(.white)
+                        }
                     }
 
                     VStack(alignment: .leading, spacing: 2) {
@@ -250,9 +259,17 @@ struct ScreenshotSendLiveActivity: Widget {
             DynamicIsland {
                 DynamicIslandExpandedRegion(.bottom) {
                     HStack {
-                        Image(systemName: iconName(for: context.state.status))
-                            .font(.system(size: 28, weight: .bold))
-                            .foregroundColor(.white)
+                        if let uiImage = loadThumbnail(from: context.state.thumbnailRelativePath) {
+                            Image(uiImage: uiImage)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 40, height: 40)
+                                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        } else {
+                            Image(systemName: iconName(for: context.state.status))
+                                .font(.system(size: 28, weight: .bold))
+                                .foregroundColor(.white)
+                        }
 
                         Spacer()
 
@@ -272,9 +289,17 @@ struct ScreenshotSendLiveActivity: Widget {
                     .padding(.vertical, 14)
                 }
             } compactLeading: {
-                Image(systemName: iconName(for: context.state.status))
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundColor(.white)
+                if let uiImage = loadThumbnail(from: context.state.thumbnailRelativePath) {
+                    Image(uiImage: uiImage)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 16, height: 16)
+                        .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                } else {
+                    Image(systemName: iconName(for: context.state.status))
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(.white)
+                }
             } compactTrailing: {
                 Image(systemName: context.state.status == .failed ? "xmark" : "checkmark")
                     .font(.system(size: 12, weight: .bold))
@@ -302,5 +327,10 @@ struct ScreenshotSendLiveActivity: Widget {
         case .sent: return "checkmark.circle.fill"
         case .failed: return "xmark.octagon.fill"
         }
+    }
+
+    private func loadThumbnail(from relativePath: String?) -> UIImage? {
+        guard let url = ScreenshotSendAttributes.thumbnailURL(relativePath: relativePath) else { return nil }
+        return UIImage(contentsOfFile: url.path)
     }
 }

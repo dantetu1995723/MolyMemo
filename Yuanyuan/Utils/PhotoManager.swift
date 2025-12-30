@@ -111,6 +111,42 @@ class PhotoManager {
         print("✅ 找到最近一张截图，创建时间: \(asset.creationDate ?? Date())")
         return await fetchImage(from: asset)
     }
+
+    /// 获取「最近一张截图」，并要求创建时间在指定时间之后（带少量容错）。
+    /// - Parameters:
+    ///   - date: 期望的最早创建时间（通常用“触发前/触发时”的时间戳）
+    ///   - graceSeconds: 容错窗口（避免系统写入相册时间戳略早于触发点导致漏抓）
+    func fetchLatestScreenshot(createdAfter date: Date, graceSeconds: TimeInterval = 2.0) async -> UIImage? {
+        let threshold = date.addingTimeInterval(-max(0, graceSeconds))
+        print("🔍 开始获取相册截图（creationDate >= \(threshold)）...")
+
+        let hasPermission = await requestPhotoLibraryPermission()
+        guard hasPermission else {
+            print("❌ 无相册权限，无法获取截图")
+            return nil
+        }
+
+        let fetchOptions = PHFetchOptions()
+        fetchOptions.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
+        // 不要只取 1 条：有时同一秒内会出现多条资源，取多一点更稳
+        fetchOptions.fetchLimit = 8
+        fetchOptions.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+            NSPredicate(
+                format: "(mediaSubtype & %d) != 0",
+                PHAssetMediaSubtype.photoScreenshot.rawValue
+            ),
+            NSPredicate(format: "creationDate >= %@", threshold as NSDate)
+        ])
+
+        let fetchResult = PHAsset.fetchAssets(with: .image, options: fetchOptions)
+        guard let asset = fetchResult.firstObject else {
+            print("❌ 相册中没有满足时间窗口的截图")
+            return nil
+        }
+
+        print("✅ 找到时间窗口内最近一张截图，创建时间: \(asset.creationDate ?? Date())")
+        return await fetchImage(from: asset)
+    }
     
     /// 获取最近 N 张照片
     func fetchLatestPhotos(count: Int) async -> [UIImage] {

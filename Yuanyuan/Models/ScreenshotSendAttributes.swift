@@ -12,9 +12,24 @@ struct ScreenshotSendAttributes: ActivityAttributes {
 
         var status: Status
         var message: String
+        /// App Group 内缩略图相对路径（由主App/AppIntent写入，Widget读取展示）
+        var thumbnailRelativePath: String?
     }
 
     var title: String
+
+    // MARK: - App Group helpers (Widget 与主App共享)
+
+    static let appGroupId = "group.com.yuanyuan.shared"
+
+    static func appGroupURL() -> URL? {
+        FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupId)
+    }
+
+    static func thumbnailURL(relativePath: String?) -> URL? {
+        guard let relativePath, !relativePath.isEmpty else { return nil }
+        return appGroupURL()?.appendingPathComponent(relativePath)
+    }
 }
 
 
