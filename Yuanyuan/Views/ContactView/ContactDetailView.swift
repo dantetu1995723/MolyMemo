@@ -435,7 +435,7 @@ struct ContactDetailView: View {
             let card = try await ContactService.fetchContactDetail(remoteId: rid, keepLocalId: contact.id)
             applyRemoteDetailCard(card, rid: rid)
         } catch {
-            print("❌ [ContactDetailView] load detail failed rid=\(rid) error=\(error)")
+            // 静默失败：保留本地信息
         }
     }
     
@@ -446,7 +446,6 @@ struct ContactDetailView: View {
             applyRemoteDetailCard(card, rid: rid)
         } catch {
             // 静默刷新失败不打扰用户
-            print("❌ [ContactDetailView] silent refresh failed rid=\(rid) error=\(error)")
         }
     }
     

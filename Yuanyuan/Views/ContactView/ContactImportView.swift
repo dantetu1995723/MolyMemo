@@ -100,13 +100,10 @@ struct ContactImportView: View {
         Task {
             // 先检查权限
             let status = contactsManager.checkAuthorizationStatus()
-            print("📋 通讯录权限状态: \(status.rawValue)")
             
             if status == .notDetermined {
-                print("⏳ 正在请求通讯录权限...")
                 // 请求权限
                 let granted = await contactsManager.requestAccess()
-                print(granted ? "✅ 用户授予了通讯录权限" : "❌ 用户拒绝了通讯录权限")
                 
                 if !granted {
                     await MainActor.run {
@@ -119,7 +116,6 @@ struct ContactImportView: View {
                 
                 // 权限刚授予，再次检查状态
                 let newStatus = contactsManager.checkAuthorizationStatus()
-                print("🔄 重新检查权限状态: \(newStatus.rawValue)")
                 
                 if newStatus != .authorized {
                     await MainActor.run {
@@ -130,7 +126,6 @@ struct ContactImportView: View {
                     return
                 }
             } else if status == .denied || status == .restricted {
-                print("⚠️ 通讯录权限被拒绝或受限")
                 await MainActor.run {
                     errorMessage = "通讯录权限已被拒绝。请在【设置】->【隐私与安全性】->【通讯录】中允许 Yuanyuan 访问通讯录。"
                     showError = true
@@ -139,11 +134,8 @@ struct ContactImportView: View {
                 return
             }
             
-            print("✅ 通讯录权限已授予，开始获取联系人...")
-            
             // 再次确认权限状态
             let finalStatus = contactsManager.checkAuthorizationStatus()
-            print("📝 最终权限状态: \(finalStatus.rawValue)")
             
             if finalStatus != .authorized {
                 await MainActor.run {
@@ -164,10 +156,8 @@ struct ContactImportView: View {
                     markDuplicateContacts()
 
                     isLoading = false
-                    print("✅ 成功加载 \(systemContacts.count) 个联系人（新增: \(newContactsCount), 重复: \(duplicateContactsCount)）")
                 }
             } catch {
-                print("❌ 获取通讯录失败: \(error)")
                 await MainActor.run {
                     let currentStatus = contactsManager.checkAuthorizationStatus()
                     errorMessage = "获取通讯录失败: \(error.localizedDescription)\n当前权限状态: \(currentStatus.rawValue)"
@@ -224,7 +214,6 @@ struct ContactImportView: View {
             }
         }
 
-        print("📊 去重结果: 总计 \(systemContacts.count) 个，新增 \(newContactsCount) 个，重复 \(duplicateContactsCount) 个")
     }
 
     // 导入选中的联系人
@@ -240,8 +229,6 @@ struct ContactImportView: View {
             return
         }
 
-        print("🔄 准备导入 \(selectedContacts.count) 个联系人")
-
         var importedCount = 0
         for systemContact in selectedContacts {
             let contact = contactsManager.convertToContact(systemContact.cnContact)
@@ -251,10 +238,8 @@ struct ContactImportView: View {
 
         do {
             try modelContext.save()
-            print("✅ 成功导入 \(importedCount) 个联系人")
             dismiss()
         } catch {
-            print("❌ 保存失败: \(error)")
             errorMessage = "保存联系人失败: \(error.localizedDescription)"
             showError = true
         }

@@ -719,12 +719,14 @@ struct ChatView: View {
                                 switch seg.kind {
                                 case .text:
                                     let showAvatar = (seg.id == firstTextSegmentId)
-                                    let shouldAnimate = isLatestAgentMessage && (seg.id == lastTextSegmentId)
+                                    let shouldAnimate = isLatestAgentMessage
+                                    && appState.chatMessages[msgIndex].streamingState.isActive
+                                    && (seg.id == lastTextSegmentId)
                                     AIBubble(
                                         text: seg.text ?? "",
-                                        messageId: showAvatar && !hasAnyCards ? message.id : nil,
+                                        messageId: nil,
                                         shouldAnimate: shouldAnimate,
-                                        showActionButtons: showAvatar && !hasAnyCards,
+                                        showActionButtons: false,
                                         isInterrupted: message.isInterrupted,
                                         showAvatar: showAvatar
                                     )
@@ -913,7 +915,20 @@ struct ChatView: View {
                                 }
                             }
                             
-                            if hasAnyCards {
+                            let m = appState.chatMessages[msgIndex]
+                            let isFinished: Bool = {
+                                if m.streamingState.isActive { return false }
+                                switch m.streamingState {
+                                case .completed, .error:
+                                    return true
+                                case .idle:
+                                    return m.isInterrupted
+                                case .streaming:
+                                    return false
+                                }
+                            }()
+                            let shouldShowMessageActions = isFinished && !(m.isScheduleToolRunning || m.isContactToolRunning)
+                            if shouldShowMessageActions {
                                 HStack(alignment: .center, spacing: 0) {
                                     Spacer()
                                         .frame(width: agentAvatarSize + 12)
@@ -951,15 +966,139 @@ struct ChatView: View {
                                 }
                             } else {
                                 let text = (message.content.isEmpty && appState.isAgentTyping) ? "正在思考..." : message.content
-                                let shouldAnimate = isLatestAgentMessage && (text != "正在思考...")
+                                let shouldAnimate = isLatestAgentMessage
+                                && message.streamingState.isActive
+                                && (text != "正在思考...")
                                 AIBubble(
                                     text: text,
-                                    messageId: message.id,
+                                    messageId: nil,
                                     shouldAnimate: shouldAnimate,
-                                    showActionButtons: true,
+                                    showActionButtons: false,
                                     isInterrupted: message.isInterrupted,
                                     showAvatar: true
                                 )
+
+                                // ✅ 兼容历史记录：当 segments=nil 时，仍然渲染聚合卡片字段（这些字段会从 SwiftData 的 card batch 回填）
+                                if let scheduleEvents = message.scheduleEvents, !scheduleEvents.isEmpty {
+                                    ScheduleCardStackView(events: Binding(
+                                        get: {
+                                            guard let idx = appState.chatMessages.firstIndex(where: { $0.id == message.id }) else { return [] }
+                                            return appState.chatMessages[idx].scheduleEvents ?? []
+                                        },
+                                        set: { newValue in
+                                            guard let idx = appState.chatMessages.firstIndex(where: { $0.id == message.id }) else { return }
+                                            appState.chatMessages[idx].scheduleEvents = newValue.isEmpty ? nil : newValue
+                                            appState.saveMessageToStorage(appState.chatMessages[idx], modelContext: modelContext)
+                                        }
+                                    ), isParentScrollDisabled: $isCardHorizontalPaging, onDeleteRequest: { event in
+                                        self.eventToDelete = event
+                                        self.messageIdToDeleteFrom = message.id
+                                        withAnimation { self.showDeleteConfirmation = true }
+                                    }, onOpenDetail: { event in
+                                        // 历史回填的卡片可能没有分段定位，直接走 selection；详情页会按 event.id / remoteId 拉取
+                                        scheduleDetailSelection = ScheduleDetailSelection(messageId: message.id, eventId: event.id)
+                                    })
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.top, -10)
+                                }
+
+                                if let contacts = message.contacts, !contacts.isEmpty {
+                                    ContactCardStackView(contacts: Binding(
+                                        get: {
+                                            guard let idx = appState.chatMessages.firstIndex(where: { $0.id == message.id }) else { return [] }
+                                            return appState.chatMessages[idx].contacts ?? []
+                                        },
+                                        set: { newValue in
+                                            guard let idx = appState.chatMessages.firstIndex(where: { $0.id == message.id }) else { return }
+                                            appState.chatMessages[idx].contacts = newValue.isEmpty ? nil : newValue
+                                            appState.saveMessageToStorage(appState.chatMessages[idx], modelContext: modelContext)
+                                        }
+                                    ), isParentScrollDisabled: $isCardHorizontalPaging,
+                                    onOpenDetail: { card in
+                                        selectedContact = findOrCreateContact(from: card)
+                                    }, onDeleteRequest: { card in
+                                        guard let idx = appState.chatMessages.firstIndex(where: { $0.id == message.id }) else { return }
+                                        withAnimation {
+                                            appState.chatMessages[idx].contacts?.removeAll(where: { $0.id == card.id })
+                                            if (appState.chatMessages[idx].contacts ?? []).isEmpty { appState.chatMessages[idx].contacts = nil }
+                                            appState.saveMessageToStorage(appState.chatMessages[idx], modelContext: modelContext)
+                                        }
+                                    })
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.top, -10)
+                                }
+
+                                if let invoices = message.invoices, !invoices.isEmpty {
+                                    InvoiceCardStackView(invoices: Binding(
+                                        get: {
+                                            guard let idx = appState.chatMessages.firstIndex(where: { $0.id == message.id }) else { return [] }
+                                            return appState.chatMessages[idx].invoices ?? []
+                                        },
+                                        set: { newValue in
+                                            guard let idx = appState.chatMessages.firstIndex(where: { $0.id == message.id }) else { return }
+                                            appState.chatMessages[idx].invoices = newValue.isEmpty ? nil : newValue
+                                            appState.saveMessageToStorage(appState.chatMessages[idx], modelContext: modelContext)
+                                        }
+                                    ), onOpenDetail: { invoice in
+                                        invoiceDetailSelection = InvoiceDetailSelection(messageId: message.id, invoiceId: invoice.id)
+                                    }, onDeleteRequest: { invoice in
+                                        guard let idx = appState.chatMessages.firstIndex(where: { $0.id == message.id }) else { return }
+                                        withAnimation {
+                                            appState.chatMessages[idx].invoices?.removeAll(where: { $0.id == invoice.id })
+                                            if (appState.chatMessages[idx].invoices ?? []).isEmpty { appState.chatMessages[idx].invoices = nil }
+                                            appState.saveMessageToStorage(appState.chatMessages[idx], modelContext: modelContext)
+                                        }
+                                    })
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.top, -10)
+                                }
+
+                                if let meetings = message.meetings, !meetings.isEmpty {
+                                    MeetingSummaryCardStackView(meetings: Binding(
+                                        get: {
+                                            guard let idx = appState.chatMessages.firstIndex(where: { $0.id == message.id }) else { return [] }
+                                            return appState.chatMessages[idx].meetings ?? []
+                                        },
+                                        set: { newValue in
+                                            guard let idx = appState.chatMessages.firstIndex(where: { $0.id == message.id }) else { return }
+                                            appState.chatMessages[idx].meetings = newValue.isEmpty ? nil : newValue
+                                            appState.saveMessageToStorage(appState.chatMessages[idx], modelContext: modelContext)
+                                        }
+                                    ), isParentScrollDisabled: $isCardHorizontalPaging,
+                                    onDeleteRequest: { meeting in
+                                        guard let idx = appState.chatMessages.firstIndex(where: { $0.id == message.id }) else { return }
+                                        withAnimation {
+                                            appState.chatMessages[idx].meetings?.removeAll(where: { $0.id == meeting.id })
+                                            if (appState.chatMessages[idx].meetings ?? []).isEmpty { appState.chatMessages[idx].meetings = nil }
+                                            appState.saveMessageToStorage(appState.chatMessages[idx], modelContext: modelContext)
+                                        }
+                                    }, onOpenDetail: { meeting in
+                                        meetingDetailSelection = MeetingDetailSelection(messageId: message.id, meetingId: meeting.id)
+                                    })
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.top, -10)
+                                }
+                                
+                                let isFinished: Bool = {
+                                    if message.streamingState.isActive { return false }
+                                    switch message.streamingState {
+                                    case .completed, .error:
+                                        return true
+                                    case .idle:
+                                        return message.isInterrupted
+                                    case .streaming:
+                                        return false
+                                    }
+                                }()
+                                let shouldShowMessageActions = isFinished && !(message.isScheduleToolRunning || message.isContactToolRunning)
+                                if shouldShowMessageActions {
+                                    HStack(alignment: .center, spacing: 0) {
+                                        Spacer()
+                                            .frame(width: agentAvatarSize + 12)
+                                        MessageActionButtons(messageId: message.id)
+                                    }
+                                    .padding(.top, 4)
+                                }
                             }
                         }
                     }
@@ -1287,39 +1426,28 @@ struct AIBubble: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 
                 // 操作栏（仅在需要时显示）
-                if showActionButtons || isInterrupted {
+                if showActionButtons {
                     HStack(alignment: .center, spacing: 12) {
-                        if showActionButtons {
-                            // 复制按钮
-                            Button(action: {
-                                HapticFeedback.light()
-                                copyToClipboard()
-                            }) {
-                                Image(systemName: "square.on.square")
-                                    .font(.system(size: 16))
-                                    .foregroundColor(Color(hex: "999999"))
-                                    .frame(height: 18)
-                            }
-                            
-                            // 重新生成按钮
-                            Button(action: {
-                                HapticFeedback.light()
-                                regenerateMessage()
-                            }) {
-                                Image(systemName: "arrow.clockwise")
-                                    .font(.system(size: 16))
-                                    .foregroundColor(Color(hex: "999999"))
-                                    .frame(height: 18)
-                            }
-                        }
-                        
-                        if isInterrupted {
-                            if showActionButtons { Spacer() }
-                            Text("回答已停止")
-                                .font(.system(size: 14))
+                        // 复制按钮
+                        Button(action: {
+                            HapticFeedback.light()
+                            copyToClipboard()
+                        }) {
+                            Image(systemName: "square.on.square")
+                                .font(.system(size: 16))
                                 .foregroundColor(Color(hex: "999999"))
                                 .frame(height: 18)
-                                .frame(maxWidth: showActionButtons ? .none : .infinity, alignment: .trailing)
+                        }
+                        
+                        // 重新生成按钮
+                        Button(action: {
+                            HapticFeedback.light()
+                            regenerateMessage()
+                        }) {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.system(size: 16))
+                                .foregroundColor(Color(hex: "999999"))
+                                .frame(height: 18)
                         }
                     }
                     .opacity(isCompleted ? 1 : 0)

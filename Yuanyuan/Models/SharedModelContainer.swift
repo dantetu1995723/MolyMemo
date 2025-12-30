@@ -18,6 +18,10 @@ enum SharedModelContainer {
                Expense.self,
                CompanyInfo.self,
                Meeting.self,
+               StoredScheduleCardBatch.self,
+               StoredContactCardBatch.self,
+               StoredInvoiceCardBatch.self,
+               StoredMeetingCardBatch.self,
             configurations: config
         )
     }

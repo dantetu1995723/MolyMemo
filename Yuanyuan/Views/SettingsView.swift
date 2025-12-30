@@ -24,6 +24,9 @@ struct SettingsView: View {
                         .multilineTextAlignment(.center)
                         .padding(.top, 30)
                         .padding(.horizontal, 24)
+
+                    ShortcutActionButton(themeColor: themeColor)
+                        .padding(.horizontal, 24)
                     
                     Button {
                         HapticFeedback.medium()
@@ -188,31 +191,9 @@ struct ShortcutActionButton: View {
     let themeColor: Color
     
     var body: some View {
-        VStack(spacing: 16) {
-            // 快速使用提示
-            LiquidGlassCard {
-                HStack(spacing: 12) {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 20, weight: .bold))
-                        .foregroundColor(themeColor)
-                    
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("现在可以用了！")
-                            .font(.system(size: 16, weight: .bold))
-                            .foregroundColor(.black.opacity(0.85))
-                        Text("在 Spotlight 搜索「截图分析」即可使用")
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundColor(.black.opacity(0.6))
-                    }
-                    
-                    Spacer()
-                }
-            }
-            
-            // 添加快捷指令按钮
+        VStack(spacing: 12) {
             Button(action: {
                 HapticFeedback.medium()
-                requestClipboardPermission()
                 openShortcutURL()
             }) {
                 LiquidGlassCard {
@@ -222,10 +203,10 @@ struct ShortcutActionButton: View {
                             .foregroundColor(themeColor)
                         
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("添加到快捷指令")
+                            Text("添加快捷指令")
                                 .font(.system(size: 18, weight: .bold, design: .rounded))
                                 .foregroundColor(.black.opacity(0.85))
-                            Text("在快捷指令 App 中使用")
+                            Text("一键打开并添加到「快捷指令」App")
                                 .font(.system(size: 14, weight: .medium))
                                 .foregroundColor(.black.opacity(0.5))
                         }
@@ -240,8 +221,7 @@ struct ShortcutActionButton: View {
             }
             .buttonStyle(ScaleButtonStyle())
             
-            // 提示文本
-            Text("点击后会打开快捷指令页面，点「添加」即可")
+            Text("点击后会打开 iCloud 快捷指令页面，点「获取捷径/添加」即可")
                 .font(.system(size: 13, weight: .medium))
                 .foregroundColor(.black.opacity(0.4))
                 .padding(.horizontal, 4)
@@ -253,17 +233,9 @@ struct ShortcutActionButton: View {
         }
     }
     
-    private func requestClipboardPermission() {
-        // 主动检查剪贴板，触发权限请求（只在第一次会弹窗）
-        #if os(iOS)
-        _ = UIPasteboard.general.hasImages
-        print("✅ 已触发剪贴板权限请求")
-        #endif
-    }
-    
     private func openShortcutURL() {
         // 打开快捷指令链接，一键添加
-        if let url = URL(string: "https://www.icloud.com/shortcuts/6aa2c8b9e727472ab1483649873ce13e") {
+        if let url = URL(string: "https://www.icloud.com/shortcuts/14fd13453c78400785beebe0a20d2d16") {
             UIApplication.shared.open(url) { success in
                 if !success {
                     showCopyAlert = true

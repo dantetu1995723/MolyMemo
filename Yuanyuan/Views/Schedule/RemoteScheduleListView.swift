@@ -206,8 +206,7 @@ struct RemoteScheduleListView: View {
             try await DeleteActions.deleteRemoteSchedule(e)
             applyDeletedEvent(e)
         } catch {
-            // 不做 UI 兜底提示，只打印，方便定位后端 404 的原因
-            print("❌ [RemoteScheduleListView:deleteEvent] title=\(e.title) remoteId=\(rid) error=\(error)")
+            // 静默失败：不做 UI 兜底提示
         }
     }
 }
@@ -289,7 +288,7 @@ private struct RemoteScheduleDetailSheet: View {
             let detail = try await ScheduleService.fetchScheduleDetail(remoteId: trimmed, keepLocalId: current.id)
             event = detail
         } catch {
-            print("❌ [RemoteScheduleDetailSheet] load detail failed: \(error)")
+            // 静默失败：保留列表信息
         }
     }
     
@@ -299,7 +298,7 @@ private struct RemoteScheduleDetailSheet: View {
             let detail = try await ScheduleService.fetchScheduleDetail(remoteId: remoteId, keepLocalId: keepLocalId)
             event = detail
         } catch {
-            print("❌ [RemoteScheduleDetailSheet] silent refresh failed: \(error)")
+            // 静默失败：不打断用户
         }
     }
 }

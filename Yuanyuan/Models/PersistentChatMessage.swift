@@ -84,16 +84,14 @@ extension PersistentChatMessage {
         }()
         
         // 创建消息
-        let message: ChatMessage
+        var mutableMessage: ChatMessage
         if images.isEmpty {
             // 纯文字消息
-            message = ChatMessage(role: role, content: content, isGreeting: isGreeting, timestamp: timestamp)
+            mutableMessage = ChatMessage(id: id, role: role, content: content, isGreeting: isGreeting, timestamp: timestamp)
         } else {
             // 图片消息
-            message = ChatMessage(role: role, images: images, content: content, timestamp: timestamp)
+            mutableMessage = ChatMessage(id: id, role: role, images: images, content: content, timestamp: timestamp)
         }
-        
-        var mutableMessage = message
         mutableMessage.streamingState = .completed
         mutableMessage.isInterrupted = isInterrupted
         return mutableMessage

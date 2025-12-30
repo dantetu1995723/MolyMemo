@@ -75,7 +75,7 @@ struct RemoteScheduleDetailLoaderSheet: View {
             let detail = try await ScheduleService.fetchScheduleDetail(remoteId: trimmed, keepLocalId: current.id)
             event = detail
         } catch {
-            print("❌ [RemoteScheduleDetailLoaderSheet] load detail failed: \(error)")
+            // 静默失败：保留现有信息
         }
     }
     
@@ -85,7 +85,7 @@ struct RemoteScheduleDetailLoaderSheet: View {
             let detail = try await ScheduleService.fetchScheduleDetail(remoteId: remoteId, keepLocalId: keepLocalId)
             event = detail
         } catch {
-            print("❌ [RemoteScheduleDetailLoaderSheet] silent refresh failed: \(error)")
+            // 静默失败：不打断用户
         }
     }
 }

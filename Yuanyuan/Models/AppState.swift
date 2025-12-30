@@ -253,7 +253,7 @@ struct ExpensePreviewData: Equatable {
 
 // 聊天消息
 struct ChatMessage: Identifiable, Equatable {
-    let id = UUID()
+    var id: UUID
     let role: MessageRole
     
     var content: String
@@ -303,7 +303,8 @@ struct ChatMessage: Identifiable, Equatable {
     }
     
     // 文字消息初始化
-    init(role: MessageRole, content: String, isGreeting: Bool = false, timestamp: Date = Date()) {
+    init(id: UUID = UUID(), role: MessageRole, content: String, isGreeting: Bool = false, timestamp: Date = Date()) {
+        self.id = id
         self.role = role
         self.content = content
         self.isGreeting = isGreeting
@@ -313,7 +314,8 @@ struct ChatMessage: Identifiable, Equatable {
     }
     
     // 图片消息初始化
-    init(role: MessageRole, images: [UIImage], content: String = "", timestamp: Date = Date()) {
+    init(id: UUID = UUID(), role: MessageRole, images: [UIImage], content: String = "", timestamp: Date = Date()) {
+        self.id = id
         self.role = role
         self.content = content
         self.images = images
@@ -754,6 +756,155 @@ class AppState: ObservableObject {
     }
     
     // MARK: - SwiftData 持久化方法
+
+    // MARK: - 聊天卡片批次持久化（按 message.id 关联）
+
+    private func persistCardBatchesIfNeeded(for message: ChatMessage, modelContext: ModelContext) {
+        do {
+            try upsertOrDeleteScheduleBatch(for: message, modelContext: modelContext)
+            try upsertOrDeleteContactBatch(for: message, modelContext: modelContext)
+            try upsertOrDeleteInvoiceBatch(for: message, modelContext: modelContext)
+            try upsertOrDeleteMeetingBatch(for: message, modelContext: modelContext)
+        } catch {
+            print("⚠️ 卡片批次持久化失败: \(error)")
+        }
+    }
+
+    private func upsertOrDeleteScheduleBatch(for message: ChatMessage, modelContext: ModelContext) throws {
+        let mid: UUID? = message.id
+        let descriptor = FetchDescriptor<StoredScheduleCardBatch>(
+            predicate: #Predicate<StoredScheduleCardBatch> { batch in
+                batch.sourceMessageId == mid
+            }
+        )
+        let existing = try modelContext.fetch(descriptor).first
+
+        let events = message.scheduleEvents ?? []
+        if events.isEmpty {
+            if let existing { modelContext.delete(existing) }
+            return
+        }
+
+        if let existing {
+            existing.createdAt = message.timestamp
+            existing.update(events: events)
+        } else {
+            modelContext.insert(StoredScheduleCardBatch(events: events, sourceMessageId: message.id, createdAt: message.timestamp))
+        }
+    }
+
+    private func upsertOrDeleteContactBatch(for message: ChatMessage, modelContext: ModelContext) throws {
+        let mid: UUID? = message.id
+        let descriptor = FetchDescriptor<StoredContactCardBatch>(
+            predicate: #Predicate<StoredContactCardBatch> { batch in
+                batch.sourceMessageId == mid
+            }
+        )
+        let existing = try modelContext.fetch(descriptor).first
+
+        let cards = message.contacts ?? []
+        if cards.isEmpty {
+            if let existing { modelContext.delete(existing) }
+            return
+        }
+
+        if let existing {
+            existing.createdAt = message.timestamp
+            existing.update(contacts: cards)
+        } else {
+            modelContext.insert(StoredContactCardBatch(contacts: cards, sourceMessageId: message.id, createdAt: message.timestamp))
+        }
+    }
+
+    private func upsertOrDeleteInvoiceBatch(for message: ChatMessage, modelContext: ModelContext) throws {
+        let mid: UUID? = message.id
+        let descriptor = FetchDescriptor<StoredInvoiceCardBatch>(
+            predicate: #Predicate<StoredInvoiceCardBatch> { batch in
+                batch.sourceMessageId == mid
+            }
+        )
+        let existing = try modelContext.fetch(descriptor).first
+
+        let cards = message.invoices ?? []
+        if cards.isEmpty {
+            if let existing { modelContext.delete(existing) }
+            return
+        }
+
+        if let existing {
+            existing.createdAt = message.timestamp
+            existing.update(invoices: cards)
+        } else {
+            modelContext.insert(StoredInvoiceCardBatch(invoices: cards, sourceMessageId: message.id, createdAt: message.timestamp))
+        }
+    }
+
+    private func upsertOrDeleteMeetingBatch(for message: ChatMessage, modelContext: ModelContext) throws {
+        let mid: UUID? = message.id
+        let descriptor = FetchDescriptor<StoredMeetingCardBatch>(
+            predicate: #Predicate<StoredMeetingCardBatch> { batch in
+                batch.sourceMessageId == mid
+            }
+        )
+        let existing = try modelContext.fetch(descriptor).first
+
+        let cards = message.meetings ?? []
+        if cards.isEmpty {
+            if let existing { modelContext.delete(existing) }
+            return
+        }
+
+        if let existing {
+            existing.createdAt = message.timestamp
+            existing.update(meetings: cards)
+        } else {
+            modelContext.insert(StoredMeetingCardBatch(meetings: cards, sourceMessageId: message.id, createdAt: message.timestamp))
+        }
+    }
+
+    private func hydrateCardBatchesIfNeeded(for messages: inout [ChatMessage], modelContext: ModelContext) {
+        let ids = Set(messages.map { $0.id })
+        guard !ids.isEmpty else { return }
+
+        do {
+            let scheduleBatches = try modelContext.fetch(FetchDescriptor<StoredScheduleCardBatch>())
+            let contactBatches = try modelContext.fetch(FetchDescriptor<StoredContactCardBatch>())
+            let invoiceBatches = try modelContext.fetch(FetchDescriptor<StoredInvoiceCardBatch>())
+            let meetingBatches = try modelContext.fetch(FetchDescriptor<StoredMeetingCardBatch>())
+
+            var scheduleMap: [UUID: [ScheduleEvent]] = [:]
+            var contactMap: [UUID: [ContactCard]] = [:]
+            var invoiceMap: [UUID: [InvoiceCard]] = [:]
+            var meetingMap: [UUID: [MeetingCard]] = [:]
+
+            for b in scheduleBatches {
+                guard let mid = b.sourceMessageId, ids.contains(mid) else { continue }
+                scheduleMap[mid] = b.decodedEvents()
+            }
+            for b in contactBatches {
+                guard let mid = b.sourceMessageId, ids.contains(mid) else { continue }
+                contactMap[mid] = b.decodedContacts()
+            }
+            for b in invoiceBatches {
+                guard let mid = b.sourceMessageId, ids.contains(mid) else { continue }
+                invoiceMap[mid] = b.decodedInvoices()
+            }
+            for b in meetingBatches {
+                guard let mid = b.sourceMessageId, ids.contains(mid) else { continue }
+                meetingMap[mid] = b.decodedMeetings()
+            }
+
+            for i in messages.indices {
+                let mid = messages[i].id
+                if let s = scheduleMap[mid], !s.isEmpty { messages[i].scheduleEvents = s }
+                if let c = contactMap[mid], !c.isEmpty { messages[i].contacts = c }
+                if let inv = invoiceMap[mid], !inv.isEmpty { messages[i].invoices = inv }
+                if let m = meetingMap[mid], !m.isEmpty { messages[i].meetings = m }
+            }
+        } catch {
+            print("⚠️ 卡片批次回填失败: \(error)")
+        }
+    }
     
     /// 从本地存储加载聊天记录
     func loadMessagesFromStorage(modelContext: ModelContext) {
@@ -763,7 +914,13 @@ class AppState: ObservableObject {
         
         do {
             let persistentMessages = try modelContext.fetch(descriptor)
-            let loadedMessages = persistentMessages.map { $0.toChatMessage() }
+            // 兼容旧版本：同 id 多次 insert 会产生重复记录，这里按 id 去重（保留最后一次出现）
+            var byId: [UUID: ChatMessage] = [:]
+            for p in persistentMessages {
+                byId[p.id] = p.toChatMessage()
+            }
+            var loadedMessages = Array(byId.values).sorted(by: { $0.timestamp < $1.timestamp })
+            hydrateCardBatchesIfNeeded(for: &loadedMessages, modelContext: modelContext)
             
             DispatchQueue.main.async {
                 self.chatMessages = loadedMessages
@@ -776,10 +933,30 @@ class AppState: ObservableObject {
     
     /// 保存单条消息到本地存储
     func saveMessageToStorage(_ message: ChatMessage, modelContext: ModelContext) {
-        let persistentMessage = PersistentChatMessage.from(message)
-        modelContext.insert(persistentMessage)
-        
         do {
+            // Upsert：避免同 id 重复插入导致历史加载/ForEach duplicate id
+            let mid = message.id
+            let descriptor = FetchDescriptor<PersistentChatMessage>(
+                predicate: #Predicate<PersistentChatMessage> { msg in
+                    msg.id == mid
+                }
+            )
+            if let existing = try modelContext.fetch(descriptor).first {
+                let updated = PersistentChatMessage.from(message)
+                existing.roleRawValue = updated.roleRawValue
+                existing.content = updated.content
+                existing.timestamp = updated.timestamp
+                existing.isGreeting = updated.isGreeting
+                existing.messageTypeRawValue = updated.messageTypeRawValue
+                existing.encodedImageData = updated.encodedImageData
+                existing.isInterrupted = updated.isInterrupted
+            } else {
+                modelContext.insert(PersistentChatMessage.from(message))
+            }
+
+            // 同步保存卡片批次（按 message.id）
+            persistCardBatchesIfNeeded(for: message, modelContext: modelContext)
+
             try modelContext.save()
             print("✅ 消息已保存到本地: \(message.content.prefix(20))...")
         } catch {
@@ -839,7 +1016,15 @@ class AppState: ObservableObject {
 
         do {
             let persistentMessages = try modelContext.fetch(descriptor)
-            let olderMessages = persistentMessages.map { $0.toChatMessage() }.reversed()
+            // 去重 + 回填卡片
+            var byId: [UUID: ChatMessage] = [:]
+            for p in persistentMessages {
+                byId[p.id] = p.toChatMessage()
+            }
+            var olderMessages = Array(byId.values).sorted(by: { $0.timestamp < $1.timestamp })
+            hydrateCardBatchesIfNeeded(for: &olderMessages, modelContext: modelContext)
+            let existingIds = Set(chatMessages.map { $0.id })
+            olderMessages = olderMessages.filter { !existingIds.contains($0.id) }
 
             DispatchQueue.main.async {
                 if !olderMessages.isEmpty {
@@ -875,7 +1060,12 @@ class AppState: ObservableObject {
         do {
             let persistentMessages = try modelContext.fetch(descriptor)
             // 反转顺序，使最早的消息在前面
-            let loadedMessages = persistentMessages.reversed().map { $0.toChatMessage() }
+            var byId: [UUID: ChatMessage] = [:]
+            for p in persistentMessages.reversed() {
+                byId[p.id] = p.toChatMessage()
+            }
+            var loadedMessages = Array(byId.values).sorted(by: { $0.timestamp < $1.timestamp })
+            hydrateCardBatchesIfNeeded(for: &loadedMessages, modelContext: modelContext)
             self.chatMessages = loadedMessages
             print("✅ 加载了 \(loadedMessages.count) 条最近的消息")
         } catch {
@@ -885,14 +1075,15 @@ class AppState: ObservableObject {
 
     /// 从 SwiftData 刷新聊天记录（用于：AppIntent/Widget 在后台写入后，主 App 拉取同步）
     /// - 策略：
-    ///   - 若内存为空：加载最近 N 条作为初始历史
-    ///   - 若内存不为空：只追加“比最后一条更晚”的新消息，避免每次进入聊天室都重载历史导致混乱
+    ///   - 若内存为空：加载全部本地聊天记录（聊天室展示全量历史）
+    ///   - 若内存不为空：只追加“比最后一条更晚”的新消息，避免重复加载/插入
+    /// - limit：仅用于“增量追加”的单次最大拉取数量（防止极端情况下前台一次性追加过多）
     func refreshChatMessagesFromStorageIfNeeded(modelContext: ModelContext, limit: Int = 80) {
         let cap = max(10, limit)
 
-        // 1) 首次：内存为空 -> 拉一段最近消息
+        // 1) 首次：内存为空 -> 加载全部本地历史
         if chatMessages.isEmpty {
-            loadRecentMessages(modelContext: modelContext, limit: cap)
+            loadMessagesFromStorage(modelContext: modelContext)
             return
         }
 
@@ -904,7 +1095,6 @@ class AppState: ObservableObject {
             },
             sortBy: [SortDescriptor(\.timestamp, order: .forward)]
         )
-        // 增量一次最多取 cap 条（极端情况下避免一次拉爆）
         descriptor.fetchLimit = cap
 
         do {
@@ -912,17 +1102,12 @@ class AppState: ObservableObject {
             guard !persistents.isEmpty else { return }
 
             let existingIds = Set(chatMessages.map { $0.id })
-            let incoming = persistents
-                .map { $0.toChatMessage() }
-                .filter { !existingIds.contains($0.id) }
+            var incoming = persistents.map { $0.toChatMessage() }
+            hydrateCardBatchesIfNeeded(for: &incoming, modelContext: modelContext)
+            incoming = incoming.filter { !existingIds.contains($0.id) }
             guard !incoming.isEmpty else { return }
 
             chatMessages.append(contentsOf: incoming)
-
-            // 3) 控制内存窗口大小：仅保留最后 cap 条，避免无限增长
-            if chatMessages.count > cap {
-                chatMessages.removeFirst(chatMessages.count - cap)
-            }
         } catch {
             print("⚠️ 刷新聊天记录失败: \(error)")
         }
@@ -936,6 +1121,10 @@ class AppState: ObservableObject {
         // 清空本地存储
         do {
             try modelContext.delete(model: PersistentChatMessage.self)
+            try modelContext.delete(model: StoredScheduleCardBatch.self)
+            try modelContext.delete(model: StoredContactCardBatch.self)
+            try modelContext.delete(model: StoredInvoiceCardBatch.self)
+            try modelContext.delete(model: StoredMeetingCardBatch.self)
             try modelContext.save()
             print("✅ 已清空所有聊天记录")
         } catch {
