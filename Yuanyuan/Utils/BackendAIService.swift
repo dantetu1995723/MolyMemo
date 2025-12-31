@@ -38,6 +38,8 @@ final class BackendAIService {
                 await BackendChatService.sendMessageStream(
                     messages: [userMsg],
                     mode: mode,
+                    // ✅ 纯文本/小任务：禁用 shortcut（避免触发后端工具链与中间态“需要使用工具...”混入最终文本）
+                    includeShortcut: false,
                     onStructuredOutput: nil,
                     onComplete: { text in
                         finish(.success(text))
@@ -48,42 +50,6 @@ final class BackendAIService {
                 )
             }
         }
-    }
-    
-    /// 生成聊天总结（用于 DailyChatSummary / SessionSummary）
-    static func generateChatSummary(
-        messages: [ChatMessage],
-        date: Date
-    ) async throws -> String {
-        let df = DateFormatter()
-        df.locale = Locale(identifier: "zh_CN")
-        df.dateFormat = "yyyy-MM-dd"
-        let day = df.string(from: date)
-        
-        // 压缩上下文：只保留最近一段，避免 prompt 过长
-        let real = messages.filter { !$0.isGreeting }
-        let recent = Array(real.suffix(40))
-        
-        let transcript = recent.map { msg in
-            let role = (msg.role == .user) ? "用户" : "助理"
-            let text = msg.content.trimmingCharacters(in: .whitespacesAndNewlines)
-            return "\(role)：\(text.isEmpty ? "（空）" : text)"
-        }.joined(separator: "\n")
-        
-        let prompt = """
-        请基于以下聊天记录，为 \(day) 生成一段简洁总结。
-        
-        要求：
-        - 100~220 字
-        - 只输出总结正文，不要标题/序号/markdown
-        - 聚焦：做了什么、决定了什么、下一步是什么（如果有）
-        
-        聊天记录：
-        \(transcript)
-        """
-        
-        return try await generateText(prompt: prompt, mode: .work)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 

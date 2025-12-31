@@ -6,6 +6,7 @@ import UIKit
 struct ContentView: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var authStore: AuthStore
+    @Environment(\.modelContext) private var modelContext
     @State private var showModuleContainer = false
     
     var body: some View {
@@ -28,6 +29,15 @@ struct ContentView: View {
                 }
                 .fullScreenCover(isPresented: $appState.showLiveRecording) {
                     LiveRecordingView()
+                }
+                .onAppear {
+                    // ✅ 兜底：AppIntent 打开主App但通知丢失时，也能立即拉起最新聊天数据
+                    appState.processPendingChatUpdateIfNeeded(modelContext: modelContext)
+                }
+                .onReceive(NotificationCenter.default.publisher(for: .yyChatStorageUpdated)) { note in
+                    // ✅ 全局接收（不依赖 ChatView 是否已出现），统一走“pending 兜底+去重”逻辑
+                    _ = note
+                    appState.processPendingChatUpdateIfNeeded(modelContext: modelContext)
                 }
             } else {
                 LoginView()

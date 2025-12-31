@@ -112,6 +112,22 @@ extension PersistentChatMessage {
            let segs = try? JSONDecoder().decode([ChatSegment].self, from: encodedSegments),
            !segs.isEmpty {
             mutableMessage.segments = segs
+
+            // ✅ 聚合字段回填：确保从 storage 加载的“分段卡片”也能正常打开详情/支持旧逻辑复用
+            var schedules: [ScheduleEvent] = []
+            var contacts: [ContactCard] = []
+            var invoices: [InvoiceCard] = []
+            var meetings: [MeetingCard] = []
+            for seg in segs {
+                if let s = seg.scheduleEvents, !s.isEmpty { schedules.append(contentsOf: s) }
+                if let c = seg.contacts, !c.isEmpty { contacts.append(contentsOf: c) }
+                if let i = seg.invoices, !i.isEmpty { invoices.append(contentsOf: i) }
+                if let m = seg.meetings, !m.isEmpty { meetings.append(contentsOf: m) }
+            }
+            if !schedules.isEmpty { mutableMessage.scheduleEvents = schedules }
+            if !contacts.isEmpty { mutableMessage.contacts = contacts }
+            if !invoices.isEmpty { mutableMessage.invoices = invoices }
+            if !meetings.isEmpty { mutableMessage.meetings = meetings }
         }
         return mutableMessage
     }

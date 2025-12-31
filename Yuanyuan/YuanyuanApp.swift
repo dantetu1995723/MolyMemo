@@ -25,6 +25,8 @@ struct YuanyuanApp: App {
 
         // 尽早安装 Darwin 录音命令监听，避免 “通知先发出、监听后注册” 的竞态
         RecordingDarwinObserver.shared.installIfNeeded()
+        // 尽早安装 Darwin 聊天更新监听（快捷指令/AppIntent 后台写入聊天后，主App可即时刷新）
+        ChatDarwinObserver.shared.installIfNeeded()
     }
     
     var body: some Scene {
@@ -346,9 +348,7 @@ struct YuanyuanApp: App {
         case .background:
             // App进入后台
             print("💤 App进入后台")
-            
-            // 生成当前session的聊天总结
-            appState.generateSessionSummary(modelContext: modelContainer.mainContext)
+            // ✅ 链路简化：不在后台额外发起 “summary” 请求（避免多余请求/工具链干扰聊天体验）
             
         @unknown default:
             break

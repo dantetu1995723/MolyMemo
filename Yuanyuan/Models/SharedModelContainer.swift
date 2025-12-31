@@ -7,32 +7,53 @@ import SwiftData
 enum SharedModelContainer {
     static let appGroupId = "group.com.yuanyuan.shared"
     static let storeFilename = "default.store"
+    // schema 变更兜底：当旧 store 无法用新 schema 打开时，自动切换到新文件继续运行
+    static let fallbackStoreFilename = "default_v2.store"
 
     static func makeContainer() throws -> ModelContainer {
-        let config = try makeConfiguration()
-        return try ModelContainer(
-            for: PersistentChatMessage.self,
-               DailyChatSummary.self,
-               TodoItem.self,
-               Contact.self,
-               Expense.self,
-               CompanyInfo.self,
-               Meeting.self,
-               StoredScheduleCardBatch.self,
-               StoredContactCardBatch.self,
-               StoredInvoiceCardBatch.self,
-               StoredMeetingCardBatch.self,
-            configurations: config
-        )
+        do {
+            let config = try makeConfiguration(filename: storeFilename)
+            return try ModelContainer(
+                for: PersistentChatMessage.self,
+                   TodoItem.self,
+                   Contact.self,
+                   Expense.self,
+                   CompanyInfo.self,
+                   Meeting.self,
+                   StoredScheduleCardBatch.self,
+                   StoredContactCardBatch.self,
+                   StoredInvoiceCardBatch.self,
+                   StoredMeetingCardBatch.self,
+                configurations: config
+            )
+        } catch {
+            // 典型场景：删除/移除 model 后，旧 store schema 不兼容导致容器初始化失败
+            // 按你的要求“彻底移除”，这里不做迁移，直接创建新 store 继续运行
+            print("⚠️ [SharedModelContainer] 打开旧 store 失败，将创建新 store：\(error)")
+            let fallback = try makeConfiguration(filename: fallbackStoreFilename)
+            return try ModelContainer(
+                for: PersistentChatMessage.self,
+                   TodoItem.self,
+                   Contact.self,
+                   Expense.self,
+                   CompanyInfo.self,
+                   Meeting.self,
+                   StoredScheduleCardBatch.self,
+                   StoredContactCardBatch.self,
+                   StoredInvoiceCardBatch.self,
+                   StoredMeetingCardBatch.self,
+                configurations: fallback
+            )
+        }
     }
 
-    static func makeConfiguration() throws -> ModelConfiguration {
+    static func makeConfiguration(filename: String) throws -> ModelConfiguration {
         let fm = FileManager.default
         guard let groupURL = fm.containerURL(forSecurityApplicationGroupIdentifier: appGroupId) else {
             // 兜底：拿不到 App Group 时退回内存库，避免启动崩溃
             return ModelConfiguration(isStoredInMemoryOnly: true)
         }
-        let storeURL = groupURL.appendingPathComponent(storeFilename)
+        let storeURL = groupURL.appendingPathComponent(filename)
         return ModelConfiguration(url: storeURL)
     }
 

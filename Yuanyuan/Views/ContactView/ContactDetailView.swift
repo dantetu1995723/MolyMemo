@@ -452,33 +452,24 @@ struct ContactDetailView: View {
     
     @MainActor
     private func applyRemoteDetailCard(_ card: ContactCard, rid: String) {
-        // 用后端信息覆盖/补齐本地字段（只更新有意义的字段，避免把本地自维护信息清空）
-        contact.remoteId = card.remoteId ?? rid
-        if !card.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            contact.name = card.name
+        // ✅ 以“后端详情”为唯一真相：后端返回什么就写什么（空/缺字段即置 nil），不做本地兜底推断。
+        func norm(_ s: String?) -> String? {
+            let v = (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            return v.isEmpty ? nil : v
         }
-        if let v = card.company?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty {
-            contact.company = v
-        }
-        if let v = card.title?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty {
-            contact.identity = v
-        }
-        if let v = card.phone?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty {
-            contact.phoneNumber = v
-        }
-        if let v = card.email?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty {
-            contact.email = v
-        }
-        // 备注：只使用后端 note/notes 字段（ContactCard.notes）回填，避免把 impression 混进备注
-        let remoteNotes = (card.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        if !remoteNotes.isEmpty {
-            let current = (contact.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            if current.isEmpty {
-                contact.notes = remoteNotes
-            } else if !current.contains(remoteNotes) {
-                contact.notes = current + "\n\n" + remoteNotes
-            }
-        }
+
+        contact.remoteId = norm(card.remoteId) ?? rid
+        contact.name = card.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        contact.company = norm(card.company)
+        contact.identity = norm(card.title)
+        contact.phoneNumber = norm(card.phone)
+        contact.email = norm(card.email)
+        contact.industry = norm(card.industry)
+        contact.location = norm(card.location)
+        contact.gender = norm(card.gender)
+        contact.birthday = norm(card.birthday)
+        // 备注：同样以详情为准（不做拼接合并）
+        contact.notes = norm(card.notes)
         contact.lastModified = Date()
         try? modelContext.save()
         // 只有用户还没开始编辑时，才用后端返回覆盖草稿

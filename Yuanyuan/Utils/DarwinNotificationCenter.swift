@@ -48,4 +48,20 @@ enum RecordingSharedDefaults {
     static let lastHandledTimestampKey = "recording.lastHandledTimestamp"
 }
 
+// MARK: - Chat (Darwin)
+
+enum ChatDarwinNames {
+    static let chatUpdated = "group.com.yuanyuan.shared.chat.updated"
+}
+
+enum ChatSharedDefaults {
+    static let suite = "group.com.yuanyuan.shared"
+    /// AppIntent 后台写入 AI 回复后，记录最后一条“新插入的 AI 消息 id”
+    static let lastInsertedAgentMessageIdKey = "chat.lastInsertedAgentMessageId"
+    /// AppIntent 写入后更新时间戳（用于主App去重处理）
+    static let lastUpdateTimestampKey = "chat.lastUpdateTimestamp"
+    /// 主App已处理的最后一次更新时间戳（用于去重）
+    static let lastHandledUpdateTimestampKey = "chat.lastHandledUpdateTimestamp"
+}
+
 

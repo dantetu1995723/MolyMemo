@@ -215,8 +215,11 @@ struct ChatInputView: View {
                         .opacity(isLocked ? 0.6 : 1)
                     
                     // 手势面板：只在 holdToTalkEnabled 时开启
-                    Color.clear
-                        .contentShape(Rectangle())
+                    // 关键：命中区域必须严格等同于输入框本体，避免“输入框下面”误触触发录音
+                    RoundedRectangle(cornerRadius: 24)
+                        .fill(Color.clear)
+                        .frame(height: 52)
+                        .contentShape(RoundedRectangle(cornerRadius: 24))
                         .allowsHitTesting(gestureOverlayEnabled)
                         // 轻点：进入输入（聚焦）
                         // 用 highPriorityGesture 确保不会触发上层 ScrollView 的 dismiss tap

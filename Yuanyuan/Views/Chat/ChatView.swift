@@ -1,12 +1,10 @@
 import SwiftUI
 import SwiftData
-import AVKit
-import AVFoundation
 import UIKit
 import PhotosUI
 
 // MARK: - 布局常量
-private let agentAvatarSize: CGFloat = 30
+private let agentAvatarSize: CGFloat = 36
 /// 底部输入区域的基础高度（不含安全区），用于计算聊天内容可视区域
 private let bottomInputBaseHeight: CGFloat = 64
 
@@ -36,6 +34,8 @@ struct ChatView: View {
     // 聊天搜索
     @State private var showSearch: Bool = false
     @State private var pendingScrollToMessageId: UUID? = nil
+
+    // AppIntent/快捷指令后台写入的 AI 回复：一次性打字机动画目标由 AppState.pendingAnimatedAgentMessageId 统一管理
 
     // 日程详情弹窗（点击卡片打开）
     private struct ScheduleDetailSelection: Identifiable, Equatable {
@@ -678,16 +678,29 @@ struct ChatView: View {
                                 switch seg.kind {
                                 case .text:
                                     let showAvatar = (seg.id == firstTextSegmentId)
-                                    let shouldAnimate = isLatestAgentMessage
-                                    && appState.chatMessages[msgIndex].streamingState.isActive
-                                    && (seg.id == lastTextSegmentId)
+                                    let shouldAnimate = (
+                                        (isLatestAgentMessage
+                                         && appState.chatMessages[msgIndex].streamingState.isActive
+                                         && (seg.id == lastTextSegmentId))
+                                        ||
+                                        (appState.pendingAnimatedAgentMessageId == message.id
+                                         && (seg.id == lastTextSegmentId))
+                                    )
                                     AIBubble(
                                         text: seg.text ?? "",
-                                        messageId: nil,
+                                        messageId: message.id,
                                         shouldAnimate: shouldAnimate,
                                         showActionButtons: false,
                                         isInterrupted: message.isInterrupted,
-                                        showAvatar: showAvatar
+                                        showAvatar: showAvatar,
+                                        onTypingCompleted: {
+                                            // ✅ 仅对“后台插入的那条消息”在打字完成后收尾：把 streamingState 置为 completed，避免反复打字
+                                            guard appState.pendingAnimatedAgentMessageId == message.id else { return }
+                                            guard let idx = appState.chatMessages.firstIndex(where: { $0.id == message.id }) else { return }
+                                            appState.chatMessages[idx].streamingState = .completed
+                                            appState.pendingAnimatedAgentMessageId = nil
+                                            appState.saveMessageToStorage(appState.chatMessages[idx], modelContext: modelContext)
+                                        }
                                     )
                                     
                                 case .scheduleCards:
@@ -907,7 +920,7 @@ struct ChatView: View {
                                 VStack(alignment: .leading, spacing: 12) {
                                     // 需要 avatar 对齐：与 AIBubble 的 left padding 逻辑保持一致
                                     HStack(alignment: .top, spacing: 0) {
-                                        AvatarVideoView(videoName: "Agent", size: agentAvatarSize)
+                                        AgentAvatarView(size: agentAvatarSize)
                                             .padding(.top, 2)
                                         
                                         VStack(alignment: .leading, spacing: 14) {
@@ -925,16 +938,28 @@ struct ChatView: View {
                                 }
                             } else {
                                 let text = (message.content.isEmpty && appState.isAgentTyping) ? "正在思考..." : message.content
-                                let shouldAnimate = isLatestAgentMessage
-                                && message.streamingState.isActive
-                                && (text != "正在思考...")
+                                let shouldAnimate = (
+                                    (isLatestAgentMessage
+                                     && message.streamingState.isActive
+                                     && (text != "正在思考..."))
+                                    ||
+                                    (appState.pendingAnimatedAgentMessageId == message.id
+                                     && (text != "正在思考..."))
+                                )
                                 AIBubble(
                                     text: text,
-                                    messageId: nil,
+                                    messageId: message.id,
                                     shouldAnimate: shouldAnimate,
                                     showActionButtons: false,
                                     isInterrupted: message.isInterrupted,
-                                    showAvatar: true
+                                    showAvatar: true,
+                                    onTypingCompleted: {
+                                        guard appState.pendingAnimatedAgentMessageId == message.id else { return }
+                                        guard let idx = appState.chatMessages.firstIndex(where: { $0.id == message.id }) else { return }
+                                        appState.chatMessages[idx].streamingState = .completed
+                                        appState.pendingAnimatedAgentMessageId = nil
+                                        appState.saveMessageToStorage(appState.chatMessages[idx], modelContext: modelContext)
+                                    }
                                 )
 
                                 // ✅ 兼容历史记录：当 segments=nil 时，仍然渲染聚合卡片字段（这些字段会从 SwiftData 的 card batch 回填）
@@ -1086,58 +1111,13 @@ struct ChatView: View {
 
     /// 封装发送单条聊天消息（可被引导完成后复用）
     private func sendChatMessage(text: String, images: [UIImage] = [], isGreeting: Bool = false) {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty || !images.isEmpty else { return }
-        
-        // 添加用户消息（支持：纯文字 / 纯图片 / 图文混合）
-        let userMsg: ChatMessage = {
-            if images.isEmpty {
-                return ChatMessage(role: .user, content: trimmed, isGreeting: isGreeting)
-            } else {
-                return ChatMessage(role: .user, images: images, content: trimmed)
-            }
-        }()
-        withAnimation {
-            appState.chatMessages.append(userMsg)
-        }
-        appState.saveMessageToStorage(userMsg, modelContext: modelContext)
-        
-        // 创建 AI 占位消息
-        let agentMsg = ChatMessage(role: .agent, content: "")
-        withAnimation {
-            appState.chatMessages.append(agentMsg)
-        }
-        let messageId = agentMsg.id
-        
-        // 调用 AI
-        appState.isAgentTyping = true
-        appState.startStreaming(messageId: messageId)
-        appState.currentGenerationTask = Task {
-            await SmartModelRouter.sendMessageStream(
-                messages: appState.chatMessages,
-                mode: appState.currentMode,
-                onStructuredOutput: { output in
-                    DispatchQueue.main.async {
-                        appState.applyStructuredOutput(output, to: messageId)
-                    }
-                },
-                onComplete: { finalText in
-                    await appState.playResponse(finalText, for: messageId)
-                    await MainActor.run {
-                        appState.isAgentTyping = false
-                        if let completedMessage = appState.chatMessages.first(where: { $0.id == messageId }) {
-                            appState.saveMessageToStorage(completedMessage, modelContext: modelContext)
-                        }
-                    }
-                },
-                onError: { error in
-                    DispatchQueue.main.async {
-                        appState.handleStreamingError(error, for: messageId)
-                        appState.isAgentTyping = false
-                    }
-                }
-            )
-        }
+        ChatSendFlow.send(
+            appState: appState,
+            modelContext: modelContext,
+            text: text,
+            images: images,
+            isGreeting: isGreeting
+        )
     }
 }
 
@@ -1163,137 +1143,23 @@ private enum DebugProbe {
 
 // MARK: - Subviews
 
-// MARK: - 自定义视频播放视图（不拦截点击）
-struct LoopingVideoView: UIViewRepresentable {
-    let player: AVPlayer
-    
-    func makeUIView(context: Context) -> UIView {
-        let view = UIView()
-        let playerLayer = AVPlayerLayer(player: player)
-        playerLayer.videoGravity = .resizeAspectFill
-        view.layer.addSublayer(playerLayer)
-        context.coordinator.playerLayer = playerLayer
-        return view
-    }
-    
-    func updateUIView(_ uiView: UIView, context: Context) {
-        DispatchQueue.main.async {
-            context.coordinator.playerLayer?.frame = uiView.bounds
-        }
-    }
-    
-    func makeCoordinator() -> Coordinator {
-        Coordinator()
-    }
-    
-    class Coordinator {
-        var playerLayer: AVPlayerLayer?
-    }
-}
-
-// MARK: - AI视频头像组件
-struct AvatarVideoView: View {
-    let videoName: String
+// MARK: - AI 头像（使用 Assets 里的 "Agent" 图片）
+struct AgentAvatarView: View {
     let size: CGFloat
     
-    @State private var player: AVPlayer?
-    @State private var showFullScreen = false
-    
     var body: some View {
-        ZStack {
-            if let player = player {
-                // 使用自定义视频视图
-                LoopingVideoView(player: player)
-                    .frame(width: size, height: size)
-                    .clipShape(Circle())
-                    .overlay(Circle().stroke(Color.black.opacity(0.05), lineWidth: 1))
-                
-                // 透明的可点击层
-                Circle()
-                    .fill(Color.clear)
-                    .frame(width: size, height: size)
-                    .contentShape(Circle())
-                    .onTapGesture {
-                        HapticFeedback.light()
-                        showFullScreen = true
-                    }
-            } else {
-                // 加载失败时的占位图
-                Image(systemName: "person.circle.fill")
-                    .resizable()
-                    .frame(width: size, height: size)
-                    .foregroundColor(.gray.opacity(0.3))
-            }
-        }
-        .onAppear {
-            setupPlayer()
-        }
-        .onDisappear {
-            player?.pause()
-        }
-        .fullScreenCover(isPresented: $showFullScreen) {
-            if let player = player {
-                FullScreenVideoPlayer(player: player)
-            }
-        }
-    }
-    
-    private func setupPlayer() {
-        guard let videoURL = Bundle.main.url(forResource: videoName, withExtension: "mp4") else {
-            print("视频文件未找到: \(videoName).mp4")
-            return
-        }
+        // 让图片在圆形 frame 内略微内缩，避免内容贴边被圆角裁切得太紧
+        let inset = max(2, size * 0.12)
         
-        let playerItem = AVPlayerItem(url: videoURL)
-        let newPlayer = AVPlayer(playerItem: playerItem)
-        
-        // 静音播放（头像区域）
-        newPlayer.isMuted = true
-        
-        // 设置循环播放
-        NotificationCenter.default.addObserver(
-            forName: .AVPlayerItemDidPlayToEndTime,
-            object: playerItem,
-            queue: .main
-        ) { _ in
-            newPlayer.seek(to: .zero)
-            newPlayer.play()
-        }
-        
-        self.player = newPlayer
-        newPlayer.play()
-    }
-}
-
-// MARK: - 全屏视频播放器（直接使用同一个player）
-struct FullScreenVideoPlayer: View {
-    let player: AVPlayer
-    @Environment(\.dismiss) private var dismiss
-    
-    var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
-            
-            VideoPlayer(player: player)
-                .ignoresSafeArea()
-            
-            // 透明的可点击层覆盖整个屏幕
-            Color.clear
-                .contentShape(Rectangle())
-                .ignoresSafeArea()
-                .onTapGesture {
-                    HapticFeedback.light()
-                    dismiss()
-                }
-        }
-        .onAppear {
-            // 全屏时开启声音
-            player.isMuted = false
-        }
-        .onDisappear {
-            // 返回时静音
-            player.isMuted = true
-        }
+        return Image("Agent")
+            .resizable()
+            .scaledToFit()
+            .padding(inset)
+            .frame(width: size, height: size)
+            .background(Circle().fill(Color.white))
+            .clipShape(Circle())
+            .overlay(Circle().stroke(Color.black.opacity(0.05), lineWidth: 1))
+            .accessibilityLabel("AI 头像")
     }
 }
 
@@ -1311,7 +1177,7 @@ struct TypewriterBubble: View {
         Group {
             if isAI {
                 HStack(alignment: .top, spacing: 12) {
-                    AvatarVideoView(videoName: "Agent", size: agentAvatarSize)
+                    AgentAvatarView(size: agentAvatarSize)
                     
                     Text(displayedText)
                         .font(.system(size: 16))
@@ -1392,7 +1258,7 @@ struct AIBubble: View {
         HStack(alignment: .top, spacing: 12) {
             // 头像（或占位，确保对齐一致）
             if showAvatar {
-                AvatarVideoView(videoName: "Agent", size: agentAvatarSize)
+                AgentAvatarView(size: agentAvatarSize)
             } else {
                 Color.clear
                     .frame(width: agentAvatarSize, height: agentAvatarSize)
@@ -1614,7 +1480,7 @@ struct UserBubble: View {
     
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            Spacer(minLength: agentAvatarSize + 12) // 对齐到AI文本左侧起点（头像30 + spacing12）
+            Spacer(minLength: agentAvatarSize + 12) // 对齐到AI文本左侧起点（头像 + spacing12）
             
             VStack(alignment: .trailing, spacing: 8) {
                 if !message.images.isEmpty {

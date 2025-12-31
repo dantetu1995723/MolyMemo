@@ -115,6 +115,9 @@ struct ScheduleEvent: Identifiable, Equatable, Codable {
     var description: String
     var startTime: Date
     var endTime: Date
+    /// 是否为全天日程（优先由后端 `full_day` 明确给出）
+    /// - 全天展示语义：00:00 ~ 24:00（endTime 存为次日 00:00，但 UI 会展示为 24:00）
+    var isFullDay: Bool = false
     /// 是否由后端明确给出结束时间（end_time 不为 null 且可解析）
     /// - 用于列表展示：避免 end_time=null 时误显示 “+1h”
     var endTimeProvided: Bool = true
@@ -151,7 +154,53 @@ struct ScheduleEvent: Identifiable, Equatable, Codable {
     var timeRange: String {
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm"
+        if isFullDay {
+            return "00:00 ~ 24:00"
+        }
         return "\(formatter.string(from: startTime)) ~ \(formatter.string(from: endTime))"
+    }
+
+    // MARK: - Codable（向后兼容：旧数据没有 isFullDay 字段）
+    private enum CodingKeys: String, CodingKey {
+        case id, remoteId, title, description, startTime, endTime, isFullDay, endTimeProvided, isSynced, hasConflict
+    }
+
+    init(
+        id: UUID = UUID(),
+        remoteId: String? = nil,
+        title: String,
+        description: String,
+        startTime: Date,
+        endTime: Date,
+        isFullDay: Bool = false,
+        endTimeProvided: Bool = true,
+        isSynced: Bool = false,
+        hasConflict: Bool = false
+    ) {
+        self.id = id
+        self.remoteId = remoteId
+        self.title = title
+        self.description = description
+        self.startTime = startTime
+        self.endTime = endTime
+        self.isFullDay = isFullDay
+        self.endTimeProvided = endTimeProvided
+        self.isSynced = isSynced
+        self.hasConflict = hasConflict
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        remoteId = try c.decodeIfPresent(String.self, forKey: .remoteId)
+        title = try c.decode(String.self, forKey: .title)
+        description = try c.decodeIfPresent(String.self, forKey: .description) ?? ""
+        startTime = try c.decode(Date.self, forKey: .startTime)
+        endTime = try c.decode(Date.self, forKey: .endTime)
+        isFullDay = try c.decodeIfPresent(Bool.self, forKey: .isFullDay) ?? false
+        endTimeProvided = try c.decodeIfPresent(Bool.self, forKey: .endTimeProvided) ?? true
+        isSynced = try c.decodeIfPresent(Bool.self, forKey: .isSynced) ?? false
+        hasConflict = try c.decodeIfPresent(Bool.self, forKey: .hasConflict) ?? false
     }
 }
 
@@ -166,6 +215,16 @@ struct ContactCard: Identifiable, Equatable, Codable {
     var title: String? // 职位
     var phone: String?
     var email: String?
+    /// 生日（后端字段可能为 birthday / birth / birthday_text 等；统一落到 string，UI 直接展示）
+    var birthday: String? = nil
+    /// 性别
+    var gender: String? = nil
+    /// 行业
+    var industry: String? = nil
+    /// 地区
+    var location: String? = nil
+    /// 与我关系（后端可能用 relationship_type）
+    var relationshipType: String? = nil
     /// 后端可选：备注（用户/系统输入）
     var notes: String? = nil
     /// 后端可选：AI 画像/印象，期望落到联系人详情的“备注”里
@@ -434,7 +493,6 @@ class AppState: ObservableObject {
     
     // Session管理（app打开到关闭之间的聊天）
     @Published var sessionStartTime: Date = Date()  // 当前session开始时间
-    @Published var lastSessionSummary: String? = nil  // 上次session的总结
     
     // 聊天室状态 - 保存对话历史
     @Published var chatMessages: [ChatMessage] = []
@@ -446,6 +504,9 @@ class AppState: ObservableObject {
     @Published var screenshotCategory: ScreenshotCategory? = nil  // 截图预分类结果
     @Published var isLoadingOlderMessages: Bool = false  // 是否正在加载更早的消息
     @Published var activeRecordingMessageId: UUID? = nil // 当前活动的录音气泡ID
+
+    /// AppIntent/快捷指令后台写入的 AI 回复：需要在 ChatView 中触发一次性打字机动画的消息 id
+    @Published var pendingAnimatedAgentMessageId: UUID? = nil
     
     // 当前生成任务（用于中止）
     var currentGenerationTask: Task<Void, Never>?
@@ -589,89 +650,10 @@ class AppState: ObservableObject {
         print("🧩 [Structured->AppState] incoming taskId=\(output.taskId ?? "nil") schedule=\(output.scheduleEvents.count) contacts=\(output.contacts.count) invoices=\(output.invoices.count) meetings=\(output.meetings.count) textLen=\(output.text.count)")
 #endif
 
-        if let taskId = output.taskId, !taskId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            msg.notes = taskId
-        }
+        StructuredOutputApplier.apply(output, to: &msg)
 
-        // tool 中间态（用于 loading 卡片）
-        msg.isContactToolRunning = output.isContactToolRunning
-        msg.isScheduleToolRunning = output.isScheduleToolRunning
-
-        // ✅ 即时输出（delta）：每来一个 chunk 就追加 segments / 合并卡片
-        if output.isDelta {
-            // 1) segments：追加（并对 text 做展示清洗）
-            if !output.segments.isEmpty {
-                var existing = msg.segments ?? []
-                existing.reserveCapacity(existing.count + output.segments.count)
-                for seg in output.segments {
-                    switch seg.kind {
-                    case .text:
-                        let t = BackendChatService.normalizeDisplayText(seg.text ?? "")
-                        if !t.isEmpty { existing.append(.text(t)) }
-                    case .scheduleCards, .contactCards, .invoiceCards, .meetingCards:
-                        existing.append(seg)
-                    }
-                }
-                msg.segments = existing.isEmpty ? nil : existing
-            }
-
-            // 2) 文本聚合：只用于复制/搜索（UI 以 segments 为准）
-            let incomingText = BackendChatService.normalizeDisplayText(output.text)
-            if !incomingText.isEmpty {
-                let base = msg.content.trimmingCharacters(in: .whitespacesAndNewlines)
-                if base.isEmpty {
-                    msg.content = incomingText
-                } else if !base.hasSuffix(incomingText) {
-                    msg.content = base + "\n\n" + incomingText
-                }
-            }
-
-            // 3) 卡片聚合字段：合并去重（用于详情页/复制卡片信息复用）
-            if !output.scheduleEvents.isEmpty {
-                msg.scheduleEvents = mergeReplacingById(existing: msg.scheduleEvents, incoming: output.scheduleEvents)
-            }
-            if !output.contacts.isEmpty {
-                msg.contacts = mergeReplacingById(existing: msg.contacts, incoming: output.contacts)
-            }
-            if !output.invoices.isEmpty {
-                msg.invoices = mergeReplacingById(existing: msg.invoices, incoming: output.invoices)
-            }
-            if !output.meetings.isEmpty {
-                msg.meetings = mergeReplacingById(existing: msg.meetings, incoming: output.meetings)
-            }
-
-            // taskId：保持最后一次为准
-            if let taskId = output.taskId, !taskId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                msg.notes = taskId
-            }
-
-            chatMessages[index] = msg
-            return
-        }
-
-        // ✅ 最终输出（非 delta）：以整包结构化结果为准，覆盖写入
-        let incomingText = BackendChatService.normalizeDisplayText(output.text)
-        if !incomingText.isEmpty { msg.content = incomingText }
-
-        if !output.segments.isEmpty {
-            var normalized: [ChatSegment] = []
-            normalized.reserveCapacity(output.segments.count)
-            for seg in output.segments {
-                switch seg.kind {
-                case .text:
-                    let t = BackendChatService.normalizeDisplayText(seg.text ?? "")
-                    if !t.isEmpty { normalized.append(.text(t)) }
-                case .scheduleCards, .contactCards, .invoiceCards, .meetingCards:
-                    normalized.append(seg)
-                }
-            }
-            msg.segments = normalized.isEmpty ? nil : normalized
-        }
-
-        if !output.scheduleEvents.isEmpty {
-            msg.scheduleEvents = output.scheduleEvents
-
-            // 若日程卡片发生实质变化（新增/补齐 remoteId），触发远端日程缓存失效 + UI 强刷
+        // 若日程卡片发生实质变化（新增/补齐 remoteId），触发远端日程缓存失效 + UI 强刷
+        if !output.isDelta, !output.scheduleEvents.isEmpty {
             let afterScheduleCount = msg.scheduleEvents?.count ?? 0
             let afterScheduleRemoteIds: Set<String> = Set(
                 (msg.scheduleEvents ?? [])
@@ -684,15 +666,6 @@ class AppState: ObservableObject {
                 NotificationCenter.default.post(name: .remoteScheduleDidChange, object: nil, userInfo: nil)
             }
         }
-        if !output.contacts.isEmpty {
-            msg.contacts = output.contacts
-        }
-        if !output.invoices.isEmpty {
-            msg.invoices = output.invoices
-        }
-        if !output.meetings.isEmpty {
-            msg.meetings = output.meetings
-        }
 
         chatMessages[index] = msg
 
@@ -704,18 +677,6 @@ class AppState: ObservableObject {
         let afterMeetings = after.meetings?.count ?? -1
         print("🧩 [Structured->AppState] AFTER  schedule=\(afterSchedule) contacts=\(afterContacts) invoices=\(afterInvoices) meetings=\(afterMeetings) notes=\(after.notes ?? "nil")")
 #endif
-    }
-
-    private func mergeReplacingById<T: Identifiable>(existing: [T]?, incoming: [T]) -> [T] where T.ID: Equatable {
-        var result = existing ?? []
-        for item in incoming {
-            if let idx = result.firstIndex(where: { $0.id == item.id }) {
-                result[idx] = item
-            } else {
-                result.append(item)
-            }
-        }
-        return result
     }
 
     private func mergeContactsPreservingImpression(existing: [ContactCard]?, incoming: [ContactCard]) -> [ContactCard] {
@@ -779,7 +740,7 @@ class AppState: ObservableObject {
         )
         let existing = try modelContext.fetch(descriptor).first
 
-        let events = message.scheduleEvents ?? []
+        let events = (message.scheduleEvents ?? []).dedup(by: ChatCardStableId.schedule)
         if events.isEmpty {
             if let existing { modelContext.delete(existing) }
             return
@@ -802,7 +763,7 @@ class AppState: ObservableObject {
         )
         let existing = try modelContext.fetch(descriptor).first
 
-        let cards = message.contacts ?? []
+        let cards = (message.contacts ?? []).dedup(by: ChatCardStableId.contact)
         if cards.isEmpty {
             if let existing { modelContext.delete(existing) }
             return
@@ -825,7 +786,7 @@ class AppState: ObservableObject {
         )
         let existing = try modelContext.fetch(descriptor).first
 
-        let cards = message.invoices ?? []
+        let cards = (message.invoices ?? []).dedup(by: ChatCardStableId.invoice)
         if cards.isEmpty {
             if let existing { modelContext.delete(existing) }
             return
@@ -848,7 +809,7 @@ class AppState: ObservableObject {
         )
         let existing = try modelContext.fetch(descriptor).first
 
-        let cards = message.meetings ?? []
+        let cards = (message.meetings ?? []).dedup(by: ChatCardStableId.meeting)
         if cards.isEmpty {
             if let existing { modelContext.delete(existing) }
             return
@@ -911,19 +872,19 @@ class AppState: ObservableObject {
 
             for b in scheduleBatches {
                 guard let mid = b.sourceMessageId, ids.contains(mid) else { continue }
-                scheduleMap[mid] = b.decodedEvents()
+                scheduleMap[mid] = b.decodedEvents().dedup(by: ChatCardStableId.schedule)
             }
             for b in contactBatches {
                 guard let mid = b.sourceMessageId, ids.contains(mid) else { continue }
-                contactMap[mid] = b.decodedContacts()
+                contactMap[mid] = b.decodedContacts().dedup(by: ChatCardStableId.contact)
             }
             for b in invoiceBatches {
                 guard let mid = b.sourceMessageId, ids.contains(mid) else { continue }
-                invoiceMap[mid] = b.decodedInvoices()
+                invoiceMap[mid] = b.decodedInvoices().dedup(by: ChatCardStableId.invoice)
             }
             for b in meetingBatches {
                 guard let mid = b.sourceMessageId, ids.contains(mid) else { continue }
-                meetingMap[mid] = b.decodedMeetings()
+                meetingMap[mid] = b.decodedMeetings().dedup(by: ChatCardStableId.meeting)
             }
 
             for i in messages.indices {
@@ -961,6 +922,92 @@ class AppState: ObservableObject {
         } catch {
             print("⚠️ 加载聊天记录失败: \(error)")
         }
+    }
+
+    /// 从本地存储“增量刷新”最近 N 条消息，并与当前内存消息做 upsert 合并（避免整包替换导致 UI 大幅跳动）。
+    func upsertLatestMessagesFromStorage(modelContext: ModelContext, limit: Int = 120) {
+        var descriptor = FetchDescriptor<PersistentChatMessage>(
+            sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
+        )
+        descriptor.fetchLimit = max(0, limit)
+
+        do {
+            let persistents = try modelContext.fetch(descriptor)
+            // 去重：同 id 保留最后一次出现
+            var byId: [UUID: ChatMessage] = [:]
+            for p in persistents {
+                byId[p.id] = p.toChatMessage()
+            }
+            var loaded = Array(byId.values).sorted(by: { $0.timestamp < $1.timestamp })
+            hydrateCardBatchesIfNeeded(for: &loaded, modelContext: modelContext)
+
+            // upsert 合并：已有的 streaming 消息不要被 storage 覆盖（避免影响当前会话流式输出）
+            var mergedMap: [UUID: ChatMessage] = Dictionary(uniqueKeysWithValues: chatMessages.map { ($0.id, $0) })
+            for m in loaded {
+                if let existing = mergedMap[m.id], existing.streamingState.isActive {
+#if DEBUG
+                    // Debug：如果你看到“卡在正在识别/正在思考”，通常就是这里被保护逻辑挡住了
+                    let old = existing.content.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let new = m.content.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if old != new {
+                        print("🧱 [ChatStorageMerge] skipOverwrite id=\(m.id) oldLen=\(existing.content.count) newLen=\(m.content.count)")
+                    }
+#endif
+                    continue
+                }
+                mergedMap[m.id] = m
+            }
+            let merged = mergedMap.values.sorted(by: { $0.timestamp < $1.timestamp })
+            self.chatMessages = merged
+        } catch {
+            print("⚠️ 增量刷新聊天记录失败: \(error)")
+        }
+    }
+
+    /// 处理“聊天存储已更新”（通常来自快捷指令/AppIntent 后台写入）。
+    /// - 职责：刷新 chatMessages、设置一次性动画目标、把目标 AI 消息标记为 streaming 以触发打字机
+    func handleChatStorageUpdated(agentMessageId: UUID?, modelContext: ModelContext) {
+        // ⚠️ 关键：快捷指令/AppIntent 会在“另一个进程”里写入 SwiftData store。
+        // SwiftData 的 ModelContext 可能缓存旧对象，导致 fetch 读到的仍是占位“正在思考...”，从而 UI 永远不刷新。
+        // 这里用一个“全新容器/上下文”去读最新落盘数据（失败再回退到当前 context）。
+        // 注意：必须持有 ModelContainer 的生命周期；只取 mainContext 而不保留 container 会导致 context 失效并触发崩溃/断点。
+        let freshContainer = try? SharedModelContainer.makeContainer()
+        let readContext = freshContainer?.mainContext ?? modelContext
+
+        upsertLatestMessagesFromStorage(modelContext: readContext, limit: 200)
+        guard let id = agentMessageId else { return }
+        guard let idx = chatMessages.firstIndex(where: { $0.id == id }) else { return }
+        guard chatMessages[idx].role == .agent else { return }
+
+        // ⚠️ 关键修复：
+        // 这里如果把消息标为 `.streaming`，会被 `upsertLatestMessagesFromStorage` 的“streaming 不覆盖”保护挡住，
+        // 导致：先写入占位（正在识别/正在思考）→ 后台写入最终内容 → 主App刷新时永远不更新 → 气泡永久卡住。
+        // 因此只设置“一次性动画目标”，不改变 streamingState，让后续 storage 写入可以正常覆盖。
+        let content = chatMessages[idx].content.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !content.isEmpty, content != "正在思考...", content != "正在识别" {
+            pendingAnimatedAgentMessageId = id
+        }
+
+#if DEBUG
+        // 你要求的实时链路日志：这里打印一次“跨进程刷新命中”的关键字段
+        print("🔔 [ChatStorageUpdated] id=\(id) contentLen=\(chatMessages[idx].content.count) tool(contact=\(chatMessages[idx].isContactToolRunning) schedule=\(chatMessages[idx].isScheduleToolRunning)) segments=\(chatMessages[idx].segments?.count ?? 0)")
+#endif
+    }
+
+    /// 兜底处理：当 AppIntent 通过 `openAppWhenRun` 启动了主App，但 Darwin 通知在监听注册前发出而丢失，
+    /// 或者 UI 还未订阅进程内通知时，这里主动读取 App Group 的 pending 状态来完成一次刷新。
+    func processPendingChatUpdateIfNeeded(modelContext: ModelContext) {
+        guard let defaults = UserDefaults(suiteName: ChatSharedDefaults.suite) else { return }
+
+        let ts = defaults.double(forKey: ChatSharedDefaults.lastUpdateTimestampKey)
+        let lastHandled = defaults.double(forKey: ChatSharedDefaults.lastHandledUpdateTimestampKey)
+        guard ts > 0, ts > lastHandled else { return }
+        defaults.set(ts, forKey: ChatSharedDefaults.lastHandledUpdateTimestampKey)
+
+        let idString = (defaults.string(forKey: ChatSharedDefaults.lastInsertedAgentMessageIdKey) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let id = UUID(uuidString: idString)
+        handleChatStorageUpdated(agentMessageId: id, modelContext: modelContext)
     }
     
     /// 保存单条消息到本地存储
@@ -1063,17 +1110,10 @@ class AppState: ObservableObject {
                     // 因为消息是按时间从早到晚排序的，更早的消息应该插入到最前面
                     // olderMessages 中的所有消息都比 timestamp 早，所以直接插入到索引0
                     self.chatMessages.insert(contentsOf: olderMessages, at: 0)
-                    print("✅ 加载了 \(olderMessages.count) 条更早的消息，已插入到最前面")
-                    print("   - 最早消息时间: \(olderMessages.first?.timestamp ?? Date())")
-                    print("   - 最晚消息时间: \(olderMessages.last?.timestamp ?? Date())")
-                    print("   - 当前总消息数: \(self.chatMessages.count)")
-                } else {
-                    print("ℹ️ 没有更早的消息了")
                 }
                 self.isLoadingOlderMessages = false
             }
         } catch {
-            print("⚠️ 加载更早消息失败: \(error)")
             DispatchQueue.main.async {
                 self.isLoadingOlderMessages = false
             }
@@ -1082,8 +1122,6 @@ class AppState: ObservableObject {
 
     /// 加载最近的 N 条消息（懒加载，保持实现简单，避免跨 actor 捕获 ModelContext）
     func loadRecentMessages(modelContext: ModelContext, limit: Int = 50) {
-        print("🚀 开始加载最近 \(limit) 条消息...")
-
         var descriptor = FetchDescriptor<PersistentChatMessage>(
             sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
         )
@@ -1099,9 +1137,7 @@ class AppState: ObservableObject {
             var loadedMessages = Array(byId.values).sorted(by: { $0.timestamp < $1.timestamp })
             hydrateCardBatchesIfNeeded(for: &loadedMessages, modelContext: modelContext)
             self.chatMessages = loadedMessages
-            print("✅ 加载了 \(loadedMessages.count) 条最近的消息")
         } catch {
-            print("⚠️ 加载最近消息失败: \(error)")
         }
     }
 
@@ -1141,7 +1177,6 @@ class AppState: ObservableObject {
 
             chatMessages.append(contentsOf: incoming)
         } catch {
-            print("⚠️ 刷新聊天记录失败: \(error)")
         }
     }
 
@@ -1164,164 +1199,12 @@ class AppState: ObservableObject {
         }
     }
     
-    // MARK: - 每日总结管理
-    
-    /// 获取最近一天的历史卡片总结
-    func getLatestDailySummary(modelContext: ModelContext) -> String? {
-        let descriptor = FetchDescriptor<DailyChatSummary>(
-            sortBy: [SortDescriptor(\.date, order: .reverse)]
-        )
-        
-        do {
-            let summaries = try modelContext.fetch(descriptor)
-            // 返回最近一天的总结
-            return summaries.first?.summary
-        } catch {
-            print("⚠️ 获取历史卡片失败: \(error)")
-            return nil
-        }
-    }
-    
-    /// 更新当天的聊天总结
-    func updateTodaySummary(modelContext: ModelContext) {
-        Task {
-            await generateAndSaveTodaySummary(modelContext: modelContext)
-        }
-    }
-    
-    /// 生成并保存当天的聊天总结
-    private func generateAndSaveTodaySummary(modelContext: ModelContext) async {
-        let today = DailyChatSummary.startOfDay(Date())
-        
-        // 获取当天的消息
-        let todayMessages = chatMessages.filter { message in
-            let messageDay = DailyChatSummary.startOfDay(message.timestamp)
-            return messageDay == today
-        }
-        
-        // 如果当天没有真实消息（排除打招呼），不生成总结
-        let realMessages = todayMessages.filter { !$0.isGreeting }
-        guard !realMessages.isEmpty else {
-            print("ℹ️ 当天没有真实消息，跳过总结生成")
-            return
-        }
-        
-        print("🔄 开始生成当天总结 - 消息数: \(todayMessages.count), 真实消息: \(realMessages.count)")
-        
-        do {
-            // 调用API生成总结
-            let summaryText = try await BackendAIService.generateChatSummary(messages: todayMessages, date: today)
-            
-            // 保存到数据库
-            await MainActor.run {
-                // 查找是否已存在当天的总结
-                let descriptor = FetchDescriptor<DailyChatSummary>(
-                    predicate: #Predicate<DailyChatSummary> { summary in
-                        summary.date == today
-                    }
-                )
-                
-                do {
-                    let existingSummaries = try modelContext.fetch(descriptor)
-                    
-                    if let existingSummary = existingSummaries.first {
-                        // 更新现有总结
-                        existingSummary.summary = summaryText
-                        existingSummary.messageCount = realMessages.count
-                        existingSummary.lastUpdated = Date()
-                        print("✅ 已更新当天总结")
-                    } else {
-                        // 创建新总结
-                        let newSummary = DailyChatSummary(
-                            date: today,
-                            summary: summaryText,
-                            messageCount: realMessages.count,
-                            lastUpdated: Date()
-                        )
-                        modelContext.insert(newSummary)
-                        print("✅ 已创建当天总结")
-                    }
-                    
-                    try modelContext.save()
-                    print("✅ 总结已保存到数据库: \(summaryText)")
-                } catch {
-                    print("⚠️ 保存总结失败: \(error)")
-                }
-            }
-        } catch {
-            print("⚠️ 生成总结失败: \(error)")
-        }
-    }
-    
-    // MARK: - Session管理（app打开到关闭之间的聊天总结）
-    
+    // MARK: - Session 管理（仅用于分段/时间戳，不生成总结）
+
     /// 开始新的session
     func startNewSession() {
         sessionStartTime = Date()
         print("🆕 开始新Session - 时间: \(sessionStartTime)")
-    }
-    
-    /// 生成当前session的聊天总结（app进入后台时调用）
-    func generateSessionSummary(modelContext: ModelContext) {
-        // 获取当前session的消息（从sessionStartTime开始的）
-        let sessionMessages = chatMessages.filter { message in
-            message.timestamp >= sessionStartTime && !message.isGreeting
-        }
-        
-        // 如果没有真实消息，不生成总结
-        guard !sessionMessages.isEmpty else {
-            print("ℹ️ 当前session没有真实消息，跳过总结生成")
-            return
-        }
-        
-        print("🔄 开始生成session总结 - 消息数: \(sessionMessages.count)")
-        
-        Task {
-            do {
-                // 调用API生成总结
-                let summaryText = try await BackendAIService.generateChatSummary(messages: sessionMessages, date: Date())
-                
-                // 保存到数据库（复用DailyChatSummary，用当前时间作为key）
-                await MainActor.run {
-                    let newSummary = DailyChatSummary(
-                        date: Date(),
-                        summary: summaryText,
-                        messageCount: sessionMessages.count,
-                        lastUpdated: Date()
-                    )
-                    modelContext.insert(newSummary)
-                    
-                    do {
-                        try modelContext.save()
-                        print("✅ Session总结已保存: \(summaryText.prefix(50))...")
-                    } catch {
-                        print("⚠️ 保存session总结失败: \(error)")
-                    }
-                }
-            } catch {
-                print("⚠️ 生成session总结失败: \(error)")
-            }
-        }
-    }
-    
-    /// 加载上次session的总结
-    func loadLastSessionSummary(modelContext: ModelContext) {
-        let descriptor = FetchDescriptor<DailyChatSummary>(
-            sortBy: [SortDescriptor(\.lastUpdated, order: .reverse)]
-        )
-        
-        do {
-            let summaries = try modelContext.fetch(descriptor)
-            lastSessionSummary = summaries.first?.summary
-            if let summary = lastSessionSummary {
-                print("✅ 加载上次session总结: \(summary.prefix(50))...")
-            } else {
-                print("ℹ️ 没有找到历史session总结")
-            }
-        } catch {
-            print("⚠️ 加载session总结失败: \(error)")
-            lastSessionSummary = nil
-        }
     }
     
     // MARK: - 调试/演示
@@ -1530,6 +1413,24 @@ class AppState: ObservableObject {
         // 录音气泡已简化为纯文字，无需清理动态状态
     }
     
+}
+
+// MARK: - Small helpers
+
+private extension Array {
+    /// 保序去重：按 key 提取函数判重，保留第一次出现的元素。
+    func dedup<Key: Hashable>(by key: (Element) -> Key) -> [Element] {
+        var seen: Set<Key> = []
+        var out: [Element] = []
+        out.reserveCapacity(count)
+        for e in self {
+            let k = key(e)
+            if seen.insert(k).inserted {
+                out.append(e)
+            }
+        }
+        return out
+    }
 }
 
 

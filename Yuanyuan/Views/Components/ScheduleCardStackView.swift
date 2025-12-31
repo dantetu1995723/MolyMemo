@@ -503,16 +503,20 @@ struct ScheduleCardView: View {
             // 时间 & 内容
             HStack(alignment: .top, spacing: 20) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(timeString(event.startTime))
+                    // ✅ end_time=null 时，不展示“结束时间=开始时间”的假象
+                    Text(timeString(event.startTime, isEnd: false))
                         .font(.system(size: 15, weight: .medium))
                         .foregroundColor(Color(hex: "333333"))
-                    Text("~")
-                        .font(.system(size: 14))
-                        .foregroundColor(Color(hex: "999999"))
-                        .padding(.leading, 2)
-                    Text(timeString(event.endTime))
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundColor(Color(hex: "666666"))
+
+                    if event.endTimeProvided {
+                        Text("~")
+                            .font(.system(size: 14))
+                            .foregroundColor(Color(hex: "999999"))
+                            .padding(.leading, 2)
+                        Text(timeString(event.endTime, isEnd: true))
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundColor(Color(hex: "666666"))
+                    }
                 }
                 .fixedSize()
                 
@@ -544,7 +548,10 @@ struct ScheduleCardView: View {
         )
     }
     
-    private func timeString(_ date: Date) -> String {
+    private func timeString(_ date: Date, isEnd: Bool) -> String {
+        if event.isFullDay {
+            return isEnd ? "24:00" : "00:00"
+        }
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm"
         return formatter.string(from: date)

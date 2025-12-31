@@ -47,6 +47,22 @@ enum ContactCardLocalSync {
                 let v = trimmed(card.email)
                 return v.isEmpty ? nil : v
             }(),
+            birthday: {
+                let v = trimmed(card.birthday)
+                return v.isEmpty ? nil : v
+            }(),
+            gender: {
+                let v = trimmed(card.gender)
+                return v.isEmpty ? nil : v
+            }(),
+            industry: {
+                let v = trimmed(card.industry)
+                return v.isEmpty ? nil : v
+            }(),
+            location: {
+                let v = trimmed(card.location)
+                return v.isEmpty ? nil : v
+            }(),
             notes: {
                 // 备注：只使用后端 note/notes（ContactCard.notes）回填，避免把 impression 混进备注
                 let v = trimmed(card.notes)
@@ -94,6 +110,30 @@ enum ContactCardLocalSync {
         let email = trimmed(card.email)
         if !email.isEmpty, trimmed(contact.email) != email {
             contact.email = email
+            changed = true
+        }
+        
+        let industry = trimmed(card.industry)
+        if !industry.isEmpty, trimmed(contact.industry) != industry {
+            contact.industry = industry
+            changed = true
+        }
+        
+        let location = trimmed(card.location)
+        if !location.isEmpty, trimmed(contact.location) != location {
+            contact.location = location
+            changed = true
+        }
+        
+        let gender = trimmed(card.gender)
+        if !gender.isEmpty, trimmed(contact.gender) != gender {
+            contact.gender = gender
+            changed = true
+        }
+        
+        let birthday = trimmed(card.birthday)
+        if !birthday.isEmpty, trimmed(contact.birthday) != birthday {
+            contact.birthday = birthday
             changed = true
         }
 

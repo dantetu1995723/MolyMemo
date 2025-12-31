@@ -116,7 +116,9 @@ enum ScheduleService {
     
     private static func applyCommonHeaders(to request: inout URLRequest) throws {
         guard let sessionId = currentSessionId(), !sessionId.isEmpty else {
-            print("❌ [ScheduleService] 缺少 X-Session-Id：请先登录，或检查 AuthStore 是否成功保存 sessionId")
+            if debugLogsEnabled {
+                print("❌ [ScheduleService] 缺少 X-Session-Id：请先登录，或检查 AuthStore 是否成功保存 sessionId")
+            }
             throw ScheduleServiceError.missingSessionId
         }
         
@@ -149,8 +151,18 @@ enum ScheduleService {
         guard t.count > 8 else { return "***" }
         return "\(t.prefix(4))***\(t.suffix(4))"
     }
+
+    private static var debugLogsEnabled: Bool {
+#if DEBUG
+        // 默认关闭，避免日程列表刷爆控制台；需要时可在设置里打开 BackendChatConfig.debugLogFullResponse
+        return BackendChatConfig.debugLogFullResponse
+#else
+        return false
+#endif
+    }
     
     private static func debugPrintRequest(_ request: URLRequest, tag: String) {
+        guard debugLogsEnabled else { return }
         let method = request.httpMethod ?? "GET"
         let url = request.url?.absoluteString ?? "(nil)"
         print("🌐 [ScheduleService:\(tag)] \(method) \(url)")
@@ -167,6 +179,7 @@ enum ScheduleService {
     }
     
     private static func debugPrintResponse(data: Data, response: URLResponse?, error: Error?, tag: String) {
+        guard debugLogsEnabled else { return }
         if let error {
             print("❌ [ScheduleService:\(tag)] error=\(error)")
         }
@@ -274,11 +287,47 @@ enum ScheduleService {
         
         let description = str(["description", "desc", "content", "detail"]) ?? ""
         
-        let start = parseDate(dict["start_time"])
+        // ✅ full_day 优先：按本地时区 00:00~24:00 语义落地（endTime 存次日 00:00，但 UI 展示为 24:00）
+        if let fullDayStart = parseFullDayStart(dict["full_day"] ?? dict["fullDay"]) {
+            let end = Calendar.current.date(byAdding: .day, value: 1, to: fullDayStart) ?? fullDayStart.addingTimeInterval(86_400)
+            var event = ScheduleEvent(title: title, description: description, startTime: fullDayStart, endTime: end)
+            event.isFullDay = true
+            event.endTimeProvided = true
+
+            if let keepLocalId { event.id = keepLocalId }
+
+            if let rid = str(["id", "schedule_id", "remote_id", "remoteId"]) {
+                event.remoteId = rid
+                if keepLocalId == nil, let u = UUID(uuidString: rid) {
+                    event.id = u
+                }
+            } else if let idInt = dict["id"] as? Int {
+                event.remoteId = String(idInt)
+            } else if let idDouble = dict["id"] as? Double {
+                event.remoteId = String(Int(idDouble))
+            }
+
+            if let c = dict["has_conflict"] as? Bool { event.hasConflict = c }
+            if let c = dict["hasConflict"] as? Bool { event.hasConflict = c }
+            if let s = dict["is_synced"] as? Bool { event.isSynced = s }
+            if let s = dict["isSynced"] as? Bool { event.isSynced = s }
+
+            return event
+        }
+
+        // ✅ 关键：start_time 解析失败时不要用 Date() 兜底，否则会把“当前时间/消息时间”误当成日程时间展示
+        guard let start =
+            parseDate(dict["start_time"])
             ?? parseDate(dict["startTime"])
             ?? parseDate(dict["start_date"])
             ?? parseDate(dict["startDate"])
-            ?? Date()
+        else {
+#if DEBUG
+            let raw = (dict["start_time"] ?? dict["startTime"] ?? dict["start_date"] ?? dict["startDate"])
+            print("⚠️ [ScheduleService] parse start_time failed, title=\(title) raw=\(String(describing: raw))")
+#endif
+            return nil
+        }
 
         // end_time 可能为 null：不要再“默认 +1h”误导展示
         let endAny: Any? =
@@ -309,6 +358,21 @@ enum ScheduleService {
         if let s = dict["isSynced"] as? Bool { event.isSynced = s }
         
         return event
+    }
+
+    private static func parseFullDayStart(_ any: Any?) -> Date? {
+        guard let any else { return nil }
+        if let d = any as? Date { return Calendar.current.startOfDay(for: d) }
+        guard let s0 = any as? String else { return nil }
+        let s = s0.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !s.isEmpty else { return nil }
+        let posix = Locale(identifier: "en_US_POSIX")
+        let df = DateFormatter()
+        df.locale = posix
+        df.timeZone = TimeZone.current
+        df.dateFormat = "yyyy-MM-dd"
+        guard let d = df.date(from: s) else { return nil }
+        return Calendar.current.startOfDay(for: d)
     }
     
     private static func extractEventArray(_ json: Any) -> [[String: Any]] {
@@ -390,7 +454,9 @@ enum ScheduleService {
             let events = arr.compactMap { parseEventDict($0, keepLocalId: nil) }
             return events
         } catch {
-            print("❌ [ScheduleService:list] threw error=\(error)")
+            if debugLogsEnabled {
+                print("❌ [ScheduleService:list] threw error=\(error)")
+            }
             throw error
         }
     }
@@ -451,7 +517,9 @@ enum ScheduleService {
             }
             throw ScheduleServiceError.parseFailed("unknown json shape")
         } catch {
-            print("❌ [ScheduleService:detail] threw error=\(error)")
+            if debugLogsEnabled {
+                print("❌ [ScheduleService:detail] threw error=\(error)")
+            }
             throw error
         }
     }
@@ -548,7 +616,9 @@ enum ScheduleService {
             await postRemoteScheduleDidChange()
             return event
         } catch {
-            print("❌ [ScheduleService:update] threw error=\(error)")
+            if debugLogsEnabled {
+                print("❌ [ScheduleService:update] threw error=\(error)")
+            }
             throw error
         }
     }
@@ -571,7 +641,9 @@ enum ScheduleService {
             guard let http = response as? HTTPURLResponse else { throw ScheduleServiceError.invalidResponse }
             if !(200...299).contains(http.statusCode) {
                 let body = String(data: data, encoding: .utf8) ?? ""
-                print("❌ [ScheduleService:delete] HTTP \(http.statusCode) url=\(url.absoluteString) remoteId=\(trimmed) body=\(body)")
+                if debugLogsEnabled {
+                    print("❌ [ScheduleService:delete] HTTP \(http.statusCode) url=\(url.absoluteString) remoteId=\(trimmed) body=\(body)")
+                }
                 throw ScheduleServiceError.httpStatus(http.statusCode, body)
             }
             
@@ -580,7 +652,9 @@ enum ScheduleService {
             await allPagesCache.invalidateAll()
             await postRemoteScheduleDidChange()
         } catch {
-            print("❌ [ScheduleService:delete] threw error=\(error)")
+            if debugLogsEnabled {
+                print("❌ [ScheduleService:delete] threw error=\(error)")
+            }
             throw error
         }
     }

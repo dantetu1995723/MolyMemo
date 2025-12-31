@@ -35,11 +35,17 @@ final class BackendChatService {
             guard let url = BackendChatConfig.endpointURL() else {
                 throw BackendChatError.invalidConfig("后端 baseURL/path 无效")
             }
+
+            // ✅ 用于对齐“我这次发出的请求”和“后端返回的每个 chunk”
+            // - 不影响后端逻辑（header 仅用于 debug 追踪）
+            // - 你贴的 log 看起来像“缓存残留”，大概率是后端重复推送了相同进度文案；加上 requestId 后能一眼确认
+            let requestId = UUID().uuidString
             
             var request = URLRequest(url: url, timeoutInterval: Double.infinity)
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             applyDefaultHeaders(to: &request)
+            request.setValue(requestId, forHTTPHeaderField: "X-Client-Request-Id")
             
             // system prompt：尽量复用现有风格，避免切后端后“人格”漂移
             let systemPrompt = mode == .work
@@ -57,12 +63,12 @@ final class BackendChatService {
             )
             request.httpBody = try JSONSerialization.data(withJSONObject: contentPayload)
 
-            // 线上也需要可见日志：自动脱敏/截断，避免 base64 把控制台刷爆
-            print("\n========== 📤 Backend Chat Request (/api/v1/chat) ==========")
-            print("URL: \(url.absoluteString)")
-            debugPrintHeaders(request)
-            debugPrintBody(request)
-            print("===========================================================\n")
+#if DEBUG
+            // 你要求的“实时后端聊天 print”：请求开始 + 基本信息（不输出 base64）
+            let hasImage = !(lastUser?.images.isEmpty ?? true)
+            let textLen = lastUser?.content.count ?? 0
+            print("🚀 [BackendChat][rid=\(requestId)] start url=\(url.absoluteString) includeShortcut=\(includeShortcut) mode=\(mode) lastUser(textLen=\(textLen) hasImage=\(hasImage))")
+#endif
 
             // ✅ 即时前端输出：边收边解析，每来一个 json chunk 就回调一次（追加 segments）
             let (bytes, response) = try await URLSession.shared.bytes(for: request)
@@ -70,10 +76,9 @@ final class BackendChatService {
                 throw BackendChatError.invalidResponse
             }
 
-            print("\n========== 📥 Backend Chat Response (/api/v1/chat) ==========")
-            print("Status: \(httpResponse.statusCode)")
-            debugPrintHTTPHeaders(httpResponse)
-            print("===========================================================\n")
+#if DEBUG
+            print("📡 [BackendChat][rid=\(requestId)] http status=\(httpResponse.statusCode)")
+#endif
 
             // 非 200：读完整 body 作为错误信息
             if httpResponse.statusCode != 200 {
@@ -82,10 +87,6 @@ final class BackendChatService {
                     errorData.append(b)
                 }
                 let raw = String(data: errorData, encoding: .utf8) ?? ""
-                print("\n========== ❌ Backend Chat Error Body (/api/v1/chat) ==========")
-                print("Body(\(raw.count)):")
-                debugPrintResponseBody(raw)
-                print("=============================================================\n")
                 throw BackendChatError.httpError(statusCode: httpResponse.statusCode, message: raw)
             }
 
@@ -122,6 +123,11 @@ final class BackendChatService {
                 sseDataLines.removeAll(keepingCapacity: true)
                 guard !joined.isEmpty else { return }
                 if joined == "[DONE]" { return }
+#if DEBUG
+                if BackendChatConfig.debugLogChunkSummary {
+                    print("🧱 [BackendChat][rid=\(requestId)] chunk[sse] \(joined)")
+                }
+#endif
                 guard let d = joined.data(using: .utf8),
                       let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any]
                 else { return }
@@ -160,6 +166,11 @@ final class BackendChatService {
 
                     case .ndjson:
                         guard !trimmedLine.isEmpty else { continue }
+#if DEBUG
+                        if BackendChatConfig.debugLogChunkSummary {
+                            print("🧱 [BackendChat][rid=\(requestId)] chunk[ndjson] \(trimmedLine)")
+                        }
+#endif
                         guard let d = trimmedLine.data(using: .utf8),
                               let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any]
                         else { continue }
@@ -172,12 +183,18 @@ final class BackendChatService {
                 if format == .sse { await flushSSEEventIfNeeded() }
             } catch is CancellationError {
                 // 用户中止：不回调 onError
+#if DEBUG
+                print("🛑 [BackendChat] cancelled")
+#endif
                 return
             }
 
             // 最终完成：优先用流式累积文本；若为空再兜底整包解析
             let cleaned = normalizeDisplayText(accumulatedTextParts.joined(separator: "\n\n"))
             if !cleaned.isEmpty {
+#if DEBUG
+                print("✅ [BackendChat][rid=\(requestId)] complete(textLen=\(cleaned.count))")
+#endif
                 await onComplete(cleaned)
                 return
             }
@@ -188,14 +205,23 @@ final class BackendChatService {
                 await MainActor.run { onStructuredOutput?(structured) }
                 let cleanedFallback = normalizeDisplayText(structured.text)
                 if cleanedFallback.isEmpty { throw BackendChatError.emptyResponse }
+#if DEBUG
+                print("✅ [BackendChat][rid=\(requestId)] complete(fallback textLen=\(cleanedFallback.count) segments=\(structured.segments.count))")
+#endif
                 await onComplete(cleanedFallback)
             } else {
                 let text = extractTextFromResponseData(fallbackData)
                 let cleanedText = normalizeDisplayText(text)
                 if cleanedText.isEmpty { throw BackendChatError.emptyResponse }
+#if DEBUG
+                print("✅ [BackendChat][rid=\(requestId)] complete(raw textLen=\(cleanedText.count))")
+#endif
                 await onComplete(cleanedText)
             }
         } catch {
+#if DEBUG
+            print("❌ [BackendChat] error: \(error)")
+#endif
             await MainActor.run {
                 onError(error)
             }
@@ -217,7 +243,11 @@ final class BackendChatService {
 
         case "markdown":
             guard let content = chunk["content"] as? String else { return out }
-            let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+            // ✅ 后端有时会把工具链路的“中间态 JSON”当 markdown 直接吐给前端：
+            //    { "show_content": "...", "action": {...}, ... } + 后续 observation dump
+            // 目标：只展示 show_content（给用户看的那句），其余隐藏，避免 UI 出现大段 JSON。
+            let extractedShowContent = extractShowContentIfPresent(content)
+            let trimmed = (extractedShowContent ?? content).trimmingCharacters(in: .whitespacesAndNewlines)
             if trimmed.isEmpty || trimmed == "处理完成" { return out }
             out.text = trimmed
             out.segments = [.text(trimmed)]
@@ -259,6 +289,23 @@ final class BackendChatService {
             return out
         }
     }
+
+    /// 若 markdown 文本包含 `"show_content": "..."`，提取该字段给 UI 展示。
+    /// - 兼容：文本不一定是合法 JSON（可能拼接了后续 observation），所以用正则做“轻解析”。
+    private static func extractShowContentIfPresent(_ raw: String) -> String? {
+        guard raw.contains("\"show_content\"") else { return nil }
+        // 捕获 show_content 的字符串值（不试图完整处理所有转义场景；足够覆盖当前后端格式）
+        let pattern = "\"show_content\"\\s*:\\s*\"([^\"]+)\""
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { return nil }
+        let ns = raw as NSString
+        let range = NSRange(location: 0, length: ns.length)
+        guard let match = regex.firstMatch(in: raw, options: [], range: range),
+              match.numberOfRanges >= 2
+        else { return nil }
+        let captured = ns.substring(with: match.range(at: 1))
+        let cleaned = captured.trimmingCharacters(in: .whitespacesAndNewlines)
+        return cleaned.isEmpty ? nil : cleaned
+    }
     
     // MARK: - Parsing
 
@@ -275,9 +322,6 @@ final class BackendChatService {
         if BackendChatConfig.debugLogFullResponse || BackendChatConfig.debugDumpResponseToFile {
             print("🔎 [BackendChat] parseStructuredOutput raw(\(raw.count)):")
             debugPrintResponseBody(raw)
-        } else if BackendChatConfig.debugLogChunkSummary {
-            let preview = truncate(redactBase64(raw), limit: 420)
-            print("🔎 [BackendChat] parseStructuredOutput raw(\(raw.count)) preview: \(preview)")
         }
 #endif
 
@@ -328,7 +372,7 @@ final class BackendChatService {
             var events: [[String: Any]] = []
             let blocks = raw.components(separatedBy: "\n\n")
 #if DEBUG
-            if BackendChatConfig.debugLogChunkSummary {
+            if BackendChatConfig.debugLogStreamEvents {
                 print("📡 [BackendChat] detected SSE blocks=\(blocks.count)")
             }
 #endif
@@ -352,7 +396,7 @@ final class BackendChatService {
                           let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any]
                     else {
 #if DEBUG
-                        if BackendChatConfig.debugLogChunkSummary {
+                        if BackendChatConfig.debugLogStreamEvents {
                             print("⚠️ [BackendChat] SSE json parse failed at block=\(bIndex) preview: \(truncate(jsonString, limit: 220))")
                         }
 #endif
@@ -381,7 +425,7 @@ final class BackendChatService {
         var ndjsonObjects: [[String: Any]] = []
         let ndLines = raw.split(separator: "\n")
 #if DEBUG
-        if BackendChatConfig.debugLogChunkSummary {
+        if BackendChatConfig.debugLogStreamEvents {
             print("🧱 [BackendChat] detected NDJSON lines=\(ndLines.count)")
         }
 #endif
@@ -399,7 +443,7 @@ final class BackendChatService {
                   let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any]
             else {
 #if DEBUG
-                if BackendChatConfig.debugLogChunkSummary {
+                if BackendChatConfig.debugLogStreamEvents {
                     print("⚠️ [BackendChat] NDJSON json parse failed at line=\(i) preview: \(truncate(s, limit: 220))")
                 }
 #endif
@@ -578,39 +622,10 @@ final class BackendChatService {
             print("🛠️ [BackendChat->Tool] name=\(name) status=\(status) observationLen=\(obsLen)")
         }
 #endif
-        guard status == "success" else { return }
-
-        // 后端常见：observation 是一个 JSON 字符串
-        guard let obsString = tool["observation"] as? String,
-              let obsData = obsString.data(using: .utf8),
-              let obsObj = try? JSONSerialization.jsonObject(with: obsData) as? [String: Any]
-        else { return }
-
-        // 仅做最小兜底：日程创建/更新
-        if name == "schedules_create" || name == "schedules_update" {
-            if let data = obsObj["data"] as? [String: Any] {
-                if let event = parseScheduleEventFromToolData(data) {
-                    // 去重：同一日程可能还会通过 card 再发一次（card 优先）
-                    upsertScheduleEvent(event, into: &output, preferIncoming: false)
-                }
-            }
-            return
-        }
-
-        // 兜底：联系人创建/更新（把 observation.data 中的 impression 落到 ContactCard）
-        if name == "contacts_create" || name == "contacts_update" {
-            if let data = obsObj["data"] as? [String: Any] {
-                if let card = parseContactFromToolData(data) {
-                    output.contacts.append(card)
-#if DEBUG
-                    if BackendChatConfig.debugLogChunkSummary {
-                        print("🧩 [BackendChat->ToolContact] parsed name=\(card.name) company=\(card.company ?? "") id=\(card.id)")
-                    }
-#endif
-                }
-            }
-            return
-        }
+        // ✅ 链路简化：tool chunk 只负责“运行状态/日志”，不再解析 observation 来兜底生成卡片。
+        // 卡片必须来自后端 card chunk，避免出现“兜底卡片时间/字段不准”与重复覆盖复杂度。
+        _ = name
+        _ = status
     }
     
     /// scheduleEvents 去重合并：以 remoteId 优先，其次 id。可指定是否用 incoming 覆盖 existing。
@@ -676,9 +691,29 @@ final class BackendChatService {
         guard !title.isEmpty else { return nil }
         let description = (dict["description"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
 
+        // ✅ full_day 优先：按本地时区的 00:00~24:00 语义落地（endTime 存次日 00:00，但 UI 展示为 24:00）
+        if let fullDayStart = parseFullDayStart(dict["full_day"]) {
+            let end = Calendar.current.date(byAdding: .day, value: 1, to: fullDayStart) ?? fullDayStart.addingTimeInterval(86_400)
+            var event = ScheduleEvent(title: title, description: description, startTime: fullDayStart, endTime: end)
+            event.isFullDay = true
+            event.endTimeProvided = true
+            if let idString = dict["id"] as? String {
+                let trimmed = idString.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty { event.remoteId = trimmed }
+                if let id = UUID(uuidString: trimmed) { event.id = id }
+            } else if let idInt = dict["id"] as? Int {
+                event.remoteId = String(idInt)
+            } else if let idDouble = dict["id"] as? Double {
+                event.remoteId = String(Int(idDouble))
+            }
+            return event
+        }
+
         guard let start = parseISODate(dict["start_time"]) else {
 #if DEBUG
-            print("🧩 [BackendChat->ToolSchedule] parse start_time failed: \(String(describing: dict["start_time"])) title=\(title)")
+            if BackendChatConfig.debugLogChunkSummary {
+                print("🧩 [BackendChat->ToolSchedule] parse start_time failed: \(String(describing: dict["start_time"])) title=\(title)")
+            }
 #endif
             return nil
         }
@@ -698,7 +733,9 @@ final class BackendChatService {
             event.remoteId = String(Int(idDouble))
         }
 #if DEBUG
-        print("🧩 [BackendChat->ToolSchedule] parsed schedule id=\(event.id) title=\(event.title) start=\(event.startTime) end=\(event.endTime)")
+        if BackendChatConfig.debugLogChunkSummary {
+            print("🧩 [BackendChat->ToolSchedule] parsed schedule id=\(event.id) title=\(event.title) start=\(event.startTime) end=\(event.endTime)")
+        }
 #endif
         return event
     }
@@ -774,6 +811,25 @@ final class BackendChatService {
         let description = (dict["description"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !title.isEmpty else { return nil }
 
+        // ✅ full_day 优先：按本地时区的 00:00~24:00 语义落地
+        if let fullDayStart = parseFullDayStart(dict["full_day"]) {
+            let end = Calendar.current.date(byAdding: .day, value: 1, to: fullDayStart) ?? fullDayStart.addingTimeInterval(86_400)
+            var event = ScheduleEvent(title: title, description: description, startTime: fullDayStart, endTime: end)
+            event.isFullDay = true
+            event.endTimeProvided = true
+            // remoteId：尽量从后端字段拿到，用于后续拉详情
+            if let rid = dict.string(forAnyOf: ["id", "schedule_id", "remote_id", "remoteId"])?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !rid.isEmpty
+            {
+                event.remoteId = rid
+                if forceId == nil, let u = UUID(uuidString: rid) {
+                    event.id = u
+                }
+            }
+            if let id = forceId { event.id = id }
+            return event
+        }
+
         guard let start = parseISODate(dict["start_time"]) else { return nil }
         // end_time 可能返回 null：不要默认 +1h 误导展示
         let parsedEnd = parseISODate(dict["end_time"])
@@ -795,6 +851,20 @@ final class BackendChatService {
         return event
     }
 
+    /// 解析后端 `full_day`（形如 "yyyy-MM-dd"），并落到本地时区当天 00:00。
+    private static func parseFullDayStart(_ any: Any?) -> Date? {
+        guard let sAny = any as? String else { return nil }
+        let s = sAny.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !s.isEmpty else { return nil }
+        let posix = Locale(identifier: "en_US_POSIX")
+        let df = DateFormatter()
+        df.locale = posix
+        df.timeZone = TimeZone.current
+        df.dateFormat = "yyyy-MM-dd"
+        guard let d = df.date(from: s) else { return nil }
+        return Calendar.current.startOfDay(for: d)
+    }
+
     private static func parseContact(_ dict: [String: Any], forceId: UUID?) -> ContactCard? {
         let name = (dict["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !name.isEmpty else { return nil }
@@ -806,6 +876,12 @@ final class BackendChatService {
             title: dict.string(forAnyOf: ["title", "position", "job_title"]),
             phone: dict.string(forAnyOf: ["phone", "phone_number", "mobile"]),
             email: dict.string(forAnyOf: ["email"]),
+            // 生日：兼容多种后端字段命名（只认“独立字段”，不从 notes 解析）
+            birthday: dict.string(forAnyOf: ["birthday", "birth", "birthdate", "birth_date", "birthDay", "birth_day", "date_of_birth", "dob", "birthday_text", "birthdayText", "birthday_display", "birthdayDisplay"]),
+            gender: dict.string(forAnyOf: ["gender", "sex"]),
+            industry: dict.string(forAnyOf: ["industry"]),
+            location: dict.string(forAnyOf: ["location", "region", "city", "address"]),
+            relationshipType: dict.string(forAnyOf: ["relationship_type", "relationshipType", "relationship"]),
             notes: dict.string(forAnyOf: ["notes", "note", "remark"]),
             impression: dict.string(forAnyOf: ["impression"]),
             avatarData: nil,
@@ -882,12 +958,17 @@ final class BackendChatService {
         if let s = sAny as? String {
             let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { return nil }
+            
+            // ✅ 兼容后端常见：秒后小数位数不固定（如 2025-12-31T08:56:08.7990000）
+            // ISO8601DateFormatter(withFractionalSeconds) 在部分系统上对 >3 位小数解析不稳定，
+            // 这里先把小数统一归一化到毫秒（3 位），再走 ISO8601 解析。
+            let normalized = normalizeISO8601FractionalSecondsToMillis(trimmed)
             let f1 = ISO8601DateFormatter()
             f1.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            if let d = f1.date(from: trimmed) { return d }
+            if let d = f1.date(from: normalized) { return d }
             let f2 = ISO8601DateFormatter()
             f2.formatOptions = [.withInternetDateTime]
-            if let d = f2.date(from: trimmed) { return d }
+            if let d = f2.date(from: normalized) { return d }
             // 兼容后端常见“无时区 ISO8601”（按本地时区理解）
             let tz = TimeZone.current
             let posix = Locale(identifier: "en_US_POSIX")
@@ -897,7 +978,7 @@ final class BackendChatService {
                 df.locale = posix
                 df.timeZone = tz
                 df.dateFormat = format
-                return df.date(from: trimmed)
+                return df.date(from: normalized)
             }
 
             // e.g. 2025-12-25T10:00:00 / 2025-12-25T10:00
@@ -908,13 +989,44 @@ final class BackendChatService {
             // 兼容 "yyyy-MM-dd HH:mm:ss"
             if let d = tryFormat("yyyy-MM-dd HH:mm:ss") { return d }
 #if DEBUG
-            if trimmed.contains("T") || trimmed.contains("-") {
-                print("🧩 [BackendChat->DateParse] failed: '\(trimmed)'")
+            if normalized.contains("T") || normalized.contains("-") {
+                print("🧩 [BackendChat->DateParse] failed: '\(normalized)' (raw='\(trimmed)')")
             }
 #endif
             return nil
         }
         return nil
+    }
+
+    /// 把 ISO8601 时间字符串的小数秒归一化到 3 位（毫秒），保留时区后缀（Z / ±HH:mm）。
+    /// - 示例：`2025-12-31T08:56:08.7990000` -> `2025-12-31T08:56:08.799`
+    private static func normalizeISO8601FractionalSecondsToMillis(_ s: String) -> String {
+        var base = s
+        var tzSuffix = ""
+        
+        if base.hasSuffix("Z") {
+            tzSuffix = "Z"
+            base.removeLast()
+        } else if let r = base.range(of: "[+-]\\d{2}:\\d{2}$", options: .regularExpression) {
+            tzSuffix = String(base[r])
+            base.removeSubrange(r)
+        }
+        
+        guard let dot = base.firstIndex(of: ".") else { return s }
+        let fracStart = base.index(after: dot)
+        guard fracStart < base.endIndex else { return s }
+        let frac = String(base[fracStart..<base.endIndex])
+        guard !frac.isEmpty, frac.allSatisfy({ $0.isNumber }) else { return s }
+        
+        let millis: String = {
+            if frac.count == 3 { return frac }
+            if frac.count > 3 { return String(frac.prefix(3)) }
+            // 1~2 位：右侧补 0
+            return frac.padding(toLength: 3, withPad: "0", startingAt: 0)
+        }()
+        
+        let head = String(base[..<dot])
+        return head + "." + millis + tzSuffix
     }
     
     private static func extractTextFromResponseData(_ data: Data) -> String {
@@ -961,14 +1073,6 @@ final class BackendChatService {
                 "type": "text",
                 "text": text
             ])
-        } else {
-            // 如果只有图片，没有文字，也补一句占位，避免后端判空
-            if let images = userMessage?.images, !images.isEmpty {
-                content.append([
-                    "type": "text",
-                    "text": "请分析这张图片"
-                ])
-            }
         }
         
         // shortcut（可选）
@@ -1178,7 +1282,7 @@ final class BackendChatService {
 
 #if DEBUG
     private static func debugPrintChunkTypeSummary(_ chunks: [[String: Any]], source: String) {
-        guard BackendChatConfig.debugLogChunkSummary else { return }
+        guard BackendChatConfig.debugLogStreamEvents else { return }
         var counts: [String: Int] = [:]
         for c in chunks {
             let t = (c["type"] as? String) ?? "<nil>"

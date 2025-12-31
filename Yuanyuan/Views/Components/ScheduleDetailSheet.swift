@@ -431,6 +431,10 @@ struct ScheduleDetailSheet: View {
             Text(alertMessage ?? "")
         }
         .onAppear { speechRecognizer.requestAuthorization() }
+        .onAppear {
+            // 与数据模型对齐：后端 full_day -> isFullDay
+            uiAllDay = editedEvent.isFullDay
+        }
         .onReceive(speechRecognizer.$audioLevel) { self.audioPower = mapAudioLevelToPower($0) }
         // 远端详情覆盖 event 时：如果用户还没动过编辑，就同步草稿，避免“看起来没改但其实草稿和最新值不一致”
         .onChange(of: event) { _, newValue in
@@ -443,6 +447,18 @@ struct ScheduleDetailSheet: View {
         .onChange(of: editedEvent.description) { _, _ in hasUserEdited = true }
         .onChange(of: editedEvent.startTime) { _, _ in hasUserEdited = true }
         .onChange(of: editedEvent.endTime) { _, _ in hasUserEdited = true }
+        .onChange(of: uiAllDay) { _, newValue in
+            hasUserEdited = true
+            editedEvent.isFullDay = newValue
+            guard newValue else { return }
+            // 全天：将 start/end 对齐到当天 00:00 ~ 次日 00:00（UI 会展示为 24:00）
+            let cal = Calendar.current
+            let start = cal.startOfDay(for: editedEvent.startTime)
+            let end = cal.date(byAdding: .day, value: 1, to: start) ?? start.addingTimeInterval(86_400)
+            editedEvent.startTime = start
+            editedEvent.endTime = end
+            editedEvent.endTimeProvided = true
+        }
         .onChange(of: editedEvent.startTime) { _, newStart in
             if editedEvent.endTime < newStart {
                 editedEvent.endTime = newStart
@@ -551,6 +567,15 @@ struct ScheduleDetailSheet: View {
     }
     
     private func formatTime(_ date: Date) -> String {
+        // ✅ 全天展示语义：00:00 ~ 24:00（endTime 存为次日 00:00）
+        if editedEvent.isFullDay {
+            // 详情页的 endTime 调用也会走这里：用“是否为次日 00:00”判断显示 24:00
+            let cal = Calendar.current
+            let start = cal.startOfDay(for: editedEvent.startTime)
+            if date == start { return "00:00" }
+            let end = cal.date(byAdding: .day, value: 1, to: start) ?? start.addingTimeInterval(86_400)
+            if date == end { return "24:00" }
+        }
         let f = DateFormatter()
         f.dateFormat = "HH:mm"
         return f.string(from: date)

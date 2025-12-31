@@ -101,7 +101,9 @@ enum ContactService {
     
     private static func applyCommonHeaders(to request: inout URLRequest) throws {
         guard let sessionId = currentSessionId(), !sessionId.isEmpty else {
-            print("❌ [ContactService] 缺少 X-Session-Id：请先登录，或检查 AuthStore 是否成功保存 sessionId")
+            if debugLogsEnabled {
+                print("❌ [ContactService] 缺少 X-Session-Id：请先登录，或检查 AuthStore 是否成功保存 sessionId")
+            }
             throw ContactServiceError.missingSessionId
         }
         
@@ -137,10 +139,8 @@ enum ContactService {
 
     private static var debugLogsEnabled: Bool {
 #if DEBUG
-        return true
-#elseif targetEnvironment(simulator)
-        // ✅ 你要求用 iPhone 模拟器调试：在模拟器上默认开启网络原始日志，方便直接看后端字段
-        return true
+        // 默认关闭，避免联系人/日程列表刷爆控制台；需要时可在设置里打开 BackendChatConfig.debugLogFullResponse
+        return BackendChatConfig.debugLogFullResponse
 #else
         return false
 #endif
@@ -149,11 +149,8 @@ enum ContactService {
     /// 将完整原始日志落盘（避免 Xcode 控制台截断）
     private static var debugDumpLogsToFileEnabled: Bool {
 #if DEBUG
-        // 默认开启：Debug 下更需要“完整原始日志”
-        return true
-#elseif targetEnvironment(simulator)
-        // 模拟器默认也开启
-        return true
+        // 默认关闭；需要时可在设置里打开 BackendChatConfig.debugDumpResponseToFile
+        return BackendChatConfig.debugDumpResponseToFile
 #else
         return false
 #endif
@@ -178,9 +175,13 @@ enum ContactService {
         let url = dir.appendingPathComponent(filename)
         do {
             try text.data(using: .utf8)?.write(to: url, options: [.atomic])
-            print("🧾 [ContactService:\(tag)] 已落盘完整原始日志：\(url.path)")
+            if debugLogsEnabled {
+                print("🧾 [ContactService:\(tag)] 已落盘完整原始日志：\(url.path)")
+            }
         } catch {
-            print("⚠️ [ContactService:\(tag)] 日志落盘失败：\(error)")
+            if debugLogsEnabled {
+                print("⚠️ [ContactService:\(tag)] 日志落盘失败：\(error)")
+            }
         }
     }
     
@@ -390,6 +391,12 @@ enum ContactService {
             title: string(dict, ["position", "title", "job_title"]),
             phone: string(dict, ["phone", "phone_number", "mobile"]),
             email: string(dict, ["email"]),
+            // 生日：兼容多种后端字段命名（只认“独立字段”，不从 notes 解析）
+            birthday: string(dict, ["birthday", "birth", "birthdate", "birth_date", "birthDay", "birth_day", "date_of_birth", "dob", "birthday_text", "birthdayText", "birthday_display", "birthdayDisplay"]),
+            gender: string(dict, ["gender", "sex"]),
+            industry: string(dict, ["industry"]),
+            location: string(dict, ["location", "region", "city", "address"]),
+            relationshipType: string(dict, ["relationship_type", "relationshipType", "relationship"]),
             notes: string(dict, ["notes", "note", "remark"]),
             impression: string(dict, ["impression"]),
             avatarData: nil,
@@ -448,7 +455,9 @@ enum ContactService {
             let arr = extractContactArray(json)
             return arr.compactMap { parseContactCard($0, keepLocalId: nil) }
         } catch {
-            print("❌ [ContactService:list] threw error=\(error)")
+            if debugLogsEnabled {
+                print("❌ [ContactService:list] threw error=\(error)")
+            }
             throw error
         }
     }
@@ -507,7 +516,9 @@ enum ContactService {
             }
             throw ContactServiceError.parseFailed("unknown json shape")
         } catch {
-            print("❌ [ContactService:detail] threw error=\(error)")
+            if debugLogsEnabled {
+                print("❌ [ContactService:detail] threw error=\(error)")
+            }
             throw error
         }
     }
@@ -601,7 +612,9 @@ enum ContactService {
             await allPagesCache.invalidateAll()
             return nil
         } catch {
-            print("❌ [ContactService:update] threw error=\(error)")
+            if debugLogsEnabled {
+                print("❌ [ContactService:update] threw error=\(error)")
+            }
             throw error
         }
     }
@@ -666,7 +679,9 @@ enum ContactService {
             await allPagesCache.invalidateAll()
             return nil
         } catch {
-            print("❌ [ContactService:create] threw error=\(error)")
+            if debugLogsEnabled {
+                print("❌ [ContactService:create] threw error=\(error)")
+            }
             throw error
         }
     }
@@ -696,7 +711,9 @@ enum ContactService {
             await listCache.invalidateAll()
             await allPagesCache.invalidateAll()
         } catch {
-            print("❌ [ContactService:delete] threw error=\(error)")
+            if debugLogsEnabled {
+                print("❌ [ContactService:delete] threw error=\(error)")
+            }
             throw error
         }
     }

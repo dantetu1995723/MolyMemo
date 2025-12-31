@@ -141,17 +141,10 @@ enum BackendChatConfig {
     /// Debug：是否在控制台打印完整后端响应（可能很长，默认关闭）
     static var debugLogFullResponse: Bool {
         get {
-            // 默认策略：
-            // - 模拟器：默认开启（便于联调看“原始后端输出”）
-            // - 真机：默认关闭（避免刷爆控制台/泄漏敏感信息）
+            // 默认策略：统一默认关闭（避免刷爆控制台/泄漏敏感信息）
             if UserDefaults.standard.object(forKey: Keys.debugFullResponseLog) == nil {
-#if targetEnvironment(simulator)
-                UserDefaults.standard.set(true, forKey: Keys.debugFullResponseLog)
-                return true
-#else
                 UserDefaults.standard.set(false, forKey: Keys.debugFullResponseLog)
                 return false
-#endif
             }
             return UserDefaults.standard.bool(forKey: Keys.debugFullResponseLog)
         }
@@ -161,10 +154,10 @@ enum BackendChatConfig {
     /// Debug：是否将完整后端响应落盘到 Documents（避免 Xcode 控制台截断，默认开启）
     static var debugDumpResponseToFile: Bool {
         get {
-            // 如果从未设置过，默认 true
+            // 如果从未设置过，默认 false（避免意外落盘敏感信息）
             if UserDefaults.standard.object(forKey: Keys.debugDumpResponseToFile) == nil {
-                UserDefaults.standard.set(true, forKey: Keys.debugDumpResponseToFile)
-                return true
+                UserDefaults.standard.set(false, forKey: Keys.debugDumpResponseToFile)
+                return false
             }
             return UserDefaults.standard.bool(forKey: Keys.debugDumpResponseToFile)
         }
