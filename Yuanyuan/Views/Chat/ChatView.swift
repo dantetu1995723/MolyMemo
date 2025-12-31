@@ -142,9 +142,11 @@ struct ChatView: View {
                             Color.clear.frame(height: bottomInputBaseHeight)
                         }
                         .onTapGesture {
-                            if inputViewModel.isInputFocused {
-                                inputViewModel.isInputFocused = false
-                            }
+                            #if DEBUG
+                            DebugProbe.log("chat scroll tap -> dismiss keyboard/menu")
+                            #endif
+                            // 根治：不要通过 ViewModel 回写焦点（会与 @FocusState 打架形成抖动循环）
+                            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                             if inputViewModel.showMenu {
                                 withAnimation {
                                     inputViewModel.showMenu = false
@@ -386,6 +388,28 @@ struct ChatView: View {
                 )
             }
         }
+        // DEBUG：定位“点输入框卡死”——观察键盘通知是否在短时间内疯狂触发
+        #if DEBUG
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+            DebugProbe.throttled("keyboard.willShow", interval: 0.4) {
+                DebugProbe.log("keyboardWillShow")
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+            DebugProbe.throttled("keyboard.willHide", interval: 0.4) {
+                DebugProbe.log("keyboardWillHide")
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { note in
+            DebugProbe.throttled("keyboard.willChangeFrame", interval: 0.2) {
+                if let end = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect) {
+                    DebugProbe.log("keyboardWillChangeFrame end=\(end)")
+                } else {
+                    DebugProbe.log("keyboardWillChangeFrame (no frame)")
+                }
+            }
+        }
+        #endif
         .onAppear {
             withAnimation(.easeOut(duration: 0.5)) {
                 showContent = true
@@ -421,7 +445,7 @@ struct ChatView: View {
             inputViewModel.isAgentTyping = newValue
         }
         // 远端日程变更（创建/更新/删除）后强刷，确保通知栏及时更新
-        .onReceive(NotificationCenter.default.publisher(for: .remoteScheduleDidChange)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .remoteScheduleDidChange).receive(on: RunLoop.main)) { _ in
             refreshTodaySchedules(force: true)
         }
         // App 回到前台时强刷，确保“今天”切换或后台被改动后能及时同步
@@ -1093,7 +1117,9 @@ struct ChatView: View {
                 messages: appState.chatMessages,
                 mode: appState.currentMode,
                 onStructuredOutput: { output in
-                    appState.applyStructuredOutput(output, to: messageId)
+                    DispatchQueue.main.async {
+                        appState.applyStructuredOutput(output, to: messageId)
+                    }
                 },
                 onComplete: { finalText in
                     await appState.playResponse(finalText, for: messageId)
@@ -1105,13 +1131,35 @@ struct ChatView: View {
                     }
                 },
                 onError: { error in
-                    appState.handleStreamingError(error, for: messageId)
-                    appState.isAgentTyping = false
+                    DispatchQueue.main.async {
+                        appState.handleStreamingError(error, for: messageId)
+                        appState.isAgentTyping = false
+                    }
                 }
             )
         }
     }
 }
+
+#if DEBUG
+@MainActor
+private enum DebugProbe {
+    private static var lastPrintAt: [String: Date] = [:]
+    
+    static func log(_ message: String) {
+        print("⌨️ [ChatView] \(Date()) \(message)")
+    }
+    
+    static func throttled(_ key: String, interval: TimeInterval, _ block: () -> Void) {
+        let now = Date()
+        if let last = lastPrintAt[key], now.timeIntervalSince(last) < interval {
+            return
+        }
+        lastPrintAt[key] = now
+        block()
+    }
+}
+#endif
 
 // MARK: - Subviews
 
@@ -1466,7 +1514,9 @@ struct AIBubble: View {
                 messages: Array(appState.chatMessages.prefix(currentIndex)), // 只包含当前消息之前的消息
                 mode: appState.currentMode,
                 onStructuredOutput: { output in
-                    appState.applyStructuredOutput(output, to: messageId)
+                    DispatchQueue.main.async {
+                        appState.applyStructuredOutput(output, to: messageId)
+                    }
                 },
                 onComplete: { finalText in
                     await appState.playResponse(finalText, for: messageId)
@@ -1478,8 +1528,10 @@ struct AIBubble: View {
                     }
                 },
                 onError: { error in
-                    appState.handleStreamingError(error, for: messageId)
-                    appState.isAgentTyping = false
+                    DispatchQueue.main.async {
+                        appState.handleStreamingError(error, for: messageId)
+                        appState.isAgentTyping = false
+                    }
                 }
             )
         }
@@ -1829,7 +1881,9 @@ struct MessageActionButtons: View {
                 messages: Array(appState.chatMessages.prefix(currentIndex)), // 只包含当前消息之前的消息
                 mode: appState.currentMode,
                 onStructuredOutput: { output in
-                    appState.applyStructuredOutput(output, to: messageId)
+                    DispatchQueue.main.async {
+                        appState.applyStructuredOutput(output, to: messageId)
+                    }
                 },
                 onComplete: { finalText in
                     await appState.playResponse(finalText, for: messageId)
@@ -1841,8 +1895,10 @@ struct MessageActionButtons: View {
                     }
                 },
                 onError: { error in
-                    appState.handleStreamingError(error, for: messageId)
-                    appState.isAgentTyping = false
+                    DispatchQueue.main.async {
+                        appState.handleStreamingError(error, for: messageId)
+                        appState.isAgentTyping = false
+                    }
                 }
             )
         }

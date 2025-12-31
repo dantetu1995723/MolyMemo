@@ -61,6 +61,13 @@ enum ScheduleService {
     private static let defaultDetailTTL: TimeInterval = 600
     private static let defaultAllPagesTTL: TimeInterval = 120
     
+    /// 统一从主线程广播远端日程变更，避免 `.onReceive(NotificationCenter.publisher)` 在后台线程回调导致 SwiftUI/ObservableObject 警告与卡顿。
+    private static func postRemoteScheduleDidChange() async {
+        await MainActor.run {
+            NotificationCenter.default.post(name: .remoteScheduleDidChange, object: nil, userInfo: nil)
+        }
+    }
+    
     static func invalidateScheduleCaches() async {
         // 只让缓存失效，不要取消进行中的请求：
         // - ChatView / TodoListView 可能同时收到通知并发刷新
@@ -515,7 +522,7 @@ enum ScheduleService {
                 await detailCache.set(trimmed, value: event, ttl: defaultDetailTTL)
                 await listCache.invalidateAll()
                 await allPagesCache.invalidateAll()
-                NotificationCenter.default.post(name: .remoteScheduleDidChange, object: nil, userInfo: nil)
+                await postRemoteScheduleDidChange()
                 return event
             }
             let json = try decodeJSON(data)
@@ -524,21 +531,21 @@ enum ScheduleService {
                     await detailCache.set(trimmed, value: ev, ttl: defaultDetailTTL)
                     await listCache.invalidateAll()
                     await allPagesCache.invalidateAll()
-                    NotificationCenter.default.post(name: .remoteScheduleDidChange, object: nil, userInfo: nil)
+                    await postRemoteScheduleDidChange()
                     return ev
                 }
                 if let ev = parseEventDict(dict, keepLocalId: event.id) {
                     await detailCache.set(trimmed, value: ev, ttl: defaultDetailTTL)
                     await listCache.invalidateAll()
                     await allPagesCache.invalidateAll()
-                    NotificationCenter.default.post(name: .remoteScheduleDidChange, object: nil, userInfo: nil)
+                    await postRemoteScheduleDidChange()
                     return ev
                 }
             }
             await detailCache.set(trimmed, value: event, ttl: defaultDetailTTL)
             await listCache.invalidateAll()
             await allPagesCache.invalidateAll()
-            NotificationCenter.default.post(name: .remoteScheduleDidChange, object: nil, userInfo: nil)
+            await postRemoteScheduleDidChange()
             return event
         } catch {
             print("❌ [ScheduleService:update] threw error=\(error)")
@@ -571,7 +578,7 @@ enum ScheduleService {
             await detailCache.invalidate(trimmed)
             await listCache.invalidateAll()
             await allPagesCache.invalidateAll()
-            NotificationCenter.default.post(name: .remoteScheduleDidChange, object: nil, userInfo: nil)
+            await postRemoteScheduleDidChange()
         } catch {
             print("❌ [ScheduleService:delete] threw error=\(error)")
             throw error

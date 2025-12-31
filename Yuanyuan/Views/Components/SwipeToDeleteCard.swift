@@ -38,6 +38,15 @@ struct SwipeToDeleteCard<Content: View>: View {
         min(1.0, max(0.0, -offsetX / maxRevealOffset))
     }
     
+    private func handleTap() {
+        if isLoading { return }
+        if isRevealed {
+            closeSwipe()
+        } else {
+            onTap()
+        }
+    }
+    
     var body: some View {
         ZStack(alignment: .trailing) {
             // 只有滑动时才显示删除背景
@@ -51,20 +60,17 @@ struct SwipeToDeleteCard<Content: View>: View {
                 .offset(x: offsetX)
                 .overlay(loadingOverlay) // 叠加加载效果
         }
-        // 这里必须把“点击”挂到容器上（而不是 content 上），因为我们会用一个透明的 UIKit Pan overlay 来捕获左滑。
+        // 注意：这里不能依赖 SwiftUI 的 onTapGesture，因为我们使用了 UIKit overlay 来捕获横向滑动；
+        // overlay 会成为最上层的 hit-test 目标，导致 SwiftUI tap 偶发/经常收不到触摸。
+        // 因此把“点击”也交给同一个 UIKit overlay 处理（见 HorizontalPanCaptureView 的 onTap）。
         .contentShape(Rectangle())
-        .onTapGesture {
-            if isLoading { return }
-            if isRevealed {
-                closeSwipe()
-            } else {
-                onTap()
-            }
-        }
         // 使用 UIKit 的 UIPanGestureRecognizer，仅在“横向”时才会 begin，避免与 ScrollView 的纵向滚动互相抢手势
         .overlay {
             HorizontalPanCaptureView(
                 isEnabled: !isLoading,
+                onTap: {
+                    handleTap()
+                },
                 onChanged: { dx, _ in
                     if !isSwiping {
                         isSwiping = true
@@ -221,6 +227,7 @@ struct SwipeToDeleteCard<Content: View>: View {
 // MARK: - UIKit horizontal pan (only begins when horizontal-dominant)
 private struct HorizontalPanCaptureView: UIViewRepresentable {
     var isEnabled: Bool
+    var onTap: () -> Void
     var onChanged: (CGFloat, CGFloat) -> Void // dx, dy
     var onEnded: (CGFloat, CGFloat, CGFloat, CGFloat) -> Void // dx, dy, vx, vy
     
@@ -234,6 +241,14 @@ private struct HorizontalPanCaptureView: UIViewRepresentable {
         pan.delegate = context.coordinator
         pan.cancelsTouchesInView = false // 不要吞掉点击
         v.addGestureRecognizer(pan)
+
+        // Tap：用于触发“打开详情/收起滑动”。因为 pan overlay 会覆盖在最上层，所以 tap 也必须在这里处理。
+        let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
+        tap.delegate = context.coordinator
+        tap.cancelsTouchesInView = false
+        // 横滑时不要触发 tap
+        tap.require(toFail: pan)
+        v.addGestureRecognizer(tap)
         
         return v
     }
@@ -276,6 +291,13 @@ private struct HorizontalPanCaptureView: UIViewRepresentable {
                 parent.onEnded(t.x, t.y, v.x, v.y)
             default:
                 break
+            }
+        }
+
+        @objc func handleTap(_ tap: UITapGestureRecognizer) {
+            guard parent.isEnabled else { return }
+            if tap.state == .ended {
+                parent.onTap()
             }
         }
     }

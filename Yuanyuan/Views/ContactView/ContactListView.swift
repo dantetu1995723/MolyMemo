@@ -80,18 +80,16 @@ struct ContactListView: View {
                                 ForEach(groupedContacts, id: \.0) { initial, contacts in
                                     Section(header: SectionHeaderView(letter: initial)) {
                                         ForEach(contacts) { contact in
-                                            SwipeToDeleteCard(
-                                                isLoading: deletingContactIds.contains(contact.id),
-                                                onTap: {
-                                                    HapticFeedback.light()
-                                                    selectedContact = contact
-                                                },
+                                            ContactRowView(
+                                                contact: contact,
+                                                isDeleting: deletingContactIds.contains(contact.id),
                                                 onDelete: {
-                                                    HapticFeedback.medium()
                                                     requestDelete(contact)
                                                 }
-                                            ) {
-                                                ContactRowView(contact: contact)
+                                            )
+                                            .onTapGesture {
+                                                HapticFeedback.light()
+                                                selectedContact = contact
                                             }
                                             .id(contact.id)
                                         }
@@ -328,6 +326,8 @@ struct SectionHeaderView: View {
 struct ContactRowView: View {
     @EnvironmentObject var appState: AppState
     @Bindable var contact: Contact
+    var isDeleting: Bool = false
+    var onDelete: () -> Void
 
     // 主题色 - 统一灰色
     private let themeColor = Color(white: 0.55)
@@ -448,10 +448,27 @@ struct ContactRowView: View {
             
             Spacer()
             
-            // 右箭头
-            Image(systemName: "chevron.right")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(themeColor.opacity(0.3))
+            // 现代感删除按钮
+            ZStack {
+                if isDeleting {
+                    ProgressView()
+                        .tint(.red)
+                        .scaleEffect(0.8)
+                } else {
+                    Button {
+                        HapticFeedback.medium()
+                        onDelete()
+                    } label: {
+                        Image(systemName: "trash")
+                            .font(.system(size: 14))
+                            .foregroundColor(.red.opacity(0.5))
+                            .frame(width: 32, height: 32)
+                            .background(Circle().fill(Color.red.opacity(0.05)))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .frame(width: 32)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)

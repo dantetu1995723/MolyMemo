@@ -1029,7 +1029,9 @@ struct YuanyuanHomeView: View {
                 messages: appState.chatMessages,
                 mode: appState.currentMode,
                 onStructuredOutput: { output in
-                    self.appState.applyStructuredOutput(output, to: agentMessageId)
+                    DispatchQueue.main.async {
+                        self.appState.applyStructuredOutput(output, to: agentMessageId)
+                    }
                 },
                 onComplete: { finalText in
                     await self.appState.playResponse(finalText, for: agentMessageId)
@@ -1040,8 +1042,10 @@ struct YuanyuanHomeView: View {
                     }
                 },
                 onError: { error in
-                    self.appState.handleStreamingError(error, for: agentMessageId)
-                    self.appState.isAgentTyping = false
+                    DispatchQueue.main.async {
+                        self.appState.handleStreamingError(error, for: agentMessageId)
+                        self.appState.isAgentTyping = false
+                    }
                 }
             )
         } else {
@@ -1063,7 +1067,9 @@ struct YuanyuanHomeView: View {
                 messages: appState.chatMessages,
                 mode: appState.currentMode,
                 onStructuredOutput: { output in
-                    self.appState.applyStructuredOutput(output, to: agentMessageId)
+                    DispatchQueue.main.async {
+                        self.appState.applyStructuredOutput(output, to: agentMessageId)
+                    }
                 },
                 onComplete: { finalText in
                     await self.appState.playResponse(finalText, for: agentMessageId)
@@ -1074,8 +1080,10 @@ struct YuanyuanHomeView: View {
                     }
                 },
                 onError: { error in
-                    self.appState.handleStreamingError(error, for: agentMessageId)
-                    self.appState.isAgentTyping = false
+                    DispatchQueue.main.async {
+                        self.appState.handleStreamingError(error, for: agentMessageId)
+                        self.appState.isAgentTyping = false
+                    }
                 }
             )
         }
@@ -1374,7 +1382,9 @@ struct YuanyuanHomeView: View {
                 messages: appState.chatMessages,
                 mode: appState.currentMode,
                 onStructuredOutput: { output in
-                    appState.applyStructuredOutput(output, to: messageId)
+                    DispatchQueue.main.async {
+                        appState.applyStructuredOutput(output, to: messageId)
+                    }
                 },
                 onComplete: { finalText in
                     await self.appState.playResponse(finalText, for: messageId)

@@ -13,6 +13,8 @@ private struct TodoListScrollOffsetKey: PreferenceKey {
 // MARK: - 后端日程行样式（轻量）
 private struct RemoteScheduleRow: View {
     let event: ScheduleEvent
+    var isDeleting: Bool = false
+    var onDelete: () -> Void
     
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
@@ -46,11 +48,42 @@ private struct RemoteScheduleRow: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
+            
+            // 现代感删除按钮：直接内置
+            deleteButton
         }
         .padding(.vertical, 14)
         .padding(.horizontal, 14)
         .background(cardBackground())
         .overlay(cardBorder())
+    }
+
+    @ViewBuilder
+    private var deleteButton: some View {
+        ZStack {
+            if isDeleting {
+                ProgressView()
+                    .tint(.red)
+                    .scaleEffect(0.8)
+            } else {
+                Button {
+                    HapticFeedback.medium()
+                    onDelete()
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.red.opacity(0.6))
+                        .frame(width: 32, height: 32)
+                        .background(
+                            Circle()
+                                .fill(Color.red.opacity(0.05))
+                        )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .frame(width: 32)
+        .padding(.leading, 4)
     }
     
     private func timePill() -> some View {
@@ -259,7 +292,10 @@ struct TodoListView: View {
             //
             // 改为 simultaneousGesture：不阻塞子视图手势，只在 handleDragChange/End 内部按需处理“纵向”拖拽即可。
             .simultaneousGesture(
-                DragGesture()
+                // 关键：这里一定要设置 minimumDistance。
+                // 否则用户“点击列表项”时手指的轻微抖动也会被识别成拖拽，
+                // 进而导致 SwipeToDeleteCard 的 onTap（打开详情）经常不触发，体感就是“点不进去详情”。
+                DragGesture(minimumDistance: 18)
                     .onChanged { value in
                         handleDragChange(value)
                     }
@@ -324,7 +360,7 @@ struct TodoListView: View {
             // 进入工具箱「日程」页即自动刷新（无需按钮）
             Task { await reloadRemoteSchedulesForSelectedDate() }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .remoteScheduleDidChange)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .remoteScheduleDidChange).receive(on: RunLoop.main)) { _ in
             // 远端日程创建/更新/删除后，强制从网络刷新（绕过缓存），确保“今日行程”及时更新
             Task { await reloadRemoteSchedulesForSelectedDate(forceRefresh: true) }
         }
@@ -542,12 +578,17 @@ struct TodoListView: View {
                 if !remoteEvents.isEmpty {
                     ForEach(remoteEvents) { e in
                         let rid = e.remoteId ?? ""
-                        SwipeToDeleteCard(
-                            isLoading: deletingRemoteIds.contains(rid),
-                            onTap: { remoteDetailSelection = e },
-                            onDelete: { requestDeleteRemoteEvent(e) }
-                        ) {
-                            RemoteScheduleRow(event: e)
+                        RemoteScheduleRow(
+                            event: e,
+                            isDeleting: deletingRemoteIds.contains(rid),
+                            onDelete: {
+                                requestDeleteRemoteEvent(e)
+                            }
+                        )
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            HapticFeedback.light()
+                            remoteDetailSelection = e
                         }
                     }
                 } else if !remoteIsLoading {

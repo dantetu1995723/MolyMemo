@@ -1,5 +1,6 @@
 import SwiftUI
 import PhotosUI
+import UIKit
 
 struct ChatInputView: View {
     @ObservedObject var viewModel: ChatInputViewModel
@@ -12,8 +13,8 @@ struct ChatInputView: View {
     @State private var isPressing = false
     @State private var pressBeganAt: Date?
     @State private var didMoveDuringPress = false
-    // 仅允许“用户触摸触发”的聚焦：用于拦截 SwiftUI/系统在状态切换时的自动 focus
-    @State private var lastUserInteractionAt: Date?
+    /// 更灵敏的“按住说话”触发：用任务延迟判定长按，避免与 TapGesture/系统长按竞争
+    @State private var pendingHoldToTalkTask: Task<Void, Never>?
     
     var body: some View {
         let isLocked = viewModel.isAgentTyping
@@ -38,7 +39,10 @@ struct ChatInputView: View {
                 
                 // Right: Toolbox Button
                 if !isLocked && viewModel.inputText.isEmpty && viewModel.selectedImage == nil {
-                    ToolboxButton(onTap: { viewModel.onBoxTap?() })
+                    ToolboxButton(onTap: {
+                        DebugProbe.log("ToolboxButton tapped")
+                        viewModel.onBoxTap?()
+                    })
                         .opacity(viewModel.isRecording ? 0 : 1)
                         .onDisappear {
                             // 隐藏时清空 frame，避免录音动画误认存在外部按钮
@@ -48,13 +52,24 @@ struct ChatInputView: View {
                             GeometryReader { geo in
                                 Color.clear
                                     .onAppear {
+                                        // 输入框聚焦时不需要 toolbox frame（录音动画也不会触发），
+                                        // 避免键盘动画期间 global frame 高频变化导致 UI 自激刷新。
+                                        guard !isFocused else { return }
+                                        let f = normalizeFrame(geo.frame(in: .global))
                                         DispatchQueue.main.async {
-                                            viewModel.toolboxFrame = geo.frame(in: .global)
+                                            if viewModel.toolboxFrame != f {
+                                                viewModel.toolboxFrame = f
+                                            }
                                         }
                                     }
                                     .onChange(of: geo.frame(in: .global)) { _, newFrame in
+                                        // 同上：聚焦时停止上报，且做像素取整 + 变更才写入，避免高频状态更新卡死主线程。
+                                        guard !isFocused else { return }
+                                        let f = normalizeFrame(newFrame)
                                         DispatchQueue.main.async {
-                                            viewModel.toolboxFrame = newFrame
+                                            if viewModel.toolboxFrame != f {
+                                                viewModel.toolboxFrame = f
+                                            }
                                         }
                                     }
                             }
@@ -81,13 +96,13 @@ struct ChatInputView: View {
         .animation(.spring(response: 0.3, dampingFraction: 1.0), value: viewModel.selectedImage)
         .animation(.easeInOut(duration: 0.2), value: viewModel.isRecording)
         .onChange(of: viewModel.isAgentTyping) { _, isTyping in
+            DebugProbe.log("ChatInputView.isAgentTyping -> \(isTyping)")
             // AI 输入时：除“中止”外全部禁用，主动收起键盘/菜单/建议，并打断长按录音手势
             guard isTyping else { return }
             isPressing = false
             pressBeganAt = nil
             didMoveDuringPress = false
             if isFocused { isFocused = false }
-            if viewModel.isInputFocused { viewModel.isInputFocused = false }
             if viewModel.showMenu {
                 withAnimation { viewModel.showMenu = false }
             }
@@ -97,28 +112,9 @@ struct ChatInputView: View {
         }
         // Bind Focus State
         .onChange(of: isFocused) { _, focused in
-            // 全手动 focus：如果没有“最近的用户触摸”，则拒绝自动聚焦
-            if focused {
-                let now = Date()
-                let isUserInitiated = lastUserInteractionAt.map { now.timeIntervalSince($0) < 0.35 } ?? false
-                if !isUserInitiated {
-                    // 用 async 避免在同一轮更新里和 SwiftUI 争抢焦点产生抖动
-                    DispatchQueue.main.async {
-                        self.isFocused = false
-                        self.viewModel.isInputFocused = false
-                    }
-                    return
-                }
-            }
-            viewModel.isInputFocused = focused
+            DebugProbe.log("ChatInputView.isFocused -> \(focused)")
             if focused {
                 withAnimation { viewModel.showMenu = false }
-            }
-        }
-        // 只允许“程序控制失焦”；聚焦必须由用户触发（见上方拦截逻辑）
-        .onChange(of: viewModel.isInputFocused) { _, focused in
-            if !focused, isFocused {
-                isFocused = false
             }
         }
         // Handle Photo Selection
@@ -140,8 +136,6 @@ struct ChatInputView: View {
         let isLocked = viewModel.isAgentTyping
         
         // 只在“输入框未聚焦且为空”的状态启用按住说话，避免和正常滚动/系统返回桌面手势冲突。
-        // 关键：录音开始后不要把手势移除，否则 SwiftUI 会取消正在进行的 long-press，
-        // 触发 pressing(false) 从而立刻 stopRecording，造成“蓝色球闪一下又退回”的问题。
         let holdToTalkEnabled =
             !isLocked &&
             !isFocused &&
@@ -176,6 +170,9 @@ struct ChatInputView: View {
                 // 左侧加号：仅在没有图片时显示
                 if viewModel.selectedImage == nil {
                     Button(action: {
+                        // 打开菜单前先收起键盘（根治：避免通过 VM 回写焦点导致循环）
+                        if isFocused { isFocused = false }
+                        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                         viewModel.toggleMenu()
                     }) {
                         Image(systemName: "plus.circle")
@@ -193,25 +190,92 @@ struct ChatInputView: View {
                     Spacer().frame(width: 12)
                 }
                 
-                // 关键：当输入框未聚焦且为空时，我们用外层手势承接“长按录音”，
-                // 禁止 TextField 自己接收触摸，避免系统的文字长按放大镜（你看到的水滴玻璃球）。
-                let interceptTextFieldTouches =
-                    !isFocused &&
-                    viewModel.inputText.isEmpty &&
-                    viewModel.selectedImage == nil &&
-                    !viewModel.isRecording &&
-                    !isLocked
+                // 当输入框未聚焦且为空时：
+                // - 用“覆盖在 TextField 上方”的手势面板承接“按住说话/轻点聚焦”
+                // - 禁用 TextField 本体 hitTesting，避免系统文字长按放大镜干扰
+                //
+                // 注意：不能把手势挂在 TextField.background 上再对 TextField allowsHitTesting(false)，
+                // 否则背景也会一起失效（导致点击聚焦/长按录音都失灵）。
+                // 手势面板需要在两种状态可命中：
+                // 1) 未录音且满足 holdToTalkEnabled：用于“轻点聚焦 / 按住录音”
+                // 2) 已进入录音：用于“松手结束 / 上划取消”
+                let gestureOverlayEnabled =
+                    (!isLocked) && (holdToTalkEnabled || viewModel.isRecording)
                 
-                TextField("发送消息或按住说话", text: $viewModel.inputText, axis: .vertical)
-                    .font(.system(size: 16))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 12)
-                    .frame(minHeight: 52)
-                    .lineLimit(3, reservesSpace: false) // 限制最大3行，超过后滚动
-                    .focused($isFocused)
-                    .allowsHitTesting(!interceptTextFieldTouches)
-                    .disabled(isLocked)
-                    .opacity(isLocked ? 0.6 : 1)
+                ZStack {
+                    TextField("发送消息或按住说话", text: $viewModel.inputText, axis: .vertical)
+                        .font(.system(size: 16))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 12)
+                        .frame(height: 52)
+                        .lineLimit(3, reservesSpace: false) // 限制最大3行，超过后滚动
+                        .focused($isFocused)
+                        .allowsHitTesting(!gestureOverlayEnabled)
+                        .disabled(isLocked)
+                        .opacity(isLocked ? 0.6 : 1)
+                    
+                    // 手势面板：只在 holdToTalkEnabled 时开启
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .allowsHitTesting(gestureOverlayEnabled)
+                        // 轻点：进入输入（聚焦）
+                        // 用 highPriorityGesture 确保不会触发上层 ScrollView 的 dismiss tap
+                        .highPriorityGesture(
+                            TapGesture().onEnded {
+                                guard holdToTalkEnabled, !viewModel.isRecording else { return }
+                                DebugProbe.log("HoldToTalk overlay tap -> focus")
+                                isFocused = true
+                            }
+                        )
+                        // 根治：用“按下即进入 tracking”的 DragGesture(minDistance:0) 来实现更灵敏的按住说话。
+                        // - 按下后 0.18s 仍未松手 → 进入录音
+                        // - 0.18s 内松手且无明显移动 → 视为轻点聚焦
+                        // - 录音中拖动上划 → 取消提示；松手 → stop/cancel
+                        .highPriorityGesture(
+                            DragGesture(minimumDistance: 0)
+                                .onChanged { value in
+                                    // 第一次 onChanged 视为按下
+                                    if !isPressing {
+                                        // 开始 tracking
+                                        handleHoldToTalkPressingChanged(true)
+                                        
+                                        // 取消旧任务，启动新的“延迟进入录音”
+                                        pendingHoldToTalkTask?.cancel()
+                                        pendingHoldToTalkTask = Task { @MainActor in
+                                            try? await Task.sleep(nanoseconds: 180_000_000) // 0.18s
+                                            guard !Task.isCancelled else { return }
+                                            // 如果这时仍在按住，且还没开始录音，则进入录音
+                                            if isPressing && !viewModel.isRecording {
+                                                DebugProbe.log("HoldToTalk trigger -> startRecording()")
+                                                handleHoldToTalkLongPressRecognized()
+                                            }
+                                        }
+                                    }
+                                    
+                                    // 移动阈值：10pt 以上才算“发生明显移动”
+                                    let dragPoint = CGPoint(x: value.translation.width, y: value.translation.height)
+                                    if abs(dragPoint.x) > 10 || abs(dragPoint.y) > 10 {
+                                        handleHoldToTalkDragChanged(value)
+                                    }
+                                }
+                                .onEnded { value in
+                                    pendingHoldToTalkTask?.cancel()
+                                    pendingHoldToTalkTask = nil
+                                    
+                                    // 结束按压（会在内部决定：stop/cancel 还是 quick tap focus）
+                                    handleHoldToTalkPressingChanged(false)
+                                    
+                                    // 兜底：结束时把移动状态清掉
+                                    if !isPressing {
+                                        didMoveDuringPress = false
+                                    }
+                                    
+                                    _ = value // suppress unused warning in some toolchains
+                                }
+                        )
+                }
+                // 关键：固定输入区域高度，避免 Color.clear 这类“可扩张视图”把整行撑大
+                .frame(height: 52)
                 
                 // Inside right: Action Button (Stop OR Send)
                 if viewModel.isAgentTyping {
@@ -232,7 +296,12 @@ struct ChatInputView: View {
                     .padding(.trailing, 8)
                     .padding(.bottom, 10)
                 } else if !viewModel.inputText.isEmpty || viewModel.selectedImage != nil {
-                    Button(action: viewModel.sendMessage) {
+                    Button(action: {
+                        // 发送前收起键盘，避免焦点状态来回抖动
+                        if isFocused { isFocused = false }
+                        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                        viewModel.sendMessage()
+                    }) {
                         Image(systemName: "paperplane.fill")
                             .font(.system(size: 14))
                             .foregroundColor(.white)
@@ -244,43 +313,15 @@ struct ChatInputView: View {
                 }
             }
         }
-        .modifier(InputContainerFrameReporter(viewModel: viewModel))
+        .modifier(InputContainerFrameReporter(viewModel: viewModel, isFocused: isFocused))
         .overlay(
             RoundedRectangle(cornerRadius: 24)
                 .inset(by: 0.5)
                 .stroke(Color(red: 0.88, green: 0.88, blue: 0.88), lineWidth: 1)
         )
         
-        if holdToTalkEnabled {
-            base
-                // 真正的长按：最大移动距离限制可以有效避免“上滑回桌面/关掉界面”时误触发录音
-                .onLongPressGesture(
-                    minimumDuration: 0.3,
-                    maximumDistance: 12,
-                    pressing: { isDown in
-                        handleHoldToTalkPressingChanged(isDown)
-                    },
-                    perform: {
-                        handleHoldToTalkLongPressRecognized()
-                    }
-                )
-                // 仅用于：
-                // - 识别“按住过程中发生了明显移动”，避免把滑动当成轻点去 focus
-                // - 录音时用于“上划取消”的实时判定
-                .simultaneousGesture(
-                    DragGesture(minimumDistance: 10)
-                        .onChanged { value in
-                            handleHoldToTalkDragChanged(value)
-                        }
-                        .onEnded { _ in
-                            if !isPressing {
-                                didMoveDuringPress = false
-                            }
-                        }
-                )
-        } else {
-            base
-        }
+        // 始终返回同一个 base（保持视图树稳定，避免焦点丢失/抖动）
+        base
     }
     
     // MARK: - Gesture Logic
@@ -289,8 +330,6 @@ struct ChatInputView: View {
         guard !viewModel.isAgentTyping else { return }
         
         if isDown {
-            // 记录一次用户触摸（用于允许随后的聚焦）
-            lastUserInteractionAt = Date()
             isPressing = true
             pressBeganAt = Date()
             didMoveDuringPress = false
@@ -320,7 +359,6 @@ struct ChatInputView: View {
         {
             let isQuickTap = beganAt.map { Date().timeIntervalSince($0) < 0.25 } ?? true
             if isQuickTap {
-                lastUserInteractionAt = Date()
                 isFocused = true
             }
         }
@@ -371,6 +409,7 @@ struct ChatInputView: View {
 /// 把输入框 frame 上报给 VM（避免把这段逻辑散落在主 view 里导致类型推断变慢）
 private struct InputContainerFrameReporter: ViewModifier {
     @ObservedObject var viewModel: ChatInputViewModel
+    var isFocused: Bool
     
     func body(content: Content) -> some View {
         content.background(
@@ -380,13 +419,40 @@ private struct InputContainerFrameReporter: ViewModifier {
                     GeometryReader { geo in
                         Color.clear
                             .onAppear {
+                                // 输入框聚焦时 frame 会跟随键盘动画不断抖动；
+                                // 录音动画只在“未聚焦”长按触发，所以这里聚焦时停止上报。
+                                guard !isFocused else {
+                                    DebugProbe.throttled("ChatInputView.inputFrame.ignored", interval: 0.8) {
+                                        DebugProbe.log("ChatInputView.inputFrame ignored (isFocused=true)")
+                                    }
+                                    return
+                                }
+                                let f = normalizeFrame(geo.frame(in: .global))
                                 DispatchQueue.main.async {
-                                    viewModel.inputFrame = geo.frame(in: .global)
+                                    if viewModel.inputFrame != f {
+                                        viewModel.inputFrame = f
+                                        DebugProbe.throttled("ChatInputView.inputFrame.update", interval: 0.2) {
+                                            DebugProbe.log("ChatInputView.inputFrame -> \(f)")
+                                        }
+                                    }
                                 }
                             }
                             .onChange(of: geo.frame(in: .global)) { _, newFrame in
+                                // 同上：聚焦时停止上报，并做像素取整 + 变更才写入，避免高频状态更新。
+                                guard !isFocused else {
+                                    DebugProbe.throttled("ChatInputView.inputFrame.ignored", interval: 0.8) {
+                                        DebugProbe.log("ChatInputView.inputFrame ignored (isFocused=true)")
+                                    }
+                                    return
+                                }
+                                let f = normalizeFrame(newFrame)
                                 DispatchQueue.main.async {
-                                    viewModel.inputFrame = newFrame
+                                    if viewModel.inputFrame != f {
+                                        viewModel.inputFrame = f
+                                        DebugProbe.throttled("ChatInputView.inputFrame.update", interval: 0.2) {
+                                            DebugProbe.log("ChatInputView.inputFrame -> \(f)")
+                                        }
+                                    }
                                 }
                             }
                     }
@@ -394,3 +460,39 @@ private struct InputContainerFrameReporter: ViewModifier {
         )
     }
 }
+
+// MARK: - Frame Helpers
+
+/// 把 frame 按屏幕像素取整，减少键盘动画/浮点误差导致的“微抖动”更新风暴。
+private func normalizeFrame(_ rect: CGRect) -> CGRect {
+    let scale = max(UIScreen.main.scale, 1)
+    func r(_ v: CGFloat) -> CGFloat { (v * scale).rounded() / scale }
+    return CGRect(x: r(rect.origin.x), y: r(rect.origin.y), width: r(rect.size.width), height: r(rect.size.height))
+}
+
+// MARK: - Debug
+
+#if DEBUG
+@MainActor
+private enum DebugProbe {
+    private static var lastPrintAt: [String: Date] = [:]
+    
+    static func log(_ message: String) {
+        print("🧩 [ChatInput] \(Date()) \(message)")
+    }
+    
+    static func throttled(_ key: String, interval: TimeInterval, _ block: () -> Void) {
+        let now = Date()
+        if let last = lastPrintAt[key], now.timeIntervalSince(last) < interval {
+            return
+        }
+        lastPrintAt[key] = now
+        block()
+    }
+}
+#else
+private enum DebugProbe {
+    static func log(_ message: String) {}
+    static func throttled(_ key: String, interval: TimeInterval, _ block: () -> Void) {}
+}
+#endif

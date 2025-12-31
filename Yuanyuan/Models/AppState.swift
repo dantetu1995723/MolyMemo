@@ -867,10 +867,42 @@ class AppState: ObservableObject {
         guard !ids.isEmpty else { return }
 
         do {
-            let scheduleBatches = try modelContext.fetch(FetchDescriptor<StoredScheduleCardBatch>())
-            let contactBatches = try modelContext.fetch(FetchDescriptor<StoredContactCardBatch>())
-            let invoiceBatches = try modelContext.fetch(FetchDescriptor<StoredInvoiceCardBatch>())
-            let meetingBatches = try modelContext.fetch(FetchDescriptor<StoredMeetingCardBatch>())
+            // 注意：SwiftData 当前对 “optional + contains(IN) + nil 兜底(三元/??)” 的 SQL 生成不完整，
+            // 会触发 `unimplemented SQL generation for predicate` 崩溃（你截图中的错误）。
+            //
+            // 这里改为：先用「简单、可 SQL 化」的 predicate 缩小范围（按时间），
+            // 再在内存里用 ids 做精确过滤，既避免全表拉取，也避免 SQL 生成崩溃。
+            let minTs = messages.map(\.timestamp).min() ?? Date.distantPast
+            let maxTs = messages.map(\.timestamp).max() ?? Date.distantFuture
+
+            let scheduleBatches = try modelContext.fetch(
+                FetchDescriptor<StoredScheduleCardBatch>(
+                    predicate: #Predicate<StoredScheduleCardBatch> { batch in
+                        batch.createdAt >= minTs && batch.createdAt <= maxTs
+                    }
+                )
+            )
+            let contactBatches = try modelContext.fetch(
+                FetchDescriptor<StoredContactCardBatch>(
+                    predicate: #Predicate<StoredContactCardBatch> { batch in
+                        batch.createdAt >= minTs && batch.createdAt <= maxTs
+                    }
+                )
+            )
+            let invoiceBatches = try modelContext.fetch(
+                FetchDescriptor<StoredInvoiceCardBatch>(
+                    predicate: #Predicate<StoredInvoiceCardBatch> { batch in
+                        batch.createdAt >= minTs && batch.createdAt <= maxTs
+                    }
+                )
+            )
+            let meetingBatches = try modelContext.fetch(
+                FetchDescriptor<StoredMeetingCardBatch>(
+                    predicate: #Predicate<StoredMeetingCardBatch> { batch in
+                        batch.createdAt >= minTs && batch.createdAt <= maxTs
+                    }
+                )
+            )
 
             var scheduleMap: [UUID: [ScheduleEvent]] = [:]
             var contactMap: [UUID: [ContactCard]] = [:]
@@ -1081,9 +1113,9 @@ class AppState: ObservableObject {
     func refreshChatMessagesFromStorageIfNeeded(modelContext: ModelContext, limit: Int = 80) {
         let cap = max(10, limit)
 
-        // 1) 首次：内存为空 -> 加载全部本地历史
+        // 1) 首次：内存为空 -> 只加载最近 cap 条，避免首次进入聊天室同步拉全量导致卡顿
         if chatMessages.isEmpty {
-            loadMessagesFromStorage(modelContext: modelContext)
+            loadRecentMessages(modelContext: modelContext, limit: cap)
             return
         }
 

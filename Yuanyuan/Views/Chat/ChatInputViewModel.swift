@@ -22,7 +22,6 @@ class ChatInputViewModel: ObservableObject {
     
     // MARK: - UI State
     @Published var showMenu: Bool = false
-    @Published var isInputFocused: Bool = false
     @Published var showSuggestions: Bool = false
     @Published var showCamera: Bool = false
     
@@ -43,11 +42,6 @@ class ChatInputViewModel: ObservableObject {
     /// 是否有内容（文字或图片）
     var hasContent: Bool {
         !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || selectedImage != nil
-    }
-    
-    /// 是否应该显示发送按钮
-    var shouldShowSendButton: Bool {
-        hasContent || isInputFocused
     }
     
     // MARK: - Methods
@@ -78,8 +72,6 @@ class ChatInputViewModel: ObservableObject {
         selectedImage = nil
         selectedPhotoItem = nil
         showSuggestions = false
-        // 发送后不自动聚焦：键盘收起，完全手动 focus
-        isInputFocused = false
     }
     
     /// 发送建议指令（不清空输入框，但图片会一起发送）
@@ -99,8 +91,6 @@ class ChatInputViewModel: ObservableObject {
             selectedPhotoItem = nil
             // 发完指令后，按钮不应继续存在（即使输入框里还有存量文字）
             showSuggestions = false
-            // 发送建议后也保持“手动 focus”策略
-            isInputFocused = false
         }
     }
     
@@ -137,9 +127,6 @@ class ChatInputViewModel: ObservableObject {
         guard !isAgentTyping else { return }
         withAnimation(.spring(response: 0.3, dampingFraction: 1.0)) {
             showMenu.toggle()
-            if showMenu {
-                isInputFocused = false // Dismiss keyboard when menu opens
-            }
         }
     }
     
@@ -201,8 +188,6 @@ class ChatInputViewModel: ObservableObject {
         let text = recordingTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, text != "正在聆听..." else { return }
         onSend?(text, nil)
-        // 录音发送后也不自动聚焦
-        isInputFocused = false
     }
     
     /// 由 overlay 的逆向动画结束回调触发：真正收起 overlay 并恢复输入框
