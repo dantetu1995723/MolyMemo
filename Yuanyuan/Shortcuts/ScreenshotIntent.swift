@@ -223,18 +223,6 @@ struct MollyScreenshotIntent: AppIntent {
         return .result()
     }
 
-    // MARK: - Storage
-
-    private func fetchRecentMessages(modelContext: ModelContext, limit: Int) throws -> [ChatMessage] {
-        var descriptor = FetchDescriptor<PersistentChatMessage>(
-            sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
-        )
-        descriptor.fetchLimit = max(0, limit)
-        let persistents = try modelContext.fetch(descriptor)
-        // 反转成“从早到晚”，与 ChatView 一致
-        return persistents.reversed().map { $0.toChatMessage() }
-    }
-
     // MARK: - Network/AI
 
     private func launchBackgroundSend(

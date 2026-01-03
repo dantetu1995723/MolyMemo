@@ -57,21 +57,6 @@ struct YuanyuanApp: App {
                         RecordingCommandProcessor.shared.processIfNeeded(source: "app:onAppear")
                     }
                 }
-                .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("TriggerScreenshotAnalysis"))) { notification in
-                    print("🎯 收到截图分析触发通知")
-
-                    // 获取预分类结果
-                    let category = notification.object as? ScreenshotCategory
-                    if let category = category {
-                        print("📊 收到预分类结果: \(category.rawValue)")
-                    }
-
-                    // 延迟执行，确保 App 完全启动
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                        print("📲 开始执行 handleScreenshotFromClipboard")
-                        appState.handleScreenshotFromClipboard(category: category)
-                    }
-                }
                 .onOpenURL { url in
                     print("📱 收到URL: \(url)")
                     handleIncomingURL(url, modelContext: modelContainer.mainContext)
