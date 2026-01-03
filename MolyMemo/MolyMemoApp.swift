@@ -30,6 +30,13 @@ struct MolyMemoApp: App {
             fatalError("无法初始化 SwiftData 容器: \(error)")
         }
 
+        // 方案 B：一次性把老 Yuanyuan App Group 的聊天记录迁移到新 store（仅当新 store 为空）
+        // 迁移涉及 SwiftData mainContext（@MainActor），这里用主线程任务触发。
+        let containerForMigration = modelContainer
+        Task { @MainActor in
+            YuanyuanGroupMigration.runIfNeeded(targetContainer: containerForMigration)
+        }
+
         // 尽早安装 Darwin 录音命令监听，避免 “通知先发出、监听后注册” 的竞态
         RecordingDarwinObserver.shared.installIfNeeded()
         // 尽早安装 Darwin 聊天更新监听（快捷指令/AppIntent 后台写入聊天后，主App可即时刷新）
