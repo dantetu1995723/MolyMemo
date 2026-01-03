@@ -5,6 +5,7 @@ xcuserdata/
 *.xcworkspace/xcuserdata/
 *.xcworkspace/xcshareddata/swiftpm/
 .DS_Store
+.derivedData/
 build/
 DerivedData/
 
