@@ -1,6 +1,6 @@
 platform :ios, '18.0'
 
-target 'Yuanyuan' do
+target 'MolyMemo' do
   use_frameworks!
 end
 
