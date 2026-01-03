@@ -876,8 +876,7 @@ final class BackendChatService {
             title: dict.string(forAnyOf: ["title", "position", "job_title"]),
             phone: dict.string(forAnyOf: ["phone", "phone_number", "mobile"]),
             email: dict.string(forAnyOf: ["email"]),
-            // 生日：兼容多种后端字段命名（只认“独立字段”，不从 notes 解析）
-            birthday: dict.string(forAnyOf: ["birthday", "birth", "birthdate", "birth_date", "birthDay", "birth_day", "date_of_birth", "dob", "birthday_text", "birthdayText", "birthday_display", "birthdayDisplay"]),
+            birthday: dict.string(forAnyOf: ["birthday", "birth", "birthday_text", "birthdayText"]),
             gender: dict.string(forAnyOf: ["gender", "sex"]),
             industry: dict.string(forAnyOf: ["industry"]),
             location: dict.string(forAnyOf: ["location", "region", "city", "address"]),

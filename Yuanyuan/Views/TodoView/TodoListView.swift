@@ -662,6 +662,7 @@ struct TodoListView: View {
     private func reloadRemoteSchedulesForSelectedDate(forceRefresh: Bool = false) async {
         remoteErrorText = nil
         
+        // 不设置日期范围，获取所有日程
         let base = ScheduleService.ListParams(
             page: nil,
             pageSize: nil,
@@ -679,15 +680,14 @@ struct TodoListView: View {
         }
         
         // 1) 先用缓存秒开（避免切换日期/返回页面就必定 loading）
-        if let cached = await ScheduleService.peekAllSchedules(maxPages: 5, pageSize: 100, baseParams: base) {
+        // 注意：peekAllSchedules 的 maxPages 参数只用于缓存 key，实际获取时会循环直到没有更多数据
+        if let cached = await ScheduleService.peekAllSchedules(maxPages: 10000, pageSize: 100, baseParams: base) {
             let cal = Calendar.current
             remoteEvents = cached.value
                 .filter { cal.isDate($0.startTime, inSameDayAs: selectedDate) }
                 .sorted(by: { $0.startTime < $1.startTime })
             
-            if cached.isFresh { return }
-            
-            // 过期：后台静默刷新
+            // 即使缓存新鲜，也后台静默刷新，确保数据及时更新
             Task { @MainActor in
                 await reloadRemoteSchedulesForSelectedDateFromNetwork(base: base, showError: false, forceRefresh: true)
             }
@@ -704,8 +704,9 @@ struct TodoListView: View {
         defer { remoteIsLoading = false }
         
         do {
+            // 不限制页数，循环获取直到没有更多数据
             let all = try await ScheduleService.fetchScheduleListAllPages(
-                maxPages: 5,
+                maxPages: Int.max,
                 pageSize: 100,
                 baseParams: base,
                 forceRefresh: forceRefresh

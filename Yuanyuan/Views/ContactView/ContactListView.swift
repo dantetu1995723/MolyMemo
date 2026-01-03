@@ -11,7 +11,6 @@ struct ContactListView: View {
     @State private var isLoading = true
     @State private var remoteIsLoading: Bool = false
     @State private var remoteErrorText: String? = nil
-    @State private var didKickoffRemoteLoad: Bool = false
     @State private var deleteErrorText: String? = nil
     
     // 追踪正在删除的联系人 ID（用于显示行内 loading）
@@ -154,13 +153,9 @@ struct ContactListView: View {
                     }
                 }
             }
-        }
-        .task {
+            
             // 与「日程」一致：进入模块即拉取后端列表；失败则仍展示本地缓存
-            if !didKickoffRemoteLoad {
-                didKickoffRemoteLoad = true
-                await reloadRemoteContacts()
-            }
+            Task { await reloadRemoteContacts() }
         }
     }
 
@@ -173,8 +168,7 @@ struct ContactListView: View {
         let base = ContactService.ListParams(page: nil, pageSize: nil, search: nil, relationshipType: nil)
         if let cached = await ContactService.peekAllContacts(maxPages: 5, pageSize: 100, baseParams: base) {
             upsertRemoteContacts(cached.value)
-            if cached.isFresh { return }
-            // 过期：后台静默刷新（不打断体验）
+            // 即使缓存新鲜，也后台静默刷新，确保数据及时更新
             Task {
                 await reloadRemoteContactsFromNetwork(base: base, showError: false)
             }

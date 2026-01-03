@@ -391,8 +391,7 @@ enum ContactService {
             title: string(dict, ["position", "title", "job_title"]),
             phone: string(dict, ["phone", "phone_number", "mobile"]),
             email: string(dict, ["email"]),
-            // 生日：兼容多种后端字段命名（只认“独立字段”，不从 notes 解析）
-            birthday: string(dict, ["birthday", "birth", "birthdate", "birth_date", "birthDay", "birth_day", "date_of_birth", "dob", "birthday_text", "birthdayText", "birthday_display", "birthdayDisplay"]),
+            birthday: string(dict, ["birthday", "birth", "birthday_text", "birthdayText"]),
             gender: string(dict, ["gender", "sex"]),
             industry: string(dict, ["industry"]),
             location: string(dict, ["location", "region", "city", "address"]),

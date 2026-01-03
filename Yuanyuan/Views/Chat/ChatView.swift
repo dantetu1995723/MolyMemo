@@ -477,6 +477,8 @@ struct ChatView: View {
 
     private func refreshTodaySchedules(force: Bool) {
         let dayKey = todayDayKey()
+        
+        // 不设置日期范围，获取所有日程
         let base = ScheduleService.ListParams(
             page: nil,
             pageSize: nil,
@@ -488,15 +490,16 @@ struct ChatView: View {
         )
         
         Task {
-            // 1) 非强刷：先用缓存秒开（与 TodoListView 一致），避免“看起来没请求/一直空”
-            if !force, let cached = await ScheduleService.peekAllSchedules(maxPages: 5, pageSize: 100, baseParams: base) {
+            // 1) 非强刷：先用缓存秒开（与 TodoListView 一致），避免"看起来没请求/一直空"
+            // 注意：peekAllSchedules 的 maxPages 参数只用于缓存 key，实际获取时会循环直到没有更多数据
+            if !force, let cached = await ScheduleService.peekAllSchedules(maxPages: 10000, pageSize: 100, baseParams: base) {
                 let cal = Calendar.current
                 let sorted = cached.value
                     .filter { cal.isDate($0.startTime, inSameDayAs: Date()) }
                     .sorted(by: { $0.startTime < $1.startTime })
                 
                 await MainActor.run {
-                    // 跨天时重置“已读”缓存，避免复用昨天状态
+                    // 跨天时重置"已读"缓存，避免复用昨天状态
                     if lastLoadedScheduleDayKey != dayKey {
                         lastLoadedScheduleDayKey = dayKey
                         todayReadIds = loadReadIds(dayKey: dayKey)
@@ -506,8 +509,7 @@ struct ChatView: View {
                     todayScheduleErrorText = nil
                 }
                 
-                // 缓存新鲜就直接返回；否则后台静默强刷
-                if cached.isFresh { return }
+                // 即使缓存新鲜，也后台静默刷新，确保数据及时更新
                 await refreshTodaySchedulesFromNetwork(base: base, dayKey: dayKey, forceRefresh: true, showError: false)
                 return
             }
@@ -524,7 +526,7 @@ struct ChatView: View {
         forceRefresh: Bool,
         showError: Bool
     ) async {
-        // 跨天时重置“已读”缓存，避免复用昨天状态
+        // 跨天时重置"已读"缓存，避免复用昨天状态
         if lastLoadedScheduleDayKey != dayKey {
             lastLoadedScheduleDayKey = dayKey
             todayReadIds = loadReadIds(dayKey: dayKey)
@@ -536,8 +538,9 @@ struct ChatView: View {
         
         do {
             // 与 TodoListView 完全一致：分页拉全量，再本地按日期过滤
+            // 不限制页数，循环获取直到没有更多数据
             let all = try await ScheduleService.fetchScheduleListAllPages(
-                maxPages: 5,
+                maxPages: Int.max,
                 pageSize: 100,
                 baseParams: base,
                 forceRefresh: forceRefresh
@@ -618,9 +621,10 @@ struct ChatView: View {
             Spacer()
             
             // 中间标题
-            Text("MolyMemo")
-                .font(.custom("SourceHanSerifSC-Bold", size: 17))
-                .foregroundColor(primaryGray)
+            Image("molymemo")
+                .resizable()
+                .scaledToFit()
+                .frame(height: 30)
             
             Spacer()
             

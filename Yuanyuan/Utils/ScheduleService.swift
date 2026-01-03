@@ -524,9 +524,10 @@ enum ScheduleService {
         }
     }
     
-    /// 常用：拉“全量后端日程（自动翻页）”并缓存，适合前端再做日期过滤（TodoListView 目前就是这么做的）
+    /// 常用：拉"全量后端日程（自动翻页）”并缓存，适合前端再做日期过滤（TodoListView 目前就是这么做的）
+    /// 注意：会循环获取直到没有更多数据，不限制页数
     static func fetchScheduleListAllPages(
-        maxPages: Int = 5,
+        maxPages: Int = Int.max, // 默认不限制，但缓存 key 仍需要这个参数
         pageSize: Int = 100,
         baseParams: ListParams = .init(),
         forceRefresh: Bool = false
@@ -534,7 +535,9 @@ enum ScheduleService {
         var base = baseParams
         base.page = nil
         base.pageSize = nil
-        let k = AllPagesKey(base: base, maxPages: maxPages, pageSize: pageSize)
+        // 使用一个固定的很大的 maxPages 值作为缓存 key，实际获取时会循环直到没有更多数据
+        let cacheKeyMaxPages = 10000 // 缓存 key 使用固定值
+        let k = AllPagesKey(base: base, maxPages: cacheKeyMaxPages, pageSize: pageSize)
         
         if forceRefresh {
             await allPagesCache.invalidate(k, cancelInFlight: false)
@@ -542,13 +545,20 @@ enum ScheduleService {
         
         return try await allPagesCache.getOrFetch(k, ttl: defaultAllPagesTTL) {
             var all: [ScheduleEvent] = []
-            for page in 1...maxPages {
+            var page = 1
+            while true {
                 var p = base
                 p.page = page
                 p.pageSize = pageSize
                 let list = try await fetchScheduleListFromNetwork(params: p)
                 all.append(contentsOf: list)
+                // 如果返回的数据少于 pageSize，说明已经是最后一页了
                 if list.count < pageSize { break }
+                page += 1
+                // 安全限制：防止无限循环（理论上不应该超过这个值）
+                if page > 10000 {
+                    break
+                }
             }
             return all
         }
