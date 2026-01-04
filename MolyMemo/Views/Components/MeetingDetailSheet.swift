@@ -77,9 +77,18 @@ struct MeetingDetailSheet: View {
                         // 2. 标题和日期
                         VStack(alignment: .leading, spacing: 10) {
                             HStack(spacing: 10) {
-                                Text(meeting.title)
-                                    .font(.system(size: 26, weight: .bold))
-                                    .foregroundColor(Color(hex: "333333"))
+                                if meeting.isGenerating {
+                                    TimelineView(.periodic(from: .now, by: 0.5)) { context in
+                                        let tick = Int(context.date.timeIntervalSinceReferenceDate / 0.5) % 4
+                                        Text("正在生成标题" + String(repeating: "·", count: tick))
+                                            .font(.system(size: 26, weight: .bold))
+                                            .foregroundColor(Color(hex: "333333"))
+                                    }
+                                } else {
+                                    Text(meeting.title)
+                                        .font(.system(size: 26, weight: .bold))
+                                        .foregroundColor(Color(hex: "333333"))
+                                }
 
                                 if meeting.isGenerating {
                                     ProgressView()
@@ -312,6 +321,23 @@ struct MeetingDetailSheet: View {
                 await pollingTask?.value
             }
         }
+        // 关键：生成中用户可能提前进入详情页，此时 remoteId 还是 nil。
+        // 当 remoteId 后续被写入（例如后端创建任务/生成完成后回填），这里需要自动触发一次拉取/轮询，否则 UI 会一直停在“正在生成…”
+        .onChange(of: meeting.remoteId) { _, newValue in
+            let rid = (newValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !rid.isEmpty else { return }
+            guard meeting.isGenerating || (meeting.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) else { return }
+            pollingTask?.cancel()
+            pollingTask = Task { await fetchDetailsWithPolling() }
+        }
+        // 兜底：如果外部已经把 title/summary 回填进来了（例如 MolyMemoApp 直接更新了聊天卡片），
+        // 但 isGenerating 没被正确置为 false，这里自动收敛状态，避免无限 loading。
+        .onChange(of: meeting.summary) { _, newValue in
+            let s = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !s.isEmpty && meeting.isGenerating {
+                meeting.isGenerating = false
+            }
+        }
         .onDisappear {
             pollingTask?.cancel()
             pollingTask = nil
@@ -327,8 +353,11 @@ struct MeetingDetailSheet: View {
         isLoading = true
         loadError = nil
         
-        let maxAttempts = 20
-        let delayNs: UInt64 = 900_000_000 // 0.9s
+        // 轮询策略：
+        // - 详情页的目标是“尽快把 title/summary/transcriptions 刷新出来”，不应强依赖 audio_duration
+        // - 给后端一定时间，但避免无限转圈：最多 ~2 分钟
+        let maxAttempts = 80
+        let delayNs: UInt64 = 1_500_000_000 // 1.5s
 
         for attempt in 1...maxAttempts {
             if Task.isCancelled { break }
@@ -383,11 +412,21 @@ struct MeetingDetailSheet: View {
             }
             
             print("✅ [MeetingDetailSheet] 会议详情已更新")
-                // 轮询退出条件：拿到 audio_duration 且状态完成
+                // 轮询退出条件（更贴近用户感知）：
+                // - 如果 title/summary 任一已经有内容，且后端状态看起来“已完成”，即可结束生成态
+                // - 即使 status 字段不规范，只要 summary 有内容，也可以结束生成态（避免无限 loading）
                 let lowered = status.lowercased()
-                let isDone = lowered.contains("completed") || lowered.contains("done") || lowered.contains("success")
-                if item.audioDuration != nil && isDone {
-                    print("✅ [MeetingDetailSheet] 轮询结束：已拿到 audio_duration 且 status=\(status)")
+                let isDone =
+                    lowered.contains("completed")
+                    || lowered.contains("done")
+                    || lowered.contains("success")
+                    || lowered.contains("complete")
+                let hasTitle = !meeting.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                let hasSummary = !meeting.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+
+                if (hasTitle || hasSummary) && (isDone || hasSummary) {
+                    print("✅ [MeetingDetailSheet] 轮询结束：hasTitle=\(hasTitle) hasSummary=\(hasSummary) status=\(status.isEmpty ? "nil" : status)")
+                    meeting.isGenerating = false
                     break
                 }
 
@@ -395,6 +434,15 @@ struct MeetingDetailSheet: View {
                     try await Task.sleep(nanoseconds: delayNs)
                 } else {
                     print("⚠️ [MeetingDetailSheet] 轮询达到上限，最后 status=\(status.isEmpty ? "nil" : status) audioDuration=\(String(describing: item.audioDuration))")
+                    // 达到上限也不要无限显示生成中：如果已经拿到任意内容就收敛；否则给出可重试的错误提示
+                    let hasAnyContent = !meeting.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        || !meeting.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        || (meeting.transcriptions?.isEmpty == false)
+                    if hasAnyContent {
+                        meeting.isGenerating = false
+                    } else {
+                        loadError = "生成中，稍后再试（已等待约\(Int(Double(maxAttempts) * (Double(delayNs) / 1_000_000_000)))秒）"
+                    }
                 }
             } catch {
                 print("❌ [MeetingDetailSheet] 获取详情失败 attempt=\(attempt): \(error)")

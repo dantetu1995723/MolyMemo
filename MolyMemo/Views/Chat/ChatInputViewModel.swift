@@ -38,6 +38,8 @@ class ChatInputViewModel: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     /// 按住说话：按下瞬间就开始“预收音/预转写”，但不立刻展示 overlay（避免轻点聚焦时闪一下 UI）
     private var isPreCapturingHoldToTalk: Bool = false
+    /// 录音结束后待回填到输入框的转写文本（用于：输入框尚未出现/尚在退场动画时延迟写回）
+    private var pendingDictationTextForInput: String?
     
     // MARK: - Computed Properties
     
@@ -173,10 +175,11 @@ class ChatInputViewModel: ObservableObject {
         
         guard !isCanceling else { return }
         
-        // 没有接收到声音 / 没有识别结果：不发送任何默认文字
+        // 没有接收到声音 / 没有识别结果：不写回任何默认文字
         let text = recordingTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, text != "正在聆听..." else { return }
-        onSend?(text, nil)
+        // 不自动发送：先缓存，等输入框出现（overlay 退场结束）后再写回到 inputText
+        pendingDictationTextForInput = text
     }
     
     /// 由 overlay 的逆向动画结束回调触发：真正收起 overlay 并恢复输入框
@@ -188,6 +191,7 @@ class ChatInputViewModel: ObservableObject {
             isCanceling = false
             audioPower = 0
         }
+        applyPendingDictationTextToInputIfNeeded()
     }
     
     func cancelRecording() {
@@ -263,6 +267,25 @@ class ChatInputViewModel: ObservableObject {
             if isCanceling {
                 withAnimation { isCanceling = false }
             }
+        }
+    }
+
+    // MARK: - Dictation backfill
+
+    /// 把录音转写结果写回输入框：
+    /// - 若输入框已有文字：追加（用空格分隔，避免覆盖用户已输入内容）
+    /// - 若输入框为空：直接写入
+    private func applyPendingDictationTextToInputIfNeeded() {
+        guard let text = pendingDictationTextForInput?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !text.isEmpty
+        else { return }
+        pendingDictationTextForInput = nil
+
+        let existing = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if existing.isEmpty {
+            inputText = text
+        } else {
+            inputText = existing + " " + text
         }
     }
 }

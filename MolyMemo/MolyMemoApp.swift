@@ -198,6 +198,23 @@ struct MolyMemoApp: App {
                     // 异步调用后端API
                     Task {
                         do {
+                            #if canImport(UIKit)
+                            // 兜底：用户按 Home/切后台时，给网络请求一点额外时间（系统通常仅给几十秒，不保证跑完长任务）
+                            var bgTask: UIBackgroundTaskIdentifier = .invalid
+                            bgTask = UIApplication.shared.beginBackgroundTask(withName: "meetingMinutesGenerate") {
+                                if bgTask != .invalid {
+                                    UIApplication.shared.endBackgroundTask(bgTask)
+                                    bgTask = .invalid
+                                }
+                            }
+                            defer {
+                                if bgTask != .invalid {
+                                    UIApplication.shared.endBackgroundTask(bgTask)
+                                    bgTask = .invalid
+                                }
+                            }
+                            #endif
+
                             guard !audioPath.isEmpty else {
                                 print("❌ [MolyMemoApp] 音频路径为空")
                                 return
@@ -207,7 +224,22 @@ struct MolyMemoApp: App {
                             print("📤 [MolyMemoApp] 开始调用后端API...")
                             
                             let result = try await MeetingMinutesService.generateMeetingMinutes(
-                                audioFileURL: audioURL
+                                audioFileURL: audioURL,
+                                onJobCreated: { jobId in
+                                    // 关键：尽早写入 remoteId，避免用户生成过程中退出 App 后“无法续跑/无法再轮询”
+                                    Task { @MainActor in
+                                        if let lastIndex = appState.chatMessages.lastIndex(where: { $0.meetings != nil }) {
+                                            if var meetings = appState.chatMessages[lastIndex].meetings,
+                                               let meetingIndex = meetings.lastIndex(where: { $0.audioPath == audioPath }) {
+                                                meetings[meetingIndex].remoteId = jobId
+                                                meetings[meetingIndex].isGenerating = true
+                                                appState.chatMessages[lastIndex].meetings = meetings
+                                                appState.saveMessageToStorage(appState.chatMessages[lastIndex], modelContext: modelContainer.mainContext)
+                                                print("🧷 [MolyMemoApp] 已提前写入 remoteId=\(jobId)（便于退出/重进后续轮询）")
+                                            }
+                                        }
+                                    }
+                                }
                             )
                             
                             print("✅ [MolyMemoApp] 后端返回成功!")

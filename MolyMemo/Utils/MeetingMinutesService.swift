@@ -627,12 +627,14 @@ class MeetingMinutesService {
     ///   - speakerCount: 说话人数量（可选，默认为空）
     ///   - enableTranslation: 是否启用翻译（默认 false）
     ///   - targetLanguages: 目标语言（可选）
+    ///   - onJobCreated: 若后端走“异步任务”模式，会先返回 jobId。此回调用于调用方尽早持久化 remoteId，便于 App 退出/重进后继续轮询。
     /// - Returns: 会议纪要内容和转写记录
     static func generateMeetingMinutes(
         audioFileURL: URL,
         speakerCount: Int? = nil,
         enableTranslation: Bool = false,
-        targetLanguages: String? = nil
+        targetLanguages: String? = nil,
+        onJobCreated: ((String) -> Void)? = nil
     ) async throws -> GeneratedMinutes {
         
         print("🎙️ ========== POST 生成会议纪要 ==========")
@@ -771,6 +773,9 @@ class MeetingMinutesService {
         }
 
         print("⏳ [MeetingMinutesService] 生成任务已创建：id=\(job.id)")
+        // 关键：尽早把 jobId 告诉调用方（例如写回 MeetingCard.remoteId 并持久化），
+        // 这样就算用户在生成过程中退出 App，也能在下次进入详情页时继续 GET 详情轮询。
+        onJobCreated?(job.id)
 
         let item = try await pollMeetingMinutesResult(id: job.id, timeoutSeconds: 600)
         let finalSummary = (item.summary ?? item.meetingSummary)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""

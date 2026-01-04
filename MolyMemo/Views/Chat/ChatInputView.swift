@@ -245,6 +245,8 @@ struct ChatInputView: View {
                                     if !isPressing {
                                         // 开始 tracking
                                         handleHoldToTalkPressingChanged(true)
+                                        // 立刻开始预收音/预转写：用户可以按下就说，不等长按阈值
+                                        viewModel.beginHoldToTalkPreCaptureIfNeeded()
 
                                         // 取消旧任务，启动新的“长按才触发录音”的任务
                                         pendingHoldToTalkTask?.cancel()
@@ -261,7 +263,6 @@ struct ChatInputView: View {
                                             guard viewModel.inputText.isEmpty, viewModel.selectedImage == nil else { return }
 
                                             DebugProbe.log("HoldToTalk long-press -> start recording")
-                                            viewModel.beginHoldToTalkPreCaptureIfNeeded()
                                             viewModel.revealHoldToTalkOverlayIfPossible()
                                         }
                                     }

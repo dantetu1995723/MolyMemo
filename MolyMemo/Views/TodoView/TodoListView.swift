@@ -88,7 +88,7 @@ private struct RemoteScheduleRow: View {
     
     private func timePill() -> some View {
         VStack(spacing: 4) {
-            Text(formatTime(event.startTime))
+            Text(displayStartTime())
                 .font(.system(size: 14, weight: .bold, design: .rounded))
                 .foregroundColor(.black.opacity(0.88))
             
@@ -143,8 +143,20 @@ private struct RemoteScheduleRow: View {
     }
     
     private func displayEndTime() -> String? {
+        if event.isFullDay {
+            // ✅ 全天展示语义：00:00 ~ 24:00
+            return "24:00"
+        }
         guard event.endTimeProvided else { return nil }
         return formatTime(event.endTime)
+    }
+
+    private func displayStartTime() -> String {
+        if event.isFullDay {
+            // ✅ 全天展示语义：00:00 ~ 24:00
+            return "00:00"
+        }
+        return formatTime(event.startTime)
     }
     
     private func formatTime(_ date: Date) -> String {
@@ -1123,11 +1135,19 @@ struct UnifiedScheduleRow: View {
     }()
     
     private var startTimeText: String {
-        Self.timeFormatter.string(from: todo.startTime)
+        if isAllDay {
+            // ✅ 全天展示语义：00:00 ~ 24:00
+            return "00:00"
+        }
+        return Self.timeFormatter.string(from: todo.startTime)
     }
     
     private var endTimeText: String {
-        Self.timeFormatter.string(from: todo.endTime)
+        if isAllDay {
+            // ✅ 全天展示语义：00:00 ~ 24:00
+            return "24:00"
+        }
+        return Self.timeFormatter.string(from: todo.endTime)
     }
     
     // 主题色背景
@@ -1154,25 +1174,18 @@ struct UnifiedScheduleRow: View {
         HStack(spacing: 0) {
             // 左侧：时间面板 (一体化设计，内嵌在卡片左侧)
             VStack(alignment: .center, spacing: 4) {
-                if isAllDay {
-                    Text("全天")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundColor(.white)
-                        .padding(.vertical, 4)
-                } else {
-                    Text(startTimeText)
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundColor(.white)
-                    
-                    // 视觉连接线
-                    Capsule()
-                        .fill(Color.white.opacity(0.6))
-                        .frame(width: 2, height: 16)
-                    
-                    Text(endTimeText)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(Color.white.opacity(0.9))
-                }
+                Text(startTimeText)
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(.white)
+                
+                // 视觉连接线
+                Capsule()
+                    .fill(Color.white.opacity(0.6))
+                    .frame(width: 2, height: 16)
+                
+                Text(endTimeText)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(Color.white.opacity(0.9))
             }
             .frame(width: 66)
             .frame(maxHeight: .infinity) // 撑满高度
