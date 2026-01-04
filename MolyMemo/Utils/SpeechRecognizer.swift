@@ -68,12 +68,21 @@ class SpeechRecognizer: ObservableObject {
             let audioSession = AVAudioSession.sharedInstance()
             do {
                 if !self.isSessionConfigured {
-                    // 使用 playAndRecord + measurement，避免某些路由下 inputNode format 无效导致 installTap 崩溃
-                    try audioSession.setCategory(
-                        .playAndRecord,
-                        mode: .measurement,
-                        options: [.duckOthers, .allowBluetoothHFP, .defaultToSpeaker]
-                    )
+                    // 使用 playAndRecord，并优先选择更适合“语音”的模式来提升识别灵敏度/稳定性；
+                    // 若系统/路由不支持则回退 measurement。
+                    do {
+                        try audioSession.setCategory(
+                            .playAndRecord,
+                            mode: .spokenAudio,
+                            options: [.duckOthers, .allowBluetoothHFP, .defaultToSpeaker]
+                        )
+                    } catch {
+                        try audioSession.setCategory(
+                            .playAndRecord,
+                            mode: .measurement,
+                            options: [.duckOthers, .allowBluetoothHFP, .defaultToSpeaker]
+                        )
+                    }
                     // 尽量让输入格式稳定（不强依赖，但能减少 route/format 抖动）
                     try? audioSession.setPreferredSampleRate(48_000)
                     try? audioSession.setPreferredInputNumberOfChannels(1)
@@ -84,6 +93,19 @@ class SpeechRecognizer: ObservableObject {
                     // notifyOthersOnDeactivation 只应在 setActive(false) 时使用；用于激活会导致底层报错/状态异常
                     try audioSession.setActive(true)
                     self.isSessionActive = true
+                }
+
+                // 尽可能提升录音灵敏度（系统允许才生效；不支持时静默跳过）
+                // 1) 尝试拉高麦克风输入增益
+                if audioSession.isInputGainSettable {
+                    try? audioSession.setInputGain(1.0)
+                }
+                // 2) 若当前不是蓝牙通话麦克风，优先使用内置麦克风（频响/动态范围更好）
+                if #available(iOS 13.0, *) {
+                    let isBluetoothHFP = audioSession.currentRoute.inputs.contains { $0.portType == .bluetoothHFP }
+                    if !isBluetoothHFP, let builtInMic = audioSession.availableInputs?.first(where: { $0.portType == .builtInMic }) {
+                        try? audioSession.setPreferredInput(builtInMic)
+                    }
                 }
             } catch {
                 print("❌ 音频会话配置失败: \(error)")
@@ -109,6 +131,8 @@ class SpeechRecognizer: ObservableObject {
             if #available(iOS 16.0, *) {
                 recognitionRequest.addsPunctuation = true
             }
+            // 更偏“口述/语音输入”的任务提示：通常能更积极地产出可用转写
+            recognitionRequest.taskHint = .dictation
             if #available(iOS 13.0, *) {
                 recognitionRequest.requiresOnDeviceRecognition = false
             }
@@ -284,6 +308,7 @@ class SpeechRecognizer: ObservableObject {
         // 创建文件识别请求
         let request = SFSpeechURLRecognitionRequest(url: audioURL)
         request.shouldReportPartialResults = false  // 文件识别不需要部分结果
+        request.taskHint = .dictation
         
         // 启用标点符号（iOS 16+）
         if #available(iOS 16.0, *) {

@@ -36,6 +36,8 @@ class ChatInputViewModel: ObservableObject {
     // MARK: - Internal
     private let speechRecognizer = SpeechRecognizer()
     private var cancellables = Set<AnyCancellable>()
+    /// 按住说话：按下瞬间就开始“预收音/预转写”，但不立刻展示 overlay（避免轻点聚焦时闪一下 UI）
+    private var isPreCapturingHoldToTalk: Bool = false
     
     // MARK: - Computed Properties
     
@@ -148,31 +150,18 @@ class ChatInputViewModel: ObservableObject {
     func startRecording() {
         // AI 输入过程中：输入区除"中止"外全部禁用
         guard !isAgentTyping else { return }
-        
-        // 记录当前位置
-        // 注意：不建议在 withAnimation 中修改 isRecording，
-        // 否则某些布局计算可能会在动画中途发生变化。
-        isAnimatingRecordingEntry = true
-        isAnimatingRecordingExit = false
-        isRecording = true 
-        isCanceling = false
-        recordingTranscript = "正在聆听..."
-        audioPower = 0.0 // 初始静止（未收音）
-        
-        // 请求权限（只会在未授权/未决定时弹窗）
-        speechRecognizer.requestAuthorization()
-        
-        // 开始真实收音 + 转写
-        speechRecognizer.startRecording { [weak self] text in
-            guard let self = self else { return }
-            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            self.recordingTranscript = trimmed.isEmpty ? "正在聆听..." : trimmed
-        }
+
+        // 统一走“预收音 -> 展示 overlay”，减少重复逻辑
+        beginHoldToTalkPreCaptureIfNeeded()
+        revealHoldToTalkOverlayIfPossible()
     }
     
     func stopRecording() {
         // 已经在退场过程中，避免重复触发（重复 stop 可能导致发送两次）
         guard !isAnimatingRecordingExit else { return }
+
+        // 结束预收音状态（无论是否已展示 overlay）
+        isPreCapturingHoldToTalk = false
         
         speechRecognizer.stopRecording()
         
@@ -209,6 +198,58 @@ class ChatInputViewModel: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
              self.stopRecording()
         }
+    }
+
+    // MARK: - Hold-to-talk pre-capture (press-down immediately, reveal overlay slightly later)
+
+    /// 按下瞬间调用：立刻开始收音/转写，但不展示 overlay（防止轻点聚焦时 UI 闪烁）。
+    func beginHoldToTalkPreCaptureIfNeeded() {
+        // AI 输入过程中：输入区除"中止"外全部禁用
+        guard !isAgentTyping else { return }
+        guard !isRecording else { return } // 已在录音 overlay 中，无需重复
+        guard !isPreCapturingHoldToTalk else { return }
+
+        isPreCapturingHoldToTalk = true
+        isCanceling = false
+        recordingTranscript = "" // 先留空，overlay 出现时会显示“正在聆听...”
+        audioPower = 0.0
+
+        // 请求权限（只会在未授权/未决定时弹窗）
+        speechRecognizer.requestAuthorization()
+
+        // 开始真实收音 + 转写（partial results）
+        speechRecognizer.startRecording { [weak self] text in
+            guard let self = self else { return }
+            // 只有在“预收音”或“已展示 overlay”阶段才接收回调，避免 stop 后又回写 UI
+            guard self.isPreCapturingHoldToTalk || self.isRecording else { return }
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            self.recordingTranscript = trimmed
+        }
+    }
+
+    /// 长按被判定/需要展示 UI 时调用：把 overlay 拉起来，但不会重启收音。
+    func revealHoldToTalkOverlayIfPossible() {
+        guard !isAgentTyping else { return }
+        guard isPreCapturingHoldToTalk else { return }
+        guard !isRecording else { return }
+
+        // 注意：不建议在 withAnimation 中修改 isRecording，
+        // 否则某些布局计算可能会在动画中途发生变化。
+        isAnimatingRecordingEntry = true
+        isAnimatingRecordingExit = false
+        isRecording = true
+        isCanceling = false
+        // recordingTranscript 维持当前值（可能已经有部分转写）
+    }
+
+    /// 轻点/滑动打断时调用：停止预收音且不展示 overlay、不发送任何文字。
+    func stopHoldToTalkPreCaptureIfNeeded() {
+        guard isPreCapturingHoldToTalk else { return }
+        isPreCapturingHoldToTalk = false
+        speechRecognizer.stopRecording()
+        recordingTranscript = ""
+        audioPower = 0.0
+        isCanceling = false
     }
     
     func updateDragLocation(_ location: CGPoint, in bounds: CGRect) {

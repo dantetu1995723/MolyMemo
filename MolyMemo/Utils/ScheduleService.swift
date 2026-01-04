@@ -68,6 +68,13 @@ enum ScheduleService {
         }
     }
     
+    /// 统一入口：缓存失效 + 广播远端日程变更
+    /// - Note: ChatView / TodoListView 会监听该通知并 `forceRefresh: true` 拉后端
+    static func invalidateCachesAndNotifyRemoteScheduleDidChange() async {
+        await invalidateScheduleCaches()
+        await postRemoteScheduleDidChange()
+    }
+    
     static func invalidateScheduleCaches() async {
         // 只让缓存失效，不要取消进行中的请求：
         // - ChatView / TodoListView 可能同时收到通知并发刷新
@@ -154,8 +161,10 @@ enum ScheduleService {
 
     private static var debugLogsEnabled: Bool {
 #if DEBUG
-        // 默认关闭，避免日程列表刷爆控制台；需要时可在设置里打开 BackendChatConfig.debugLogFullResponse
-        return BackendChatConfig.debugLogFullResponse
+        // ✅ 工具箱「日程」时间问题排查：仅对 ScheduleService 单独开关（默认开启）
+        // - 目的：打印 /api/v1/schedules 的原始 JSON，便于对照后端字段
+        // - 关闭方式：把 BackendChatConfig.debugScheduleServiceRawLog 设为 false（可通过调试代码或 UserDefaults 修改）
+        return BackendChatConfig.debugScheduleServiceRawLog
 #else
         return false
 #endif
@@ -189,7 +198,47 @@ enum ScheduleService {
             print("🌐 [ScheduleService:\(tag)] status=(non-http)")
         }
         let body = String(data: data, encoding: .utf8) ?? "<non-utf8 body: \(data.count) bytes>"
-        print("🌐 [ScheduleService:\(tag)] raw body:\n\(body)")
+        print("🌐 [ScheduleService:\(tag)] raw body (len=\(body.count)):")
+        printLongString(body, chunkSize: 900)
+    }
+
+    /// 避免 Xcode 控制台截断超长 JSON：分段打印
+    private static func printLongString(_ s: String, chunkSize: Int) {
+        guard chunkSize > 0 else {
+            print(s)
+            return
+        }
+        if s.isEmpty {
+            print("")
+            return
+        }
+        let chars = Array(s)
+        var i = 0
+        while i < chars.count {
+            let end = min(i + chunkSize, chars.count)
+            print(String(chars[i..<end]))
+            i = end
+        }
+    }
+
+    private static func debugPrintParsedTimeFieldsIfNeeded(raw dict: [String: Any], parsed event: ScheduleEvent) {
+        guard debugLogsEnabled else { return }
+        func anyToString(_ any: Any?) -> String {
+            guard let any else { return "nil" }
+            if any is NSNull { return "null" }
+            if let s = any as? String { return "\"\(s)\"" }
+            if let n = any as? Int { return "\(n)" }
+            if let n = any as? Double { return "\(n)" }
+            if let b = any as? Bool { return b ? "true" : "false" }
+            return "\(any)"
+        }
+        let fullDayRaw = dict["full_day"] ?? dict["fullDay"]
+        let startRaw = dict["start_time"] ?? dict["startTime"] ?? dict["start_date"] ?? dict["startDate"]
+        let endRaw = dict["end_time"] ?? dict["endTime"] ?? dict["end_date"] ?? dict["endDate"]
+        let tzName = TimeZone.current.identifier
+        print("🗓️ [ScheduleService] parsed event title='\(event.title)' remoteId=\(event.remoteId ?? "nil") tz=\(tzName) isFullDay=\(event.isFullDay) endProvided=\(event.endTimeProvided)")
+        print("    raw full_day=\(anyToString(fullDayRaw)) start_time=\(anyToString(startRaw)) end_time=\(anyToString(endRaw))")
+        print("    parsed start=\(event.startTime) end=\(event.endTime)")
     }
     
     private static func makeURL(path: String, queryItems: [URLQueryItem]) throws -> URL {
@@ -213,11 +262,56 @@ enum ScheduleService {
         }
     }
 
-    private static func iso8601String(_ date: Date) -> String {
-        let f = ISO8601DateFormatter()
-        f.timeZone = TimeZone(secondsFromGMT: 0)
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return f.string(from: date)
+    /// 统一：把 Date 按“本地时间语义”序列化给后端（不带时区）。
+    /// 目标：后端返回什么时间，前端就显示什么时间，避免 iOS/后端双方因时区标记产生偏移。
+    private static func localDateTimeStringNoTimeZone(_ date: Date) -> String {
+        let df = DateFormatter()
+        df.locale = Locale(identifier: "en_US_POSIX")
+        df.timeZone = TimeZone.current
+        df.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+        return df.string(from: date)
+    }
+    
+    private static func stripTimeZoneSuffixIfPresent(_ s: String) -> String {
+        var base = s
+        if base.hasSuffix("Z") {
+            base.removeLast()
+            return base
+        }
+        // ±HH:mm
+        if let r = base.range(of: "[+-]\\d{2}:\\d{2}$", options: .regularExpression) {
+            base.removeSubrange(r)
+            return base
+        }
+        return base
+    }
+    
+    private static func normalizeISO8601FractionalSecondsToMillis(_ s: String) -> String {
+        var base = s
+        var tzSuffix = ""
+        
+        if base.hasSuffix("Z") {
+            tzSuffix = "Z"
+            base.removeLast()
+        } else if let r = base.range(of: "[+-]\\d{2}:\\d{2}$", options: .regularExpression) {
+            tzSuffix = String(base[r])
+            base.removeSubrange(r)
+        }
+        
+        guard let dot = base.firstIndex(of: ".") else { return s }
+        let fracStart = base.index(after: dot)
+        guard fracStart < base.endIndex else { return s }
+        let frac = String(base[fracStart..<base.endIndex])
+        guard !frac.isEmpty, frac.allSatisfy({ $0.isNumber }) else { return s }
+        
+        let millis: String = {
+            if frac.count == 3 { return frac }
+            if frac.count > 3 { return String(frac.prefix(3)) }
+            return frac.padding(toLength: 3, withPad: "0", startingAt: 0)
+        }()
+        
+        let head = String(base[..<dot])
+        return head + "." + millis + tzSuffix
     }
     
     private static func parseDate(_ any: Any?) -> Date? {
@@ -229,13 +323,10 @@ enum ScheduleService {
             let s = s0.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !s.isEmpty else { return nil }
             
-            // ISO8601（带毫秒/不带毫秒）
-            let f1 = ISO8601DateFormatter()
-            f1.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            if let d = f1.date(from: s) { return d }
-            let f2 = ISO8601DateFormatter()
-            f2.formatOptions = [.withInternetDateTime]
-            if let d = f2.date(from: s) { return d }
+            // 统一策略：不论后端是否带 Z/±HH:mm，都按“本地时间语义”解析（忽略时区后缀）
+            // 这样“后端返回什么时间，前端就显示什么时间”，避免列表/详情/卡片出现小时偏移。
+            let normalized = normalizeISO8601FractionalSecondsToMillis(s)
+            let withoutTZ = stripTimeZoneSuffixIfPresent(normalized)
 
             // ✅ 后端常见：不带时区的 ISO 字符串（如 2025-12-26T21:00:00）
             // 使用 POSIX locale，避免 12/24 小时制、地区设置导致解析失败
@@ -248,25 +339,31 @@ enum ScheduleService {
             f5.locale = posix
             f5.timeZone = tz
             f5.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSS"
-            if let d = f5.date(from: s) { return d }
+            if let d = f5.date(from: withoutTZ) { return d }
 
             let f6 = DateFormatter()
             f6.locale = posix
             f6.timeZone = tz
             f6.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
-            if let d = f6.date(from: s) { return d }
+            if let d = f6.date(from: withoutTZ) { return d }
+            
+            let f7 = DateFormatter()
+            f7.locale = posix
+            f7.timeZone = tz
+            f7.dateFormat = "yyyy-MM-dd'T'HH:mm"
+            if let d = f7.date(from: withoutTZ) { return d }
             
             // yyyy-MM-dd（列表常见）
             let f3 = DateFormatter()
             f3.locale = Locale(identifier: "zh_CN")
             f3.dateFormat = "yyyy-MM-dd"
-            if let d = f3.date(from: s) { return d }
+            if let d = f3.date(from: withoutTZ) { return d }
             
             // yyyy-MM-dd HH:mm:ss（部分后端）
             let f4 = DateFormatter()
             f4.locale = Locale(identifier: "zh_CN")
             f4.dateFormat = "yyyy-MM-dd HH:mm:ss"
-            if let d = f4.date(from: s) { return d }
+            if let d = f4.date(from: withoutTZ) { return d }
         }
         return nil
     }
@@ -312,6 +409,7 @@ enum ScheduleService {
             if let s = dict["is_synced"] as? Bool { event.isSynced = s }
             if let s = dict["isSynced"] as? Bool { event.isSynced = s }
 
+            debugPrintParsedTimeFieldsIfNeeded(raw: dict, parsed: event)
             return event
         }
 
@@ -357,6 +455,7 @@ enum ScheduleService {
         if let s = dict["is_synced"] as? Bool { event.isSynced = s }
         if let s = dict["isSynced"] as? Bool { event.isSynced = s }
         
+        debugPrintParsedTimeFieldsIfNeeded(raw: dict, parsed: event)
         return event
     }
 
@@ -579,8 +678,8 @@ enum ScheduleService {
         let payload: [String: Any] = [
             "title": event.title,
             "description": event.description,
-            "start_time": iso8601String(event.startTime),
-            "end_time": iso8601String(event.endTime)
+            "start_time": localDateTimeStringNoTimeZone(event.startTime),
+            "end_time": localDateTimeStringNoTimeZone(event.endTime)
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: payload, options: [])
         debugPrintRequest(request, tag: "update")
@@ -598,8 +697,8 @@ enum ScheduleService {
             // 有些后端会返回更新后的实体；若返回体不是实体形状，至少返回本地 event
             if data.isEmpty {
                 await detailCache.set(trimmed, value: event, ttl: defaultDetailTTL)
-                await listCache.invalidateAll()
-                await allPagesCache.invalidateAll()
+                await listCache.invalidateAll(cancelInFlight: false)
+                await allPagesCache.invalidateAll(cancelInFlight: false)
                 await postRemoteScheduleDidChange()
                 return event
             }
@@ -607,22 +706,22 @@ enum ScheduleService {
             if let dict = json as? [String: Any] {
                 if let d = dict["data"] as? [String: Any], let ev = parseEventDict(d, keepLocalId: event.id) {
                     await detailCache.set(trimmed, value: ev, ttl: defaultDetailTTL)
-                    await listCache.invalidateAll()
-                    await allPagesCache.invalidateAll()
+                    await listCache.invalidateAll(cancelInFlight: false)
+                    await allPagesCache.invalidateAll(cancelInFlight: false)
                     await postRemoteScheduleDidChange()
                     return ev
                 }
                 if let ev = parseEventDict(dict, keepLocalId: event.id) {
                     await detailCache.set(trimmed, value: ev, ttl: defaultDetailTTL)
-                    await listCache.invalidateAll()
-                    await allPagesCache.invalidateAll()
+                    await listCache.invalidateAll(cancelInFlight: false)
+                    await allPagesCache.invalidateAll(cancelInFlight: false)
                     await postRemoteScheduleDidChange()
                     return ev
                 }
             }
             await detailCache.set(trimmed, value: event, ttl: defaultDetailTTL)
-            await listCache.invalidateAll()
-            await allPagesCache.invalidateAll()
+            await listCache.invalidateAll(cancelInFlight: false)
+            await allPagesCache.invalidateAll(cancelInFlight: false)
             await postRemoteScheduleDidChange()
             return event
         } catch {
@@ -658,8 +757,8 @@ enum ScheduleService {
             }
             
             await detailCache.invalidate(trimmed)
-            await listCache.invalidateAll()
-            await allPagesCache.invalidateAll()
+            await listCache.invalidateAll(cancelInFlight: false)
+            await allPagesCache.invalidateAll(cancelInFlight: false)
             await postRemoteScheduleDidChange()
         } catch {
             if debugLogsEnabled {

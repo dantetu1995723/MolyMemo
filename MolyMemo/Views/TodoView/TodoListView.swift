@@ -144,8 +144,6 @@ private struct RemoteScheduleRow: View {
     
     private func displayEndTime() -> String? {
         guard event.endTimeProvided else { return nil }
-        // end==start 也不展示，避免 “11:09~11:09”
-        if abs(event.endTime.timeIntervalSince(event.startTime)) < 1 { return nil }
         return formatTime(event.endTime)
     }
     
@@ -361,7 +359,7 @@ struct TodoListView: View {
             Task { await reloadRemoteSchedulesForSelectedDate() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .remoteScheduleDidChange).receive(on: RunLoop.main)) { _ in
-            // 远端日程创建/更新/删除后，强制从网络刷新（绕过缓存），确保“今日行程”及时更新
+            // 统一以“后端列表”为准：收到变更通知后直接强刷
             Task { await reloadRemoteSchedulesForSelectedDate(forceRefresh: true) }
         }
         .onChange(of: selectedDate) { _, _ in

@@ -157,6 +157,11 @@ struct StructuredOutputApplier {
         if !output.meetings.isEmpty {
             message.meetings = mergeReplacingById(existing: message.meetings, incoming: output.meetings)
         }
+        
+        // 4) 关键：把“聚合字段里更完整的 remoteId”等信息回填到 segments（卡片渲染源）
+        // 否则会出现：聚合 scheduleEvents 有 remoteId，但卡片里的 event.remoteId 为空，
+        // 从卡片进入详情无法 PUT 更新后端，导致“卡片改了但工具箱列表/通知栏没改”。
+        backfillScheduleRemoteIdsFromAggregate(into: &message)
 
         // taskId：保持最后一次为准
         if let taskId = output.taskId, !taskId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -189,6 +194,9 @@ struct StructuredOutputApplier {
         if !output.contacts.isEmpty { message.contacts = output.contacts }
         if !output.invoices.isEmpty { message.invoices = output.invoices }
         if !output.meetings.isEmpty { message.meetings = output.meetings }
+        
+        // 同上：final 输出也需要回填到 segments
+        backfillScheduleRemoteIdsFromAggregate(into: &message)
     }
 
     // MARK: - Small helpers
@@ -218,6 +226,45 @@ struct StructuredOutputApplier {
             }
         }
         return result
+    }
+    
+    /// 将 message.scheduleEvents 里的 remoteId 回填到 message.segments 的 scheduleCards 里（仅补齐缺失字段，不覆盖已有值）。
+    private static func backfillScheduleRemoteIdsFromAggregate(into message: inout ChatMessage) {
+        guard let segs = message.segments, !segs.isEmpty else { return }
+        guard let agg = message.scheduleEvents, !agg.isEmpty else { return }
+        
+        func trimmed(_ s: String?) -> String { (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
+        
+        // 用本地 id 做最稳定的回填 key（segments 与聚合通常共享同一个本地 id）
+        var idToRemoteId: [UUID: String] = [:]
+        idToRemoteId.reserveCapacity(agg.count)
+        for e in agg {
+            let rid = trimmed(e.remoteId)
+            guard !rid.isEmpty else { continue }
+            idToRemoteId[e.id] = rid
+        }
+        guard !idToRemoteId.isEmpty else { return }
+        
+        var updated = segs
+        var changed = false
+        for i in updated.indices {
+            guard updated[i].kind == .scheduleCards else { continue }
+            guard var events = updated[i].scheduleEvents, !events.isEmpty else { continue }
+            var localChanged = false
+            for j in events.indices {
+                if trimmed(events[j].remoteId).isEmpty, let rid = idToRemoteId[events[j].id] {
+                    events[j].remoteId = rid
+                    localChanged = true
+                }
+            }
+            if localChanged {
+                updated[i].scheduleEvents = events
+                changed = true
+            }
+        }
+        if changed {
+            message.segments = updated
+        }
     }
 }
 

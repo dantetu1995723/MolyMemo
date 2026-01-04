@@ -16,6 +16,8 @@ enum BackendChatConfig {
         static let debugDumpResponseToFile = "backend_chat_debug_dump_response_to_file"
         static let debugLogStreamEvents = "backend_chat_debug_log_stream_events"
         static let debugLogChunkSummary = "backend_chat_debug_log_chunk_summary"
+        // 仅用于调试工具箱「日程」列表：打印 /api/v1/schedules 的原始 JSON（避免被 fullResponse 开关影响）
+        static let debugScheduleServiceRawLog = "backend_chat_debug_schedule_service_raw_log"
 #endif
     }
     
@@ -180,6 +182,18 @@ enum BackendChatConfig {
             return UserDefaults.standard.bool(forKey: Keys.debugLogChunkSummary)
         }
         set { UserDefaults.standard.set(newValue, forKey: Keys.debugLogChunkSummary) }
+    }
+
+    /// Debug：是否打印 ScheduleService（/api/v1/schedules）原始响应 body（默认开启，便于排查“工具箱日程时间不对”）
+    static var debugScheduleServiceRawLog: Bool {
+        get {
+            if UserDefaults.standard.object(forKey: Keys.debugScheduleServiceRawLog) == nil {
+                UserDefaults.standard.set(true, forKey: Keys.debugScheduleServiceRawLog)
+                return true
+            }
+            return UserDefaults.standard.bool(forKey: Keys.debugScheduleServiceRawLog)
+        }
+        set { UserDefaults.standard.set(newValue, forKey: Keys.debugScheduleServiceRawLog) }
     }
 #endif
 }

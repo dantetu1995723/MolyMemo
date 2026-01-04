@@ -56,36 +56,13 @@ struct RemoteScheduleDetailLoaderSheet: View {
             return
         }
         let trimmed = rid.trimmingCharacters(in: .whitespacesAndNewlines)
-        
-        // 1) 先用缓存，避免每次打开都 loading
-        if let cached = await ScheduleService.peekScheduleDetail(remoteId: trimmed) {
-            var v = cached.value
-            v.id = current.id
-            event = v
-            if cached.isFresh { return }
-            // 过期：后台静默刷新
-            Task {
-                await refreshSilently(remoteId: trimmed, keepLocalId: current.id)
-            }
-            return
-        }
-        
-        // 2) 首次无缓存：静默拉取，不展示 loading 弹层（避免进入详情页出现弹窗/浮层）
+
+        // 统一以“后端详情”为准：每次打开都强制从网络拉取一次（不走缓存），避免“详情入口不一致/数据不同步”
         do {
-            let detail = try await ScheduleService.fetchScheduleDetail(remoteId: trimmed, keepLocalId: current.id)
+            let detail = try await ScheduleService.fetchScheduleDetail(remoteId: trimmed, keepLocalId: current.id, forceRefresh: true)
             event = detail
         } catch {
             // 静默失败：保留现有信息
-        }
-    }
-    
-    @MainActor
-    private func refreshSilently(remoteId: String, keepLocalId: UUID) async {
-        do {
-            let detail = try await ScheduleService.fetchScheduleDetail(remoteId: remoteId, keepLocalId: keepLocalId)
-            event = detail
-        } catch {
-            // 静默失败：不打断用户
         }
     }
 }

@@ -85,12 +85,15 @@ struct VoiceRecordingOverlay: View {
     @State private var backgroundOpacity: Double = 0
     @State private var smoothedPower: CGFloat = 0  // 统一平滑后的音频值
     
+    /// 仅调“语音转文字白色外框”的高度，不改变内部字体/padding/音浪尺寸
+    private let transcriptCardMinHeight: CGFloat = 132
+    
     var body: some View {
         ZStack {
             // 1. 背景蒙版：独立图层，在录音开始时自然淡入
             Color.black.opacity(isCanceling ? 0.5 : backgroundOpacity)
                 .ignoresSafeArea()
-                .animation(.easeInOut(duration: 0.2), value: isCanceling)
+                .animation(.easeInOut(duration: 0.12), value: isCanceling)
             
             // 2. 粘滞流体球：负责全生命周期（融合、内缩、循环旋转）
             StickyBallAnimationView(
@@ -102,7 +105,7 @@ struct VoiceRecordingOverlay: View {
                 audioPower: smoothedPower,  // 使用统一平滑后的值
                 onComplete: {
                     // 动画到达成球状态瞬间，显示文字框
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                    withAnimation(.spring(response: 0.2, dampingFraction: 0.85)) {
                         showMainUI = true
                     }
                 },
@@ -125,22 +128,20 @@ struct VoiceRecordingOverlay: View {
                             .frame(minHeight: 32)
                             .padding(.horizontal, 16)
                             .padding(.top, 16)
-                        
-                        // 右下角音浪
-                        HStack {
-                            Spacer()
-                            VoiceWaveformView(audioPower: smoothedPower, isCanceling: isCanceling)  // 使用统一平滑后的值
-                            .padding(.trailing, 16)
-                            .padding(.bottom, 12)
-                            .padding(.top, 4)
-                        }
                     }
                     .frame(width: ScreenMetrics.width - 60)
+                    .frame(minHeight: transcriptCardMinHeight, alignment: .topLeading)
                     .background(
                         RoundedRectangle(cornerRadius: 24)
                             .fill(.white)
                             .shadow(color: .black.opacity(0.08), radius: 15, x: 0, y: 5)
                     )
+                    // 不用 Spacer：直接把音浪贴在卡片右下角，避免把卡片撑满全屏
+                    .overlay(alignment: .bottomTrailing) {
+                        VoiceWaveformView(audioPower: smoothedPower, isCanceling: isCanceling)
+                            .padding(.trailing, 16)
+                            .padding(.bottom, 14)
+                    }
                     
                     // 提示文字
                     Text(isCanceling ? "放开手指取消" : "放开手指传送，向上滑动取消")
@@ -154,7 +155,7 @@ struct VoiceRecordingOverlay: View {
         .ignoresSafeArea()
         .onAppear {
             // 融合开始时启动背景淡入，此时正好完成粘滞融合
-            withAnimation(.easeInOut(duration: 0.2)) {
+            withAnimation(.easeInOut(duration: 0.12)) {
                 backgroundOpacity = 0.35
             }
         }
@@ -170,7 +171,7 @@ struct VoiceRecordingOverlay: View {
             withAnimation(.easeInOut(duration: 0.12)) {
                 showMainUI = false
             }
-            withAnimation(.easeOut(duration: 0.2)) {
+            withAnimation(.easeOut(duration: 0.15)) {
                 backgroundOpacity = 0.0
             }
         }

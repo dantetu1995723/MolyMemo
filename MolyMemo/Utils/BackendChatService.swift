@@ -538,6 +538,28 @@ final class BackendChatService {
         let cardIdString = card["card_id"] as? String
         let cardId = cardIdString.flatMap { UUID(uuidString: $0) }
         let data = card["data"]
+        
+        // 后端 card 外层可能带业务 id（例如 schedules/contacts 的后端 id）。
+        // 该 id 才是后续详情/更新/删除的唯一依据；不要只盯 data 内字段。
+        func cardRemoteIdString(_ card: [String: Any]) -> String? {
+            if let s = card["id"] as? String {
+                let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+                return t.isEmpty ? nil : t
+            }
+            if let i = card["id"] as? Int { return String(i) }
+            if let d = card["id"] as? Double { return String(Int(d)) }
+            // 兼容其它命名
+            if let s = card["remote_id"] as? String {
+                let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+                return t.isEmpty ? nil : t
+            }
+            if let s = card["remoteId"] as? String {
+                let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+                return t.isEmpty ? nil : t
+            }
+            return nil
+        }
+        let outerRid = cardRemoteIdString(card)
 
         func appendUnique<T: Identifiable>(_ incoming: [T], to list: inout [T]) where T.ID: Equatable {
             for item in incoming {
@@ -550,10 +572,11 @@ final class BackendChatService {
         case "schedule":
             var events: [ScheduleEvent] = []
             if let dict = data as? [String: Any] {
-                if let e = parseScheduleEvent(dict, forceId: cardId) { events.append(e) }
+                if let e = parseScheduleEvent(dict, forceId: cardId, forceRemoteId: outerRid) { events.append(e) }
             } else if let arr = data as? [[String: Any]] {
                 for d in arr {
-                    if let e = parseScheduleEvent(d, forceId: nil) { events.append(e) }
+                    // 多条时优先用每条 data 自己的 id；不强行用外层 id 覆盖
+                    if let e = parseScheduleEvent(d, forceId: nil, forceRemoteId: nil) { events.append(e) }
                 }
             }
             if !events.isEmpty {
@@ -566,10 +589,10 @@ final class BackendChatService {
         case "contact", "contacts", "person", "people":
             var cards: [ContactCard] = []
             if let dict = data as? [String: Any] {
-                if let c = parseContact(dict, forceId: cardId) { cards.append(c) }
+                if let c = parseContact(dict, forceId: cardId, forceRemoteId: outerRid) { cards.append(c) }
             } else if let arr = data as? [[String: Any]] {
                 for d in arr {
-                    if let c = parseContact(d, forceId: nil) { cards.append(c) }
+                    if let c = parseContact(d, forceId: nil, forceRemoteId: nil) { cards.append(c) }
                 }
             }
             if !cards.isEmpty {
@@ -622,8 +645,9 @@ final class BackendChatService {
             print("🛠️ [BackendChat->Tool] name=\(name) status=\(status) observationLen=\(obsLen)")
         }
 #endif
-        // ✅ 链路简化：tool chunk 只负责“运行状态/日志”，不再解析 observation 来兜底生成卡片。
-        // 卡片必须来自后端 card chunk，避免出现“兜底卡片时间/字段不准”与重复覆盖复杂度。
+        // ✅ 统一以“后端 card chunk”为准：
+        // 现在后端在聊天室创建的日程/联系人卡片都会在 card.data 里带 id；
+        // remoteId 一律以 card.data.id 为准，这里不再解析 tool.observation，避免链路分叉与误补齐。
         _ = name
         _ = status
     }
@@ -749,13 +773,15 @@ final class BackendChatService {
         switch cardType {
         case "schedule":
             if let dict = data as? [String: Any] {
-                if let event = parseScheduleEvent(dict, forceId: cardId) {
+                // 兼容：card 外层可能带业务 id（与 card_id 不同）
+                let outerRid = (card["id"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+                if let event = parseScheduleEvent(dict, forceId: cardId, forceRemoteId: outerRid) {
                     // card 优先：覆盖同日程的 tool 兜底结果
                     upsertScheduleEvent(event, into: &output, preferIncoming: true)
                 }
             } else if let arr = data as? [[String: Any]] {
                 for d in arr {
-                    if let event = parseScheduleEvent(d, forceId: nil) {
+                    if let event = parseScheduleEvent(d, forceId: nil, forceRemoteId: nil) {
                         upsertScheduleEvent(event, into: &output, preferIncoming: true)
                     }
                 }
@@ -763,12 +789,13 @@ final class BackendChatService {
 
         case "contact", "contacts", "person", "people":
             if let dict = data as? [String: Any] {
-                if let c = parseContact(dict, forceId: cardId) {
+                let outerRid = (card["id"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+                if let c = parseContact(dict, forceId: cardId, forceRemoteId: outerRid) {
                     output.contacts.append(c)
                 }
             } else if let arr = data as? [[String: Any]] {
                 for d in arr {
-                    if let c = parseContact(d, forceId: nil) {
+                    if let c = parseContact(d, forceId: nil, forceRemoteId: nil) {
                         output.contacts.append(c)
                     }
                 }
@@ -806,10 +833,13 @@ final class BackendChatService {
         }
     }
 
-    private static func parseScheduleEvent(_ dict: [String: Any], forceId: UUID?) -> ScheduleEvent? {
+    private static func parseScheduleEvent(_ dict: [String: Any], forceId: UUID?, forceRemoteId: String?) -> ScheduleEvent? {
         let title = (dict["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let description = (dict["description"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !title.isEmpty else { return nil }
+        
+        func trimmed(_ s: String?) -> String { (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
+        let forcedRid = trimmed(forceRemoteId)
 
         // ✅ full_day 优先：按本地时区的 00:00~24:00 语义落地
         if let fullDayStart = parseFullDayStart(dict["full_day"]) {
@@ -817,14 +847,13 @@ final class BackendChatService {
             var event = ScheduleEvent(title: title, description: description, startTime: fullDayStart, endTime: end)
             event.isFullDay = true
             event.endTimeProvided = true
-            // remoteId：尽量从后端字段拿到，用于后续拉详情
-            if let rid = dict.string(forAnyOf: ["id", "schedule_id", "remote_id", "remoteId"])?.trimmingCharacters(in: .whitespacesAndNewlines),
-               !rid.isEmpty
+            // remoteId：以 card 外层 id 为准；否则回退到 data 内字段
+            if !forcedRid.isEmpty {
+                event.remoteId = forcedRid
+            } else if let rid = dict.string(forAnyOf: ["id", "schedule_id", "remote_id", "remoteId"])?.trimmingCharacters(in: .whitespacesAndNewlines),
+                      !rid.isEmpty
             {
                 event.remoteId = rid
-                if forceId == nil, let u = UUID(uuidString: rid) {
-                    event.id = u
-                }
             }
             if let id = forceId { event.id = id }
             return event
@@ -837,15 +866,13 @@ final class BackendChatService {
 
         var event = ScheduleEvent(title: title, description: description, startTime: start, endTime: end)
         event.endTimeProvided = (parsedEnd != nil)
-        // remoteId：尽量从后端字段拿到，用于后续拉详情
-        if let rid = dict.string(forAnyOf: ["id", "schedule_id", "remote_id", "remoteId"])?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !rid.isEmpty
+        // remoteId：以 card 外层 id 为准；否则回退到 data 内字段
+        if !forcedRid.isEmpty {
+            event.remoteId = forcedRid
+        } else if let rid = dict.string(forAnyOf: ["id", "schedule_id", "remote_id", "remoteId"])?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !rid.isEmpty
         {
             event.remoteId = rid
-            // 若后端 id 本身是 UUID，且外部没有强制本地 id，则用它来稳定映射
-            if forceId == nil, let u = UUID(uuidString: rid) {
-                event.id = u
-            }
         }
         if let id = forceId { event.id = id }
         return event
@@ -865,7 +892,7 @@ final class BackendChatService {
         return Calendar.current.startOfDay(for: d)
     }
 
-    private static func parseContact(_ dict: [String: Any], forceId: UUID?) -> ContactCard? {
+    private static func parseContact(_ dict: [String: Any], forceId: UUID?, forceRemoteId: String?) -> ContactCard? {
         let name = (dict["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !name.isEmpty else { return nil }
 
@@ -887,16 +914,16 @@ final class BackendChatService {
             rawImage: nil
         )
         if let id = forceId { card.id = id }
+        func trimmed(_ s: String?) -> String { (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
+        let forcedRid = trimmed(forceRemoteId)
         
         // remoteId：尽量从后端字段拿到（用于后续拉详情/更新/删除）
-        if let rid = dict.string(forAnyOf: ["id", "contact_id", "remote_id", "remoteId"])?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !rid.isEmpty
+        if !forcedRid.isEmpty {
+            card.remoteId = forcedRid
+        } else if let rid = dict.string(forAnyOf: ["id", "contact_id", "remote_id", "remoteId"])?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !rid.isEmpty
         {
             card.remoteId = rid
-            // 若后端 id 本身是 UUID，且外部没有强制本地 id，则用它来稳定映射
-            if forceId == nil, let u = UUID(uuidString: rid) {
-                card.id = u
-            }
         } else if let idInt = dict["id"] as? Int {
             card.remoteId = String(idInt)
         } else if let idDouble = dict["id"] as? Double {
@@ -962,13 +989,20 @@ final class BackendChatService {
             // ISO8601DateFormatter(withFractionalSeconds) 在部分系统上对 >3 位小数解析不稳定，
             // 这里先把小数统一归一化到毫秒（3 位），再走 ISO8601 解析。
             let normalized = normalizeISO8601FractionalSecondsToMillis(trimmed)
-            let f1 = ISO8601DateFormatter()
-            f1.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            if let d = f1.date(from: normalized) { return d }
-            let f2 = ISO8601DateFormatter()
-            f2.formatOptions = [.withInternetDateTime]
-            if let d = f2.date(from: normalized) { return d }
-            // 兼容后端常见“无时区 ISO8601”（按本地时区理解）
+            
+            // 统一策略：不论后端是否带 Z/±HH:mm，都按“本地时间语义”解析（忽略时区后缀）
+            // 目标：后端返回什么时间，UI 就显示什么时间（避免列表/详情/卡片出现小时偏移）。
+            func stripTZ(_ s: String) -> String {
+                var base = s
+                if base.hasSuffix("Z") { base.removeLast(); return base }
+                if let r = base.range(of: "[+-]\\d{2}:\\d{2}$", options: .regularExpression) {
+                    base.removeSubrange(r)
+                    return base
+                }
+                return base
+            }
+            let withoutTZ = stripTZ(normalized)
+            
             let tz = TimeZone.current
             let posix = Locale(identifier: "en_US_POSIX")
 
@@ -977,7 +1011,7 @@ final class BackendChatService {
                 df.locale = posix
                 df.timeZone = tz
                 df.dateFormat = format
-                return df.date(from: normalized)
+                return df.date(from: withoutTZ)
             }
 
             // e.g. 2025-12-25T10:00:00 / 2025-12-25T10:00

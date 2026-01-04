@@ -38,12 +38,10 @@ struct ChatView: View {
     // AppIntent/快捷指令后台写入的 AI 回复：一次性打字机动画目标由 AppState.pendingAnimatedAgentMessageId 统一管理
 
     // 日程详情弹窗（点击卡片打开）
-    private struct ScheduleDetailSelection: Identifiable, Equatable {
-        let messageId: UUID
-        let eventId: UUID
-        var id: String { "\(messageId.uuidString)-\(eventId.uuidString)" }
-    }
-    @State private var scheduleDetailSelection: ScheduleDetailSelection? = nil
+    // 统一走 RemoteScheduleDetailLoaderSheet：先拉后端详情，再进入详情编辑/保存/删除
+    @State private var scheduleDetailEvent: ScheduleEvent? = nil
+    @State private var scheduleDetailMessageId: UUID? = nil
+    @State private var scheduleDetailEventId: UUID? = nil
 
     // 人脉详情（从 ContactCard 转换/创建 SwiftData Contact 后打开 ContactDetailView）
     @State private var selectedContact: Contact? = nil
@@ -245,43 +243,71 @@ struct ChatView: View {
                     .zIndex(200)
                 }
             }
-            .sheet(item: $scheduleDetailSelection, onDismiss: {
-                scheduleDetailSelection = nil
-            }) { selection in
-                if
-                    let msgIndex = appState.chatMessages.firstIndex(where: { $0.id == selection.messageId }),
-                    let eventIndex = appState.chatMessages[msgIndex].scheduleEvents?.firstIndex(where: { $0.id == selection.eventId })
-                {
-                    ScheduleDetailSheet(
-                        event: Binding(
-                            get: {
-                                appState.chatMessages[msgIndex].scheduleEvents?[eventIndex]
-                                ?? ScheduleEvent(title: "", description: "", startTime: Date(), endTime: Date())
-                            },
-                            set: { appState.chatMessages[msgIndex].scheduleEvents?[eventIndex] = $0 }
-                        ),
-                        onDelete: {
-                            withAnimation {
-                                appState.chatMessages[msgIndex].scheduleEvents?.removeAll(where: { $0.id == selection.eventId })
+            .sheet(item: $scheduleDetailEvent, onDismiss: {
+                scheduleDetailEvent = nil
+                scheduleDetailMessageId = nil
+                scheduleDetailEventId = nil
+            }) { _ in
+                RemoteScheduleDetailLoaderSheet(
+                    event: $scheduleDetailEvent,
+                    onCommittedSave: { updated in
+                        guard let msgId = scheduleDetailMessageId,
+                              let evId = scheduleDetailEventId,
+                              let msgIndex = appState.chatMessages.firstIndex(where: { $0.id == msgId })
+                        else { return }
+                        
+                        var msg = appState.chatMessages[msgIndex]
+                        if var segs = msg.segments, !segs.isEmpty {
+                            var changed = false
+                            for si in segs.indices {
+                                guard var evs = segs[si].scheduleEvents, !evs.isEmpty else { continue }
+                                if let ei = evs.firstIndex(where: { $0.id == evId }) {
+                                    evs[ei] = updated
+                                    segs[si].scheduleEvents = evs
+                                    changed = true
+                                }
                             }
-                            appState.saveMessageToStorage(appState.chatMessages[msgIndex], modelContext: modelContext)
-                        },
-                        onSave: { updated in
-                            withAnimation {
-                                appState.chatMessages[msgIndex].scheduleEvents?[eventIndex] = updated
+                            if changed {
+                                msg.segments = segs
+                                rebuildAggregatesFromSegments(segs, into: &msg)
                             }
-                            appState.saveMessageToStorage(appState.chatMessages[msgIndex], modelContext: modelContext)
                         }
-                    )
-                } else {
-                    VStack {
-                        Text("日程不存在或已删除")
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundColor(Color(hex: "666666"))
+                        if var cards = msg.scheduleEvents, let ei = cards.firstIndex(where: { $0.id == evId }) {
+                            cards[ei] = updated
+                            msg.scheduleEvents = cards
+                        }
+                        appState.chatMessages[msgIndex] = msg
+                        appState.saveMessageToStorage(msg, modelContext: modelContext)
+                    },
+                    onCommittedDelete: { deleted in
+                        guard let msgId = scheduleDetailMessageId,
+                              let evId = scheduleDetailEventId,
+                              let msgIndex = appState.chatMessages.firstIndex(where: { $0.id == msgId })
+                        else { return }
+                        
+                        var msg = appState.chatMessages[msgIndex]
+                        if var segs = msg.segments, !segs.isEmpty {
+                            for si in segs.indices {
+                                if var evs = segs[si].scheduleEvents {
+                                    evs.removeAll(where: { $0.id == evId })
+                                    segs[si].scheduleEvents = evs
+                                }
+                            }
+                            msg.segments = segs
+                            rebuildAggregatesFromSegments(segs, into: &msg)
+                        }
+                        if var cards = msg.scheduleEvents {
+                            cards.removeAll(where: { $0.id == evId })
+                            msg.scheduleEvents = cards
+                        }
+                        appState.chatMessages[msgIndex] = msg
+                        appState.saveMessageToStorage(msg, modelContext: modelContext)
+                        
+                        _ = deleted // keep signature stable
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Color(red: 0.97, green: 0.97, blue: 0.97))
-                }
+                )
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
             }
             .sheet(item: $invoiceDetailSelection, onDismiss: {
                 invoiceDetailSelection = nil
@@ -449,6 +475,7 @@ struct ChatView: View {
         }
         // 远端日程变更（创建/更新/删除）后强刷，确保通知栏及时更新
         .onReceive(NotificationCenter.default.publisher(for: .remoteScheduleDidChange).receive(on: RunLoop.main)) { _ in
+            // 统一以“后端列表”为准：收到变更通知后直接强刷
             refreshTodaySchedules(force: true)
         }
         // App 回到前台时强刷，确保“今天”切换或后台被改动后能及时同步
@@ -742,7 +769,9 @@ struct ChatView: View {
                                                   let eIndex = appState.chatMessages[mIndex].segments?[sIndex].scheduleEvents?.firstIndex(where: { $0.id == localEventId })
                                             else {
                                                 await MainActor.run {
-                                                    scheduleDetailSelection = ScheduleDetailSelection(messageId: msgId, eventId: localEventId)
+                                                    scheduleDetailMessageId = msgId
+                                                    scheduleDetailEventId = localEventId
+                                                    scheduleDetailEvent = event
                                                 }
                                                 return
                                             }
@@ -758,17 +787,23 @@ struct ChatView: View {
                                                             appState.chatMessages[mIndex] = mm
                                                         }
                                                         appState.saveMessageToStorage(appState.chatMessages[mIndex], modelContext: modelContext)
-                                                        scheduleDetailSelection = ScheduleDetailSelection(messageId: msgId, eventId: localEventId)
+                                                        scheduleDetailMessageId = msgId
+                                                        scheduleDetailEventId = localEventId
+                                                        scheduleDetailEvent = detail
                                                     }
                                                 } catch {
                                                     print("❌ [ChatView] fetch schedule detail failed rid=\(rid) error=\(error)")
                                                     await MainActor.run {
-                                                        scheduleDetailSelection = ScheduleDetailSelection(messageId: msgId, eventId: localEventId)
+                                                        scheduleDetailMessageId = msgId
+                                                        scheduleDetailEventId = localEventId
+                                                        scheduleDetailEvent = event
                                                     }
                                                 }
                                             } else {
                                                 await MainActor.run {
-                                                    scheduleDetailSelection = ScheduleDetailSelection(messageId: msgId, eventId: localEventId)
+                                                    scheduleDetailMessageId = msgId
+                                                    scheduleDetailEventId = localEventId
+                                                    scheduleDetailEvent = event
                                                 }
                                             }
                                         }
@@ -987,7 +1022,9 @@ struct ChatView: View {
                                         withAnimation { self.showDeleteConfirmation = true }
                                     }, onOpenDetail: { event in
                                         // 历史回填的卡片可能没有分段定位，直接走 selection；详情页会按 event.id / remoteId 拉取
-                                        scheduleDetailSelection = ScheduleDetailSelection(messageId: message.id, eventId: event.id)
+                                        scheduleDetailMessageId = message.id
+                                        scheduleDetailEventId = event.id
+                                        scheduleDetailEvent = event
                                     })
                                     .frame(maxWidth: .infinity)
                                     .padding(.top, -10)

@@ -602,11 +602,19 @@ struct ScheduleDetailSheet: View {
         
         do {
             var updated = editedEvent
-            if let rid = updated.remoteId?.trimmingCharacters(in: .whitespacesAndNewlines), !rid.isEmpty {
-                let saved = try await ScheduleService.updateSchedule(remoteId: rid, event: updated)
-                updated = saved
-                editedEvent = saved
+            // 关键：必须有 remoteId 才能 PUT 更新后端。
+            func norm(_ s: String?) -> String { (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
+            let rid = norm(updated.remoteId)
+            
+            // 严格：必须拿到 remoteId 才允许保存，避免出现“只改本地、后端未同步”的链路错乱
+            guard !rid.isEmpty else {
+                alertMessage = "保存失败：后端未返回日程 id，无法同步到后端。请关闭后重试。"
+                return
             }
+
+            let saved = try await ScheduleService.updateSchedule(remoteId: rid, event: updated)
+            updated = saved
+            editedEvent = saved
             event = updated
             onSave(updated)
             dismiss()

@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct StickyBallAnimationView: View {
     var inputFrame: CGRect
@@ -15,10 +16,12 @@ struct StickyBallAnimationView: View {
     
     // 动画时长常量
     // 说明：这里同时影响"输入框->球"和"球->输入框"的速度
-    private let turnBlueDuration: Double = 0.05
-    private let mergeDuration: Double = 0.15
-    private let holdDuration: Double = 0.02
-    private let shrinkToBallDuration: Double = 0.25
+    /// 输入框“从中间向两边铺蓝”的过渡时长（更柔和的变色过程）
+    // 更快的“输入框 -> 球”节奏：按住后更快完成收缩成球
+    private let turnBlueDuration: Double = 0.12
+    private let mergeDuration: Double = 0.10
+    private let holdDuration: Double = 0.01
+    private let shrinkToBallDuration: Double = 0.18
     
     @State private var introFinished = false
     @State private var didTriggerComplete = false
@@ -30,7 +33,13 @@ struct StickyBallAnimationView: View {
     
     var body: some View {
         TimelineView(.animation) { timeline in
-            Canvas { context, size in
+            // 录音变球在真机 120Hz 下容易在“融合阶段”掉帧：
+            // - blur + alphaThreshold 会对一个很大的像素区域做滤镜
+            // - 缩成球后区域变小，因此后续阶段不明显
+            // 这里做两层减负：
+            // 1) Canvas 异步渲染（减少主线程阻塞）
+            // 2) 对滤镜阶段做 clip，只在输入框+toolbox 的包围盒附近处理像素
+            Canvas(rendersAsynchronously: true) { context, size in
                 let totalDuration = (turnBlueDuration + mergeDuration + holdDuration + shrinkToBallDuration)
                 let rawElapsed = timeline.date.timeIntervalSince(startTime)
                 // 逆向：把“时间”映射回正向的时间轴，这样可以复用同一套绘制逻辑
@@ -41,23 +50,34 @@ struct StickyBallAnimationView: View {
                 let safeToolboxFrame = hasToolbox ? toolboxFrame : .zero
                 
                 if elapsed < turnBlueDuration {
-                    // --- 阶段 1: 仅变色 (清晰模式) ---
-                    drawInitialShapes(context: context, inputRect: safeInputFrame, toolboxRect: safeToolboxFrame)
+                    // --- 阶段 1: “中间蓝、两边白渐变”过渡，蓝色由中间向两侧铺开（清晰模式） ---
+                    let p = max(0, min(1, elapsed / turnBlueDuration))
+                    drawInitialShapes(context: context, inputRect: safeInputFrame, toolboxRect: safeToolboxFrame, colorSpreadProgress: p)
                 } else {
                     // --- 阶段 2, 3, 4 & 以后: 融合 + 长条保持 + 内缩成球 (元球滤镜模式) ---
                     // 收紧阈值 (0.5 -> 0.65)，让边缘更清爽，不肉感
                     context.addFilter(.alphaThreshold(min: 0.65, color: currentColor))
                     context.drawLayer { ctx in
-                        // 融合阶段使用更小的模糊 (6pt)，确保衔接处不产生多余的"肥油"
                         let isMerging = elapsed < turnBlueDuration + mergeDuration
-                        ctx.addFilter(.blur(radius: (isMerging && hasToolbox) ? 6 : 12))
+                        // 融合阶段使用更小的模糊 (6pt)，确保衔接处不产生多余的"肥油"
+                        let blurRadius: CGFloat = (isMerging && hasToolbox) ? 6 : 12
+                        ctx.addFilter(.blur(radius: blurRadius))
+                        
+                        // 关键性能优化：
+                        // 在融合阶段，inputRect + toolboxRect 覆盖屏幕下方一大块区域，
+                        // blur/threshold 会对“整层”做像素处理，120Hz 下更容易掉帧。
+                        // 这里将绘制（以及滤镜处理）限制在包围盒附近，显著减少像素工作量。
+                        let baseRect = getFullRect(inputRect: safeInputFrame, toolboxRect: safeToolboxFrame)
+                        let pad = max(32, blurRadius * 4) // blur 采样需要更大的边界，避免被裁切出硬边
+                        let clipRect = baseRect.insetBy(dx: -pad, dy: -pad)
+                        ctx.clip(to: Path(clipRect))
                         
                         if isMerging {
                             // 阶段 2: 粘滞融合 (现在带滤镜，更水润)
                             let progress = max(0, (elapsed - turnBlueDuration) / mergeDuration)
                             drawMerging(context: ctx, inputRect: safeInputFrame, toolboxRect: safeToolboxFrame, progress: progress)
                         } else {
-                            let fullRect = getFullRect(inputRect: safeInputFrame, toolboxRect: safeToolboxFrame)
+                            let fullRect = baseRect
                             
                             if elapsed < turnBlueDuration + mergeDuration + holdDuration {
                                 // 阶段 3: 保持长条
@@ -198,19 +218,29 @@ struct StickyBallAnimationView: View {
         }
     }
     
-    private func drawInitialShapes(context: GraphicsContext, inputRect: CGRect, toolboxRect: CGRect) {
+    private func drawInitialShapes(
+        context: GraphicsContext,
+        inputRect: CGRect,
+        toolboxRect: CGRect,
+        colorSpreadProgress: CGFloat
+    ) {
+        // 阶段 1 的“中间蓝、两边白渐变”应当以「输入框 + 工具箱」的整体宽度为坐标系，
+        // 否则两者各自一套渐变，融合/相连那一帧会出现渐变断层。
+        let overallRect = getFullRect(inputRect: inputRect, toolboxRect: toolboxRect)
+        let unifiedShading = initialColorSpreadShading(in: overallRect, progress: colorSpreadProgress)
         let inputPath = Path(roundedRect: inputRect, cornerRadius: inputRect.height / 2)
-        context.fill(inputPath, with: .color(currentColor))
+        context.fill(inputPath, with: unifiedShading)
         
         if toolboxRect.width > 0 {
             let toolboxPath = Path(ellipseIn: toolboxRect)
-            context.fill(toolboxPath, with: .color(currentColor))
+            context.fill(toolboxPath, with: unifiedShading)
         }
     }
     
     private func drawMerging(context: GraphicsContext, inputRect: CGRect, toolboxRect: CGRect, progress: CGFloat) {
         // 1. 绘制主体
-        drawInitialShapes(context: context, inputRect: inputRect, toolboxRect: toolboxRect)
+        // 融合阶段已进入 alphaThreshold 着色模式，这里保持纯色即可
+        drawInitialShapes(context: context, inputRect: inputRect, toolboxRect: toolboxRect, colorSpreadProgress: 1.0)
         
         // 如果没有外部 toolbox，不需要绘制连接桥
         guard toolboxRect.width > 0 else { return }
@@ -259,6 +289,71 @@ struct StickyBallAnimationView: View {
             y: inputRect.minY,
             width: toolboxRect.maxX - inputRect.minX,
             height: inputRect.height
+        )
+    }
+
+    // MARK: - Color Spread Shading (阶段 1)
+
+    /// 阶段 1：实现“中间蓝、两边白渐变”，并让蓝色从中间向两侧铺开到全蓝。
+    /// - progress: 0 -> 中间蓝/两边白渐变；1 -> 全蓝
+    private func initialColorSpreadShading(in rect: CGRect, progress: CGFloat) -> GraphicsContext.Shading {
+        // 取消态保持纯红，不做白边渐变（避免“取消”语义被稀释）
+        guard !isCanceling else {
+            return .color(currentColor)
+        }
+        
+        let p = max(0, min(1, progress))
+        if p >= 0.999 { return .color(currentColor) }
+        
+        // 边缘“白色”随进度逐步过渡到蓝色；同时白边宽度逐步收缩（蓝色从中间向两侧铺开）
+        // 目标：两边白尽可能大、蓝芯尽可能小，并且从渐变到全蓝的过程更明显。
+        //
+        // - maxEdgeWidth 越接近 0.5：初始白边越宽（蓝芯越细）
+        // - shrinkCurvePow < 1：前期收缩更慢，过渡更“可见”
+        let maxEdgeWidth: CGFloat = 0.485
+        let shrinkCurvePow: CGFloat = 0.55
+        let edgeWidth = min(0.49, max(0.001, maxEdgeWidth * pow(1 - p, shrinkCurvePow)))
+        
+        // 白色保持更久：用缓入曲线，让边缘从“白”到“蓝”变得更慢、更有层次
+        let edgeToBlueT = pow(p, 2.2)
+        let edgeColor = Color(mixUIColor(.white, systemBlueLike, t: edgeToBlueT))
+
+        // 中心蓝色更浅：阶段 1 先用“淡蓝芯”，再随进度逐步加深到标准蓝
+        // - 初始 t=0.50：掺 50% 白（更浅）
+        // - 结束 t->1.0：回到标准蓝（与后续阶段一致）
+        let centerToBlueT = 0.50 + 0.50 * pow(p, 1.8)
+        let centerColor = Color(mixUIColor(.white, systemBlueLike, t: centerToBlueT))
+        
+        let gradient = Gradient(stops: [
+            .init(color: edgeColor, location: 0.0),
+            .init(color: centerColor, location: edgeWidth),
+            .init(color: centerColor, location: 1.0 - edgeWidth),
+            .init(color: edgeColor, location: 1.0),
+        ])
+        
+        return .linearGradient(
+            gradient,
+            startPoint: CGPoint(x: rect.minX, y: rect.midY),
+            endPoint: CGPoint(x: rect.maxX, y: rect.midY)
+        )
+    }
+
+    private var systemBlueLike: UIColor {
+        // 与 Color(hex:"007AFF") 保持一致的蓝（更稳定，避免不同系统版本 Color->UIColor 的色域差异）
+        UIColor(red: 0, green: 122.0 / 255.0, blue: 1.0, alpha: 1.0)
+    }
+
+    private func mixUIColor(_ a: UIColor, _ b: UIColor, t: CGFloat) -> UIColor {
+        let tt = max(0, min(1, t))
+        var ar: CGFloat = 1, ag: CGFloat = 1, ab: CGFloat = 1, aa: CGFloat = 1
+        var br: CGFloat = 0, bg: CGFloat = 0, bb: CGFloat = 0, ba: CGFloat = 1
+        _ = a.getRed(&ar, green: &ag, blue: &ab, alpha: &aa)
+        _ = b.getRed(&br, green: &bg, blue: &bb, alpha: &ba)
+        return UIColor(
+            red: ar + (br - ar) * tt,
+            green: ag + (bg - ag) * tt,
+            blue: ab + (bb - ab) * tt,
+            alpha: aa + (ba - aa) * tt
         )
     }
 }

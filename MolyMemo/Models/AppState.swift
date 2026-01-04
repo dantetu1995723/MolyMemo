@@ -712,12 +712,26 @@ class AppState: ObservableObject {
         guard let index = chatMessages.firstIndex(where: { $0.id == messageId }) else { return }
         var msg = chatMessages[index]
 
-        let beforeScheduleCount = msg.scheduleEvents?.count ?? 0
-        let beforeScheduleRemoteIds: Set<String> = Set(
-            (msg.scheduleEvents ?? [])
-                .compactMap { $0.remoteId?.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty }
-        )
+        // 用“内容签名”判断是否发生了“修改”（不仅仅是新增/补齐 remoteId）
+        func scheduleSignature(_ e: ScheduleEvent) -> String {
+            let rid = (e.remoteId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let key = rid.isEmpty ? "lid:\(e.id.uuidString)" : "rid:\(rid)"
+            let title = e.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            let desc = e.description.trimmingCharacters(in: .whitespacesAndNewlines)
+            let start = String(Int64(e.startTime.timeIntervalSince1970 * 1000))
+            let end = String(Int64(e.endTime.timeIntervalSince1970 * 1000))
+            return [
+                key,
+                title,
+                desc,
+                start,
+                end,
+                e.isFullDay ? "fullDay:1" : "fullDay:0",
+                e.endTimeProvided ? "endProvided:1" : "endProvided:0"
+            ].joined(separator: "|")
+        }
+        let beforeScheduleSignatures: Set<String> = Set((msg.scheduleEvents ?? []).map(scheduleSignature))
+        let beforeScheduleToolRunning = msg.isScheduleToolRunning
 
 #if DEBUG
         let beforeSchedule = msg.scheduleEvents?.count ?? -1
@@ -730,19 +744,16 @@ class AppState: ObservableObject {
 
         StructuredOutputApplier.apply(output, to: &msg)
 
-        // 若日程卡片发生实质变化（新增/补齐 remoteId），触发远端日程缓存失效 + UI 强刷
-        if !output.isDelta, !output.scheduleEvents.isEmpty {
-            let afterScheduleCount = msg.scheduleEvents?.count ?? 0
-            let afterScheduleRemoteIds: Set<String> = Set(
-                (msg.scheduleEvents ?? [])
-                    .compactMap { $0.remoteId?.trimmingCharacters(in: .whitespacesAndNewlines) }
-                    .filter { !$0.isEmpty }
-            )
-            let didChange = (afterScheduleCount != beforeScheduleCount) || (afterScheduleRemoteIds != beforeScheduleRemoteIds)
-            if didChange {
-                Task { await ScheduleService.invalidateScheduleCaches() }
-                NotificationCenter.default.post(name: .remoteScheduleDidChange, object: nil, userInfo: nil)
-            }
+        // ✅ 每次“聊天室创建或修改完日程”后立刻强刷：
+        // 触发条件：
+        // 1) 非 delta 的最终输出里，日程内容签名发生变化（可覆盖“修改但 remoteId 不变”的情况）
+        // 2) 日程 tool 从 running -> finished（可覆盖“删除但没返回卡片”的情况）
+        let afterScheduleSignatures: Set<String> = Set((msg.scheduleEvents ?? []).map(scheduleSignature))
+        let afterScheduleToolRunning = msg.isScheduleToolRunning
+        let scheduleToolJustFinished = beforeScheduleToolRunning && !afterScheduleToolRunning
+        let scheduleCardsChangedOnFinal = (!output.isDelta) && (!output.scheduleEvents.isEmpty) && (afterScheduleSignatures != beforeScheduleSignatures)
+        if scheduleToolJustFinished || scheduleCardsChangedOnFinal {
+            Task { await ScheduleService.invalidateCachesAndNotifyRemoteScheduleDidChange() }
         }
 
         chatMessages[index] = msg
