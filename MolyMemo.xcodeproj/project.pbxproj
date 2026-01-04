@@ -84,7 +84,6 @@
 				Models/MeetingRecordingAttributes.swift,
 				Models/ScreenshotSendAttributes.swift,
 				Utils/AppIdentifiers.swift,
-				Utils/LiveRecordingManager.swift,
 			);
 			target = D23D63FD2ECC698E000143AD /* MolyMemoWidgetExtension */;
 		};
