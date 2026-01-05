@@ -50,6 +50,9 @@ struct ScheduleDetailSheet: View {
     @State private var buttonFrame: CGRect = .zero
     @State private var isPressing = false
     @State private var pressStartTime: Date?
+
+    // 键盘状态：用于避免“语音编辑”按钮在编辑备注时被键盘顶上来
+    @State private var isKeyboardVisible: Bool = false
     
     private let silenceGate: Float = 0.12
     
@@ -396,9 +399,13 @@ struct ScheduleDetailSheet: View {
                         .foregroundColor(Color(hex: "666666"))
                 }
             }
-            .opacity(isRecording ? 0 : 1)
+            .opacity((isRecording || isKeyboardVisible) ? 0 : 1)
             .padding(.horizontal, 20)
             .padding(.bottom, 20)
+            // 关键：键盘弹出时不要因为 safe area 改变而把按钮抬到键盘上方
+            .ignoresSafeArea(.keyboard, edges: .bottom)
+            // 键盘出现时避免误触（即便在某些场景下仍可点到）
+            .allowsHitTesting(!isKeyboardVisible && !isSubmitting)
             .simultaneousGesture(DragGesture(minimumDistance: 0).onChanged { handleDragChanged($0) }.onEnded { handleDragEnded($0) })
             
             if isRecording || isAnimatingRecordingExit {
@@ -434,6 +441,12 @@ struct ScheduleDetailSheet: View {
         .onAppear {
             // 与数据模型对齐：后端 full_day -> isFullDay
             uiAllDay = editedEvent.isFullDay
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+            isKeyboardVisible = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+            isKeyboardVisible = false
         }
         .onReceive(speechRecognizer.$audioLevel) { self.audioPower = mapAudioLevelToPower($0) }
         // 远端详情覆盖 event 时：如果用户还没动过编辑，就同步草稿，避免“看起来没改但其实草稿和最新值不一致”
