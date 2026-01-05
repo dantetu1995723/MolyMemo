@@ -9,6 +9,10 @@ struct ChatInputView: View {
     @FocusState private var isFocused: Bool
     @Environment(\.scenePhase) private var scenePhase
     
+    // 输入框高度：随内容增长到上限后内部滚动（不更换组件）
+    @State private var inputTextHeight: CGFloat = 52
+    @State private var inputTextWidth: CGFloat = 0
+    
     // 手势状态
     @State private var isPressing = false
     @State private var pressBeganAt: Date?
@@ -211,8 +215,53 @@ struct ChatInputView: View {
                         .font(.system(size: 16))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 12)
-                        .frame(height: 52)
+                        .frame(height: inputTextHeight)
                         .lineLimit(3, reservesSpace: false) // 限制最大3行，超过后滚动
+                        .onChange(of: viewModel.inputText) { oldValue, newValue in
+                            // 多行 TextField 默认会把回车当换行；这里把“尾部回车”转成“发送”。
+                            // 只处理尾部 \n，避免误伤粘贴的多行文本/中间换行。
+                            guard !viewModel.isAgentTyping else { return }
+                            guard newValue.hasSuffix("\n") else { return }
+                            
+                            var cleaned = newValue
+                            while cleaned.hasSuffix("\n") { cleaned.removeLast() }
+                            
+                            if cleaned != newValue {
+                                viewModel.inputText = cleaned
+                            }
+                            
+                            // 发送前收起键盘，保持与发送按钮一致，避免焦点抖动/布局循环
+                            if isFocused { isFocused = false }
+                            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                            
+                            // 有图或有字才发送（避免空回车误触）
+                            if !cleaned.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || viewModel.selectedImage != nil {
+                                viewModel.sendMessage()
+                            }
+                            
+                            // 发送后输入框会被清空，这里顺带刷新高度到初始值
+                            updateInputHeightIfNeeded()
+                        }
+                        .background(
+                            GeometryReader { geo in
+                                Color.clear
+                                    .onAppear {
+                                        updateInputWidthIfNeeded(geo.size.width)
+                                    }
+                                    .onChange(of: geo.size.width) { _, newWidth in
+                                        updateInputWidthIfNeeded(newWidth)
+                                    }
+                            }
+                        )
+                        .onAppear {
+                            updateInputHeightIfNeeded()
+                        }
+                        .onChange(of: inputTextWidth) { _, _ in
+                            updateInputHeightIfNeeded()
+                        }
+                        .onChange(of: viewModel.inputText) { _, _ in
+                            updateInputHeightIfNeeded()
+                        }
                         .focused($isFocused)
                         .allowsHitTesting(!gestureOverlayEnabled)
                         .disabled(isLocked)
@@ -222,7 +271,7 @@ struct ChatInputView: View {
                     // 关键：命中区域必须严格等同于输入框本体，避免“输入框下面”误触触发录音
                     RoundedRectangle(cornerRadius: 24)
                         .fill(Color.clear)
-                        .frame(height: 52)
+                        .frame(height: inputTextHeight)
                         .contentShape(RoundedRectangle(cornerRadius: 24))
                         .allowsHitTesting(gestureOverlayEnabled)
                         // 轻点：进入输入（聚焦）
@@ -289,8 +338,8 @@ struct ChatInputView: View {
                                 }
                         )
                 }
-                // 关键：固定输入区域高度，避免 Color.clear 这类“可扩张视图”把整行撑大
-                .frame(height: 52)
+                // 关键：输入区域与手势面板同高，避免命中区域和视觉不一致
+                .frame(height: inputTextHeight)
                 
                 // Inside right: Action Button (Stop OR Send)
                 if viewModel.isAgentTyping {
@@ -428,6 +477,53 @@ struct ChatInputView: View {
         } else {
             // 如果还在预收音阶段，也需要停止
             viewModel.stopHoldToTalkPreCaptureIfNeeded()
+        }
+    }
+}
+
+// MARK: - Input height helpers
+
+extension ChatInputView {
+    private func updateInputWidthIfNeeded(_ newWidth: CGFloat) {
+        let w = max(newWidth, 0)
+        // 避免键盘动画/浮点抖动导致的高频刷新
+        guard abs(inputTextWidth - w) > 1 else { return }
+        inputTextWidth = w
+    }
+    
+    private func updateInputHeightIfNeeded() {
+        // 设计基准：一行高度 52；最多约 3 行
+        let minH: CGFloat = 52
+        let font = UIFont.systemFont(ofSize: 16)
+        let verticalPadding: CGFloat = 12 + 12
+        
+        // 宽度未知时直接回落到最小高度，避免“首帧就抬高”
+        guard inputTextWidth > 1 else {
+            if inputTextHeight != minH { inputTextHeight = minH }
+            return
+        }
+        
+        // TextField 外层有 horizontal padding 8*2，这里按同样数值扣掉用于测量文字换行宽度
+        let usableWidth = max(inputTextWidth - 16, 0)
+        let rawText = viewModel.inputText.isEmpty ? "占位" : viewModel.inputText
+        let text = rawText as NSString
+        let rect = text.boundingRect(
+            with: CGSize(width: usableWidth, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: [.font: font],
+            context: nil
+        )
+        
+        // 文本高度 + padding 后得到“理想高度”，再限制到 3 行范围
+        let ideal = ceil(rect.height) + verticalPadding
+        let maxH = minH + (font.lineHeight * 2.0) // 约 3 行：多 2 个行高
+        let clamped = min(max(ideal, minH), maxH)
+        
+        // 小幅动画让高度变化更自然（不包裹整个输入清空，避免按钮 transition 不同步）
+        if abs(inputTextHeight - clamped) > 0.5 {
+            withAnimation(.easeInOut(duration: 0.12)) {
+                inputTextHeight = clamped
+            }
         }
     }
 }

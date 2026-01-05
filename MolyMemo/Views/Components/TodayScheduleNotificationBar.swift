@@ -27,9 +27,9 @@ struct TodayScheduleNotificationBar: View {
         return !errorText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    /// 当天无日程时不显示通知栏（仍允许加载中/报错态显示占位提示）
+    /// 当天无日程时不显示通知栏（加载中不做前端占位）
     private var shouldShowBar: Bool {
-        return !events.isEmpty || isLoading || hasError
+        return !events.isEmpty || hasError
     }
     
     /// 折叠时显示的那一条日程
@@ -44,10 +44,6 @@ struct TodayScheduleNotificationBar: View {
 
     /// 折叠态的"叠页"层数（最多两层，即主卡片+一层背景）
     private var stackCount: Int {
-        // 加载中或无数据但正在请求时，也显示叠层效果
-        if isLoading && events.isEmpty {
-            return 1 // 一层背景叠层，加上主卡片共两层
-        }
         let n = allEvents.count
         if n <= 1 { return 0 }
         return min(1, n - 1) // 最多一层背景叠层
@@ -144,9 +140,6 @@ struct TodayScheduleNotificationBar: View {
     }
 
     private func expandedEvents() -> [ScheduleEvent] {
-        if isLoading && events.isEmpty {
-            return [ScheduleEvent(title: "正在从后端同步今日日程…", description: "", startTime: Date(), endTime: Date())]
-        }
         if hasError, events.isEmpty {
             return [ScheduleEvent(title: "今日日程获取失败，请稍后重试", description: "", startTime: Date(), endTime: Date())]
         }
@@ -238,7 +231,6 @@ struct TodayScheduleNotificationBar: View {
     
     private func titleText(for event: ScheduleEvent) -> String {
         let t = event.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        if isLoading, events.isEmpty { return "正在同步今日日程…" }
         if hasError, events.isEmpty {
             return "今日日程获取失败"
         }

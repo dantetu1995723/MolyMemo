@@ -40,6 +40,8 @@ class ChatInputViewModel: ObservableObject {
     private var isPreCapturingHoldToTalk: Bool = false
     /// 录音结束后待回填到输入框的转写文本（用于：输入框尚未出现/尚在退场动画时延迟写回）
     private var pendingDictationTextForInput: String?
+    /// 停止录音后等待 final 结果：在 overlay 退场完成时再决定是否回填（避免 stop 当下读取到 partial 导致漏字）
+    private var shouldBackfillTranscriptOnOverlayDismiss: Bool = false
     
     // MARK: - Computed Properties
     
@@ -164,6 +166,8 @@ class ChatInputViewModel: ObservableObject {
 
         // 结束预收音状态（无论是否已展示 overlay）
         isPreCapturingHoldToTalk = false
+        // 标记：允许在 overlay 退场结束时用最终 transcript 回填
+        shouldBackfillTranscriptOnOverlayDismiss = !isCanceling
         
         speechRecognizer.stopRecording()
         
@@ -173,13 +177,9 @@ class ChatInputViewModel: ObservableObject {
             audioPower = 0
         }
         
-        guard !isCanceling else { return }
-        
-        // 没有接收到声音 / 没有识别结果：不写回任何默认文字
-        let text = recordingTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, text != "正在聆听..." else { return }
-        // 不自动发送：先缓存，等输入框出现（overlay 退场结束）后再写回到 inputText
-        pendingDictationTextForInput = text
+        // 注意：不在这里读取 recordingTranscript。
+        // 原因：stop 后语音识别可能还会回调 final 结果（更完整），
+        // 我们在 overlay 退场结束时再取，能显著减少“尾字漏掉”的体感。
     }
     
     /// 由 overlay 的逆向动画结束回调触发：真正收起 overlay 并恢复输入框
@@ -191,6 +191,14 @@ class ChatInputViewModel: ObservableObject {
             isCanceling = false
             audioPower = 0
         }
+        // overlay 退场完成时，语音识别通常已经产出更完整的 final 文本
+        if shouldBackfillTranscriptOnOverlayDismiss {
+            let text = recordingTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !text.isEmpty, text != "正在聆听..." {
+                pendingDictationTextForInput = text
+            }
+        }
+        shouldBackfillTranscriptOnOverlayDismiss = false
         applyPendingDictationTextToInputIfNeeded()
     }
     
@@ -198,6 +206,8 @@ class ChatInputViewModel: ObservableObject {
         withAnimation {
             isCanceling = true
         }
+        // 取消：不回填
+        shouldBackfillTranscriptOnOverlayDismiss = false
         // Delay stop to show cancel animation
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
              self.stopRecording()

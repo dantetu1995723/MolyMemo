@@ -27,6 +27,12 @@ class SpeechRecognizer: ObservableObject {
     private var recognitionTask: SFSpeechRecognitionTask?
     private let audioEngine = AVAudioEngine()
     private var shouldAcceptUpdates = false  // 是否接受识别回调的更新
+    /// stop 后短暂继续接收最终结果（final），避免“松手瞬间漏字”
+    private var isStopping = false
+    /// 防止 stopRecording 的延迟清理误伤后续 startRecording（例如录音动画期间）
+    /// - 每次 startRecording 都会递增
+    /// - stopRecording 的延迟清理只对当时的 generation 生效
+    private var sessionGeneration: Int = 0
     
     // 平滑处理参数
     private var smoothedLevel: Float = 0
@@ -60,10 +66,14 @@ class SpeechRecognizer: ObservableObject {
         DispatchQueue.main.async {
             self.isRecording = true
             self.shouldAcceptUpdates = true
+            self.isStopping = false
         }
         
         audioQueue.async { [weak self] in
             guard let self = self else { return }
+            // 新会话：使旧 stop 的延迟清理失效
+            self.sessionGeneration &+= 1
+            let _ = self.sessionGeneration
             
             let audioSession = AVAudioSession.sharedInstance()
             do {
@@ -180,11 +190,15 @@ class SpeechRecognizer: ObservableObject {
             self.recognitionTask = speechRecognizer.recognitionTask(with: recognitionRequest) { [weak self] result, error in
                 guard let self = self else { return }
                 
-                if let result = result, self.shouldAcceptUpdates {
+                if let result = result, (self.shouldAcceptUpdates || (self.isStopping && result.isFinal)) {
                     let text = result.bestTranscription.formattedString
                     DispatchQueue.main.async {
                         self.recognizedText = text
                         onTextUpdate(text)
+                    }
+                    // 收到 final 后即可结束 stopping 状态（防止 stop 后无限接收）
+                    if result.isFinal {
+                        self.isStopping = false
                     }
                 }
                 
@@ -248,13 +262,18 @@ class SpeechRecognizer: ObservableObject {
             self.isRecording = false
             self.audioLevel = 0
             self.smoothedLevel = 0
-            self.shouldAcceptUpdates = false
+            // 不要立刻关掉 shouldAcceptUpdates：final 结果可能在 endAudio 之后回调
+            // 这里用 isStopping 控制只接收 final，避免 stop 后 UI 乱跳
+            self.isStopping = true
         }
         
         print("🛑 停止录音")
         
         audioQueue.async { [weak self] in
             guard let self = self else { return }
+            let genAtStop = self.sessionGeneration
+            let requestToStop = self.recognitionRequest
+            let taskToStop = self.recognitionTask
             
             if self.audioEngine.isRunning {
                 self.audioEngine.stop()
@@ -263,10 +282,25 @@ class SpeechRecognizer: ObservableObject {
             
             self.recognitionRequest?.endAudio()
             
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-                self?.recognitionRequest = nil
-                self?.recognitionTask?.finish()
-                self?.recognitionTask = nil
+            // 延迟清理：只清理“这一次 stop 对应的会话”，避免误伤后续新 start（会话切换/动画期间很容易触发）
+            self.audioQueue.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                guard let self = self else { return }
+                taskToStop?.finish()
+                
+                // 如果这 0.3s 内又 start 了新会话，这里就不要动新的 request/task
+                guard self.sessionGeneration == genAtStop else { return }
+                
+                if self.recognitionRequest === requestToStop {
+                    self.recognitionRequest = nil
+                }
+                if self.recognitionTask === taskToStop {
+                    self.recognitionTask = nil
+                }
+                // 到这里彻底停止：不再接受后续回调
+                DispatchQueue.main.async {
+                    self.shouldAcceptUpdates = false
+                    self.isStopping = false
+                }
             }
 
             // 关键修复：停止语音识别后要收回 AudioSession，
