@@ -46,16 +46,15 @@ enum AppGroupDebugLog {
     /// 读出并打印最近日志（用于主App控制台显示）
     static func dumpToConsole(prefix: String = "🧾 [AppGroupDebug]") {
         guard let url = fileURL() else {
-            print("\(prefix) fileURL=nil")
             return
         }
         guard let data = try? Data(contentsOf: url),
               let text = String(data: data, encoding: .utf8) else {
-            print("\(prefix) empty")
             return
         }
-        let lines = text.split(separator: "\n").suffix(40)
-        print("\(prefix) last=\(lines.count) lines\n" + lines.joined(separator: "\n"))
+        for line in text.split(separator: "\n").suffix(40) {
+            print("\(prefix) \(line)")
+        }
     }
 }
 #endif

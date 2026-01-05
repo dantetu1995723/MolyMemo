@@ -48,7 +48,6 @@ struct StartMeetingRecordingIntent: AppIntent {
     
     @MainActor
     func perform() async throws -> some IntentResult {
-        print("🎤 执行StartMeetingRecordingIntent - 快速启动模式")
         let defaults = RecordingIPC.defaults()
         // 新流程：快捷指令启动后进入聊天室插入“开始录音”气泡，不再跳转会议纪要页
         defaults?.set(false, forKey: RecordingIPC.Key.shouldNavigateToMeeting)
@@ -61,7 +60,6 @@ struct StartMeetingRecordingIntent: AppIntent {
         defaults?.synchronize()
         RecordingIPC.postDarwin(RecordingIPC.DarwinName.start)
         
-        print("✅ 已通知主App启动录音")
         
         return .result()
     }
@@ -75,7 +73,6 @@ struct PauseMeetingRecordingIntent: AppIntent {
     
     @MainActor
     func perform() async throws -> some IntentResult {
-        print("⏸️ 执行PauseMeetingRecordingIntent - 从灵动岛暂停")
         let defaults = RecordingIPC.defaults()
         defaults?.set("pause", forKey: RecordingIPC.Key.pendingCommand)
         defaults?.set(Date().timeIntervalSince1970, forKey: RecordingIPC.Key.commandTimestamp)
@@ -94,7 +91,6 @@ struct ResumeMeetingRecordingIntent: AppIntent {
     
     @MainActor
     func perform() async throws -> some IntentResult {
-        print("▶️ 执行ResumeMeetingRecordingIntent - 从灵动岛继续")
         let defaults = RecordingIPC.defaults()
         defaults?.set("resume", forKey: RecordingIPC.Key.pendingCommand)
         defaults?.set(Date().timeIntervalSince1970, forKey: RecordingIPC.Key.commandTimestamp)
@@ -113,7 +109,6 @@ struct StopMeetingRecordingIntent: AppIntent {
     
     @MainActor
     func perform() async throws -> some IntentResult {
-        print("🛑 执行StopMeetingRecordingIntent - 从灵动岛停止")
         let defaults = RecordingIPC.defaults()
         // 停止动作默认不强制拉起/跳转界面，避免出现“转圈加载后才跳回App”的感觉
         defaults?.set(false, forKey: RecordingIPC.Key.shouldNavigateToChatRoom)

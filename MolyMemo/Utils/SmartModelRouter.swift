@@ -39,12 +39,8 @@ class SmartModelRouter {
         
         // 你要求的“实时后端聊天链路”日志：入口处先打一次上下文概览（不打印图片 base64）
 #if DEBUG
-        let lastUser = messages.last(where: { $0.role == .user })
-        let hasImg = !(lastUser?.images.isEmpty ?? true)
-        let textLen = lastUser?.content.count ?? 0
-        print("🌐 [Chat] route=BackendChat mode=\(mode) lastUser(textLen=\(textLen) hasImage=\(hasImg)) totalMsgs=\(messages.count)")
+        _ = messages.last(where: { $0.role == .user })
 #else
-        print("🌐 使用自有后端聊天接口")
 #endif
         await BackendChatService.sendMessageStream(
             messages: messages,

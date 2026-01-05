@@ -43,7 +43,6 @@ class MeetingMinutesService {
 
     private static func applyCommonHeaders(to request: inout URLRequest) throws {
         guard let sessionId = currentSessionId(), !sessionId.isEmpty else {
-            print("❌ [MeetingMinutesService] 缺少 X-Session-Id：请先登录，或检查 AuthStore 是否成功保存 sessionId")
             throw MeetingMinutesError.serverError("缺少登录态（X-Session-Id）")
         }
 
@@ -74,7 +73,7 @@ class MeetingMinutesService {
         if !didPrintSessionHeaderOnce {
             didPrintSessionHeaderOnce = true
             let masked = sessionId.count <= 8 ? "***" : "\(sessionId.prefix(4))...\(sessionId.suffix(4))"
-            print("🔐 [MeetingMinutesService] header X-Session-Id=\(masked)")
+            AppGroupDebugLog.append("[MeetingMinutesService] sessionId=\(masked)")
         }
         #endif
     }
@@ -292,7 +291,6 @@ class MeetingMinutesService {
         }
         
         guard let url = URL(string: urlString) else {
-            print("❌ [MeetingMinutesService] URL无效: \(urlString)")
             throw MeetingMinutesError.invalidURL
         }
         
@@ -300,81 +298,48 @@ class MeetingMinutesService {
         request.httpMethod = "GET"
         try applyCommonHeaders(to: &request)
         
-        print("🌐 ========== GET 会议纪要列表 ==========")
-        print("🌐 [MeetingMinutesService] 请求URL: \(urlString)")
-        print("🌐 [MeetingMinutesService] 超时时间: 30秒")
         
         // 发送请求
         let (data, response) = try await URLSession.shared.data(for: request)
         
         // 检查响应状态
         guard let httpResponse = response as? HTTPURLResponse else {
-            print("❌ [MeetingMinutesService] 响应无效（非HTTP响应）")
             throw MeetingMinutesError.invalidResponse
         }
         
-        print("🌐 [MeetingMinutesService] HTTP状态码: \(httpResponse.statusCode)")
-        print("🌐 [MeetingMinutesService] 响应头: \(httpResponse.allHeaderFields)")
-        print("🌐 [MeetingMinutesService] 响应数据大小: \(data.count) bytes")
-        
-        // 打印完整响应内容用于调试
-        if let responseString = String(data: data, encoding: .utf8) {
-            print("🌐 [MeetingMinutesService] 响应内容:\n\(responseString)")
-        } else {
-            print("⚠️ [MeetingMinutesService] 响应内容无法解码为UTF8")
-        }
         
         guard httpResponse.statusCode == 200 else {
-            print("❌ [MeetingMinutesService] HTTP错误: \(httpResponse.statusCode)")
             if let errorResult = try? JSONDecoder().decode(MeetingMinutesListResponse.self, from: data) {
                 let errorMsg = errorResult.error ?? errorResult.message ?? "未知错误"
-                print("❌ [MeetingMinutesService] 服务器错误信息: \(errorMsg)")
                 throw MeetingMinutesError.serverError(errorMsg)
             }
             throw MeetingMinutesError.serverError("HTTP \(httpResponse.statusCode)")
         }
         
         // 解析响应（兼容两种结构：直接 MeetingMinutesListResponse / 通用 APIEnvelope）
-        print("🔄 [MeetingMinutesService] 开始解析JSON...")
         do {
             // 1) 旧结构：{ success, data: [...] }
             if let result = try? JSONDecoder().decode(MeetingMinutesListResponse.self, from: data) {
-                print("🔄 [MeetingMinutesService] JSON解析成功（MeetingMinutesListResponse）")
                 if let success = result.success, !success {
                     let errorMsg = result.error ?? result.message ?? "获取列表失败"
-                    print("❌ [MeetingMinutesService] 业务失败: \(errorMsg)")
                     throw MeetingMinutesError.serverError(errorMsg)
                 }
                 let items = result.data ?? []
-                // 🔍 调试：打印每个会议的时长字段
-                for item in items {
-                    print("🔍 [时长调试] id=\(item.id ?? "nil") audioDuration=\(String(describing: item.audioDuration)) (raw duration=\(String(describing: item.duration)))")
-                }
-                print("✅ [MeetingMinutesService] 获取到 \(items.count) 条会议纪要")
-                print("🌐 ========================================\n")
                 return items
             }
 
             // 2) 结构：{ success, data: { items: [...], page, page_size, total } }
             if let resultV2 = try? JSONDecoder().decode(MeetingMinutesListResponseV2.self, from: data) {
-                print("🔄 [MeetingMinutesService] JSON解析成功（MeetingMinutesListResponseV2）")
                 if let success = resultV2.success, !success {
                     let msg = resultV2.error ?? resultV2.message ?? "获取列表失败"
                     throw MeetingMinutesError.serverError(msg)
                 }
                 let items = resultV2.data?.resolvedItems ?? []
-                // 🔍 调试：打印每个会议的时长字段
-                for item in items {
-                    print("🔍 [时长调试] id=\(item.id ?? "nil") audioDuration=\(String(describing: item.audioDuration)) (raw duration=\(String(describing: item.duration)))")
-                }
-                print("✅ [MeetingMinutesService] 获取到 \(items.count) 条会议纪要")
-                print("🌐 ========================================\n")
                 return items
             }
 
             // 3) 新结构：{ code, message, data: [...] }
             if let env = try? JSONDecoder().decode(APIEnvelope<[MeetingMinutesItem]>.self, from: data) {
-                print("🔄 [MeetingMinutesService] JSON解析成功（APIEnvelope<[MeetingMinutesItem]>）")
                 if let success = env.success, !success {
                     let msg = env.error ?? env.message ?? "获取列表失败"
                     throw MeetingMinutesError.serverError(msg)
@@ -384,18 +349,11 @@ class MeetingMinutesService {
                     throw MeetingMinutesError.serverError(msg)
                 }
                 let items = env.data ?? []
-                // 🔍 调试：打印每个会议的时长字段
-                for item in items {
-                    print("🔍 [时长调试] id=\(item.id ?? "nil") audioDuration=\(String(describing: item.audioDuration)) (raw duration=\(String(describing: item.duration)))")
-                }
-                print("✅ [MeetingMinutesService] 获取到 \(items.count) 条会议纪要")
-                print("🌐 ========================================\n")
                 return items
             }
 
             // 4) 结构：{ code, message, data: { items: [...], page, page_size, total } }
             let envV2 = try JSONDecoder().decode(APIEnvelope<PagedList<MeetingMinutesItem>>.self, from: data)
-            print("🔄 [MeetingMinutesService] JSON解析成功（APIEnvelope<PagedList<MeetingMinutesItem>>）")
             if let success = envV2.success, !success {
                 let msg = envV2.error ?? envV2.message ?? "获取列表失败"
                 throw MeetingMinutesError.serverError(msg)
@@ -405,27 +363,21 @@ class MeetingMinutesService {
                 throw MeetingMinutesError.serverError(msg)
             }
             let items = envV2.data?.resolvedItems ?? []
-            // 🔍 调试：打印每个会议的时长字段
-            for item in items {
-                print("🔍 [时长调试] id=\(item.id ?? "nil") audioDuration=\(String(describing: item.audioDuration)) (raw duration=\(String(describing: item.duration)))")
-            }
-            print("✅ [MeetingMinutesService] 获取到 \(items.count) 条会议纪要")
-            print("🌐 ========================================\n")
             return items
         } catch let decodingError as DecodingError {
-            print("❌ [MeetingMinutesService] JSON解析失败!")
+            #if DEBUG
             switch decodingError {
-            case .typeMismatch(let type, let context):
-                print("   类型不匹配: 期望 \(type), 路径: \(context.codingPath)")
-            case .valueNotFound(let type, let context):
-                print("   值未找到: \(type), 路径: \(context.codingPath)")
+            case .typeMismatch(let type, let context),
+                 .valueNotFound(let type, let context):
+                debugPrint("DecodingError: \(decodingError) type=\(type) context=\(context)")
             case .keyNotFound(let key, let context):
-                print("   键未找到: \(key), 路径: \(context.codingPath)")
+                debugPrint("DecodingError: \(decodingError) key=\(key) context=\(context)")
             case .dataCorrupted(let context):
-                print("   数据损坏: \(context)")
+                debugPrint("DecodingError: \(decodingError) context=\(context)")
             @unknown default:
-                print("   未知解码错误: \(decodingError)")
+                break
             }
+            #endif
             throw decodingError
         }
     }
@@ -455,7 +407,6 @@ class MeetingMinutesService {
         let urlString = "\(base)\(listEndpoint)/\(trimmedId)\(deleteSuffix)"
 
         guard let url = URL(string: urlString) else {
-            print("❌ [MeetingMinutesService] URL无效: \(urlString)")
             throw MeetingMinutesError.invalidURL
         }
 
@@ -464,7 +415,6 @@ class MeetingMinutesService {
         try applyCommonHeaders(to: &request)
 
         #if DEBUG
-        print("🗑️ [MeetingMinutesService] 删除会议纪要: \(urlString)")
         #endif
 
         let (data, response) = try await URLSession.shared.data(for: request)
@@ -474,11 +424,9 @@ class MeetingMinutesService {
 
         if let raw = String(data: data, encoding: .utf8), !raw.isEmpty {
             #if DEBUG
-            print("🗑️ [MeetingMinutesService] delete response status=\(http.statusCode) raw=\(raw)")
             #endif
         } else {
             #if DEBUG
-            print("🗑️ [MeetingMinutesService] delete response status=\(http.statusCode) raw=<empty>")
             #endif
         }
 
@@ -531,7 +479,6 @@ class MeetingMinutesService {
         try applyCommonHeaders(to: &request)
         
         if verbose {
-            print("🎙️ [MeetingMinutesService] 获取会议纪要详情: \(urlString)")
         }
         
         // 发送请求
@@ -543,16 +490,10 @@ class MeetingMinutesService {
         }
         
         if verbose {
-            print("🎙️ [MeetingMinutesService] 响应状态码: \(httpResponse.statusCode)")
         }
         
         guard httpResponse.statusCode == 200 else {
             throw MeetingMinutesError.serverError("HTTP \(httpResponse.statusCode)")
-        }
-        
-        // 🔍 调试：打印原始 JSON 响应
-        if let jsonString = String(data: data, encoding: .utf8) {
-            print("🔍 [详情原始JSON] \(jsonString)")
         }
         
         // 解析响应（兼容：直接 item / 通用包裹）
@@ -607,14 +548,15 @@ class MeetingMinutesService {
         }
         
         // 🔍 调试：打印详情的时长字段（业务只用 audio_duration）
-        print("🔍 [详情时长调试] id=\(item.id ?? "nil") audioDuration=\(String(describing: item.audioDuration)) (raw duration=\(String(describing: item.duration)))")
         
+        #if DEBUG
         if verbose {
             let sumLen = (item.summary ?? item.meetingSummary)?.count ?? 0
             let detailCount = item.meetingDetails?.count ?? 0
-            let titleDesc = item.title?.trimmingCharacters(in: .whitespacesAndNewlines)
-            print("✅ [MeetingMinutesService] 解析结果：title=\(titleDesc?.isEmpty == false ? titleDesc! : "nil") status=\(item.status ?? "nil") summary_len=\(sumLen) meeting_details=\(detailCount)")
+            let titleDesc = item.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "nil"
+            AppGroupDebugLog.append("[MeetingMinutesDetail] id=\(id) title=\(titleDesc) sumLen=\(sumLen) detailCount=\(detailCount)")
         }
+        #endif
         
         return item
     }
@@ -637,23 +579,15 @@ class MeetingMinutesService {
         onJobCreated: ((String) -> Void)? = nil
     ) async throws -> GeneratedMinutes {
         
-        print("🎙️ ========== POST 生成会议纪要 ==========")
-        print("🎙️ [MeetingMinutesService] 音频文件: \(audioFileURL.path)")
-        print("🎙️ [MeetingMinutesService] 说话人数: \(speakerCount ?? 0)")
-        print("🎙️ [MeetingMinutesService] 启用翻译: \(enableTranslation)")
-        print("🎙️ [MeetingMinutesService] 目标语言: \(targetLanguages ?? "无")")
         
         let base = try resolvedBaseURL()
         guard let url = URL(string: "\(base)\(generateEndpoint)") else {
-            print("❌ [MeetingMinutesService] URL无效")
             throw MeetingMinutesError.invalidURL
         }
         
-        print("🎙️ [MeetingMinutesService] 请求URL: \(url.absoluteString)")
         
         // 检查文件是否存在
         guard FileManager.default.fileExists(atPath: audioFileURL.path) else {
-            print("❌ [MeetingMinutesService] 音频文件不存在: \(audioFileURL.path)")
             throw MeetingMinutesError.fileNotFound
         }
         
@@ -661,8 +595,6 @@ class MeetingMinutesService {
         let audioData = try Data(contentsOf: audioFileURL)
         let fileName = audioFileURL.lastPathComponent
         
-        print("🎙️ [MeetingMinutesService] 文件名: \(fileName)")
-        print("🎙️ [MeetingMinutesService] 文件大小: \(audioData.count / 1024) KB")
         
         // 创建 multipart/form-data 请求
         let boundary = "Boundary-\(UUID().uuidString)"
@@ -705,46 +637,29 @@ class MeetingMinutesService {
         
         request.httpBody = body
         
-        print("🎙️ [MeetingMinutesService] 开始上传...")
-        print("🎙️ [MeetingMinutesService] 请求体大小: \(body.count / 1024) KB")
         
         let startTime = Date()
         
         // 发送请求
         let (data, response) = try await URLSession.shared.data(for: request)
-        
-        let elapsed = Date().timeIntervalSince(startTime)
-        print("🎙️ [MeetingMinutesService] 请求耗时: \(String(format: "%.2f", elapsed))秒")
+        _ = startTime
         
         // 检查响应状态
         guard let httpResponse = response as? HTTPURLResponse else {
-            print("❌ [MeetingMinutesService] 响应无效（非HTTP响应）")
             throw MeetingMinutesError.invalidResponse
         }
         
-        print("🎙️ [MeetingMinutesService] HTTP状态码: \(httpResponse.statusCode)")
-        print("🎙️ [MeetingMinutesService] 响应数据大小: \(data.count) bytes")
-        
-        // 打印完整响应内容用于调试
-        if let responseString = String(data: data, encoding: .utf8) {
-            print("🎙️ [MeetingMinutesService] 响应内容:\n\(responseString)")
-        } else {
-            print("⚠️ [MeetingMinutesService] 响应内容无法解码为UTF8")
-        }
         
         guard httpResponse.statusCode == 200 else {
-            print("❌ [MeetingMinutesService] HTTP错误: \(httpResponse.statusCode)")
             // 尝试解析错误信息
             if let errorResult = try? JSONDecoder().decode(MeetingMinutesResult.self, from: data) {
                 let errorMsg = errorResult.error ?? errorResult.message ?? "未知错误"
-                print("❌ [MeetingMinutesService] 服务器错误: \(errorMsg)")
                 throw MeetingMinutesError.serverError(errorMsg)
             }
             throw MeetingMinutesError.serverError("HTTP \(httpResponse.statusCode)")
         }
         
         // 解析响应：后端可能是“同步返回 summary”或“异步返回 jobId”
-        print("🔄 [MeetingMinutesService] 开始解析JSON...")
 
         // 1) 兼容同步结构（旧）
         if let sync = try? JSONDecoder().decode(MeetingMinutesResult.self, from: data),
@@ -772,7 +687,6 @@ class MeetingMinutesService {
             throw MeetingMinutesError.emptyResult
         }
 
-        print("⏳ [MeetingMinutesService] 生成任务已创建：id=\(job.id)")
         // 关键：尽早把 jobId 告诉调用方（例如写回 MeetingCard.remoteId 并持久化），
         // 这样就算用户在生成过程中退出 App，也能在下次进入详情页时继续 GET 详情轮询。
         onJobCreated?(job.id)
@@ -780,7 +694,6 @@ class MeetingMinutesService {
         let item = try await pollMeetingMinutesResult(id: job.id, timeoutSeconds: 600)
         let finalSummary = (item.summary ?? item.meetingSummary)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !finalSummary.isEmpty else {
-            print("❌ [MeetingMinutesService] 轮询结束但 summary 仍为空，status=\(item.status ?? "nil")")
             throw MeetingMinutesError.emptyResult
         }
 
@@ -843,7 +756,6 @@ class MeetingMinutesService {
                 let key = "\(status.isEmpty ? "nil" : status)|\(hasSummary)"
                 if lastKey != key || attempt % 12 == 0 {
                     lastKey = key
-                    print("⏳ [MeetingMinutesService] poll#\(attempt) status=\(status.isEmpty ? "nil" : status) hasSummary=\(hasSummary)")
                 }
 
                 if status.contains("fail") || status.contains("error") {
@@ -854,9 +766,6 @@ class MeetingMinutesService {
                 }
             } catch {
                 // 轮询期间的偶发错误不立刻终止（例如网络波动），打印后继续
-                if attempt == 1 || attempt % 12 == 0 {
-                    print("⚠️ [MeetingMinutesService] poll#\(attempt) 请求失败：\(error.localizedDescription)")
-                }
             }
 
             try await Task.sleep(nanoseconds: delayMs * 1_000_000)
@@ -879,12 +788,6 @@ class MeetingMinutesService {
         // 若是 envelope，就优先取 data
         let payload: [String: Any] = (root["data"] as? [String: Any]) ?? root
         
-        // 🔍 调试：打印 payload 所有字段名和值
-        print("🔍 [parseDetailLoose] payload 所有字段:")
-        for (key, value) in payload {
-            print("   \(key) = \(value)")
-        }
-
         func pickString(_ keys: [String]) -> String? {
             for k in keys {
                 if let s = payload[k] as? String {
@@ -961,7 +864,6 @@ class MeetingMinutesService {
             return nil
         }()
 
-        print("🔍 [parseDetailLoose] 提取 audio_duration=\(String(describing: audioDuration)) raw duration=\(String(describing: duration))")
         
         return MeetingMinutesItem(
             id: id,
@@ -1023,13 +925,11 @@ class MeetingMinutesService {
 
         if let updatedAt = item.updatedAt, let d = parseBackendTimestamp(updatedAt) {
             #if DEBUG
-            print("🕒 [parseMeetingDate] 使用 updated_at: \(updatedAt) -> \(d)")
             #endif
             return d
         }
         if let createdAt = item.createdAt, let d = parseBackendTimestamp(createdAt) {
             #if DEBUG
-            print("🕒 [parseMeetingDate] 使用 created_at: \(createdAt) -> \(d)")
             #endif
             return d
         }

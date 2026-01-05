@@ -29,17 +29,7 @@ class AudioPlayer: NSObject, ObservableObject {
                 try audioSession.setCategory(.playback, mode: .default)
             }
             try audioSession.setActive(true)
-            
-            #if DEBUG
-            let route = audioSession.currentRoute.outputs.map { "\($0.portType.rawValue)(\($0.portName))" }.joined(separator: ", ")
-            print("🔊 [AudioPlayer] AudioSession ready category=\(audioSession.category.rawValue) mode=\(audioSession.mode.rawValue) route=[\(route)]")
-            #endif
         } catch {
-            print("⚠️ [AudioPlayer] 音频会话配置失败: \(error)")
-            #if DEBUG
-            let ns = error as NSError
-            print("⚠️ [AudioPlayer] error domain=\(ns.domain) code=\(ns.code) userInfo=\(ns.userInfo)")
-            #endif
         }
     }
     
@@ -51,8 +41,6 @@ class AudioPlayer: NSObject, ObservableObject {
         
         do {
             #if DEBUG
-            print("🎵 [AudioPlayer] play(url): \(url.absoluteString)")
-            print("🎵 [AudioPlayer] isFileURL=\(url.isFileURL) exists=\(FileManager.default.fileExists(atPath: url.path))")
             #endif
             audioPlayer = try AVAudioPlayer(contentsOf: url)
             audioPlayer?.delegate = self
@@ -70,11 +58,8 @@ class AudioPlayer: NSObject, ObservableObject {
                 self.currentTime = self.audioPlayer?.currentTime ?? 0
             }
             
-            print("🔊 开始播放音频，时长: \(String(format: "%.1f", duration))秒")
         } catch {
-            print("⚠️ [AudioPlayer] 音频播放失败: \(error)")
             #if DEBUG
-            print("⚠️ [AudioPlayer] url=\(url.absoluteString)")
             #endif
         }
     }
@@ -101,9 +86,7 @@ class AudioPlayer: NSObject, ObservableObject {
                 self.currentTime = self.audioPlayer?.currentTime ?? 0
             }
             
-            print("🔊 开始播放音频，时长: \(String(format: "%.1f", duration))秒")
         } catch {
-            print("⚠️ 音频播放失败: \(error)")
         }
     }
     
@@ -163,14 +146,11 @@ extension AudioPlayer: AVAudioPlayerDelegate {
             self?.currentTime = 0
             self?.playbackTimer?.invalidate()
             self?.playbackTimer = nil
-            print("🔊 音频播放完成")
         }
     }
     
     func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
-        if let error = error {
-            print("⚠️ 音频解码错误: \(error)")
-        }
+        _ = error
     }
 }
 

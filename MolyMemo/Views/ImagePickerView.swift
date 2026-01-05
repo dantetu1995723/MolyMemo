@@ -8,17 +8,11 @@ struct ImagePickerView: View {
     
     var body: some View {
         SystemPhotosPicker(onComplete: { images in
-            print("\n========== 📸 图片选择完成 ==========")
-            print("选择数量: \(images.count)")
             if !images.isEmpty {
-                print("准备回调发送...")
                 onImagesSelected(images)
-                print("回调已触发")
             } else {
-                print("用户取消选择")
             }
             dismiss()
-            print("======================================\n")
         })
     }
 }
@@ -54,10 +48,8 @@ struct SystemPhotosPicker: UIViewControllerRepresentable {
         func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
             picker.dismiss(animated: true)
             
-            print("📷 PHPicker 选择了 \(results.count) 个结果")
             
             guard !results.isEmpty else {
-                print("📷 用户取消选择")
                 onComplete([])
                 return
             }
@@ -65,11 +57,10 @@ struct SystemPhotosPicker: UIViewControllerRepresentable {
             Task {
                 var loadedImages: [UIImage] = []
                 
-                for (index, result) in results.enumerated() {
+                for result in results {
                     let provider = result.itemProvider
                     
                     if provider.canLoadObject(ofClass: UIImage.self) {
-                        print("📷 正在加载图片 \(index + 1)/\(results.count)...")
                         
                         do {
                             let image = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<UIImage, Error>) in
@@ -85,22 +76,12 @@ struct SystemPhotosPicker: UIViewControllerRepresentable {
                             }
                             
                             loadedImages.append(image)
-                            
-                            if let jpegData = image.jpegData(compressionQuality: 0.8) {
-                                let sizeInKB = Double(jpegData.count) / 1024.0
-                                print("✅ 图片 \(index + 1) 加载成功")
-                                print("   尺寸: \(image.size.width) x \(image.size.height)")
-                                print("   原始大小: \(String(format: "%.1f", sizeInKB)) KB")
-                            }
-                            
                         } catch {
-                            print("⚠️ 图片 \(index + 1) 加载失败: \(error)")
                         }
                     }
                 }
                 
                 await MainActor.run {
-                    print("✅ 所有图片加载完成，共 \(loadedImages.count) 张")
                     onComplete(loadedImages)
                 }
             }

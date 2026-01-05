@@ -63,18 +63,15 @@ class FeishuCalendarSyncManager: ObservableObject {
             throw FeishuError.notLoggedIn
         }
         
-        print("🔄 开始同步飞书日历...")
         
         // 1. 获取飞书日历列表
         let feishuCalendars = try await feishuAPI.fetchCalendars()
-        print("📅 找到 \(feishuCalendars.count) 个飞书日历")
         
         // 2. 过滤已启用的日历
         let calendarsToSync = feishuCalendars.filter { calendar in
             enabledCalendars.isEmpty || enabledCalendars.contains(calendar.id)
         }
         
-        print("📝 将同步 \(calendarsToSync.count) 个日历")
         
         // 3. 同步每个日历的事件
         var totalSynced = 0
@@ -90,15 +87,12 @@ class FeishuCalendarSyncManager: ObservableObject {
                     endDate: endDate
                 )
                 totalSynced += synced
-                print("✅ 日历 '\(calendar.summary)' 同步了 \(synced) 个事件")
             } catch {
-                print("⚠️ 同步日历 '\(calendar.summary)' 失败: \(error)")
             }
         }
         
         // 4. 更新同步时间
         lastSyncTime = Date()
-        print("✅ 同步完成，共同步 \(totalSynced) 个事件")
     }
     
     /// 同步单个日历的事件
@@ -139,7 +133,6 @@ class FeishuCalendarSyncManager: ObservableObject {
                     syncedCount += 1
                 }
             } catch {
-                print("⚠️ 同步事件 '\(event.summary)' 失败: \(error)")
             }
         }
         
@@ -207,7 +200,6 @@ class FeishuCalendarSyncManager: ObservableObject {
                 try? await self?.syncCalendars()
             }
         }
-        print("✅ 飞书日历自动同步已启动，间隔: \(syncInterval)分钟")
     }
 }
 

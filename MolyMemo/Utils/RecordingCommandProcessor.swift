@@ -40,7 +40,6 @@ final class RecordingCommandProcessor {
                 ? true
                 : defaults.bool(forKey: RecordingSharedDefaults.publishTranscriptionToUIKey)
 
-            print("🧭 [RecordingCommandProcessor] start (\(ts)) source=\(source) shouldNavigateToChat=\(shouldNavigateToChat) autoMinimize=\(autoMinimize) publishTranscriptionToUI=\(publishTranscriptionToUI)")
             NotificationCenter.default.post(
                 name: NSNotification.Name("StartRecordingFromWidget"),
                 object: nil,
@@ -52,16 +51,13 @@ final class RecordingCommandProcessor {
             )
 
         case .pause:
-            print("🧭 [RecordingCommandProcessor] pause (\(ts)) source=\(source)")
             LiveRecordingManager.shared.pauseRecording()
 
         case .resume:
-            print("🧭 [RecordingCommandProcessor] resume (\(ts)) source=\(source)")
             LiveRecordingManager.shared.resumeRecording()
 
         case .stop:
             let shouldNavigateToChat = defaults.bool(forKey: RecordingSharedDefaults.shouldNavigateToChatRoomKey)
-            print("🧭 [RecordingCommandProcessor] stop (\(ts)) source=\(source) shouldNavigateToChat=\(shouldNavigateToChat)")
             NotificationCenter.default.post(
                 name: NSNotification.Name("StopRecordingFromWidget"),
                 object: nil,

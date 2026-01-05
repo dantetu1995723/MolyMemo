@@ -102,7 +102,6 @@ enum ContactService {
     private static func applyCommonHeaders(to request: inout URLRequest) throws {
         guard let sessionId = currentSessionId(), !sessionId.isEmpty else {
             if debugLogsEnabled {
-                print("❌ [ContactService] 缺少 X-Session-Id：请先登录，或检查 AuthStore 是否成功保存 sessionId")
             }
             throw ContactServiceError.missingSessionId
         }
@@ -176,11 +175,9 @@ enum ContactService {
         do {
             try text.data(using: .utf8)?.write(to: url, options: [.atomic])
             if debugLogsEnabled {
-                print("🧾 [ContactService:\(tag)] 已落盘完整原始日志：\(url.path)")
             }
         } catch {
             if debugLogsEnabled {
-                print("⚠️ [ContactService:\(tag)] 日志落盘失败：\(error)")
             }
         }
     }
@@ -189,22 +186,7 @@ enum ContactService {
         guard debugLogsEnabled else { return }
         let method = request.httpMethod ?? "GET"
         let url = request.url?.absoluteString ?? "(nil)"
-        print("🌐 [ContactService:\(tag)] \(method) \(url)")
         let headers = request.allHTTPHeaderFields ?? [:]
-        if !headers.isEmpty {
-            print("🌐 [ContactService:\(tag)] headers:")
-            for (k, v) in headers.sorted(by: { $0.key < $1.key }) {
-                if k.lowercased() == "x-session-id" {
-                    print("  \(k): \(maskedSessionId(v))")
-                } else {
-                    print("  \(k): \(v)")
-                }
-            }
-        }
-        if let body = request.httpBody, !body.isEmpty {
-            let raw = String(data: body, encoding: .utf8) ?? "<non-utf8 body: \(body.count) bytes>"
-            print("🌐 [ContactService:\(tag)] raw request body:\n\(raw)")
-        }
 
         if debugDumpLogsToFileEnabled {
             var lines: [String] = []
@@ -232,28 +214,7 @@ enum ContactService {
     
     private static func debugPrintResponse(data: Data, response: URLResponse?, error: Error?, tag: String) {
         guard debugLogsEnabled else { return }
-        if let error {
-            print("❌ [ContactService:\(tag)] error=\(error)")
-        }
-        if let http = response as? HTTPURLResponse {
-            print("🌐 [ContactService:\(tag)] status=\(http.statusCode)")
-            let headers = http.allHeaderFields
-            if !headers.isEmpty {
-                print("🌐 [ContactService:\(tag)] response headers:")
-                let pairs = headers.compactMap { (k, v) -> (String, String)? in
-                    let ks = String(describing: k)
-                    let vs = String(describing: v)
-                    return (ks, vs)
-                }.sorted(by: { $0.0 < $1.0 })
-                for (k, v) in pairs {
-                    print("  \(k): \(v)")
-                }
-            }
-        } else {
-            print("🌐 [ContactService:\(tag)] status=(non-http)")
-        }
         let body = String(data: data, encoding: .utf8) ?? "<non-utf8 body: \(data.count) bytes>"
-        print("🌐 [ContactService:\(tag)] raw response body (\(data.count) bytes):\n\(body)")
 
         if debugDumpLogsToFileEnabled {
             var lines: [String] = []
@@ -282,6 +243,29 @@ enum ContactService {
             debugWriteLogFile(prefix: "response", tag: tag, text: lines.joined(separator: "\n"))
         }
     }
+
+#if DEBUG
+    /// 避免 Xcode 控制台截断超长 JSON：分段打印
+    private static func debugPrintLongString(_ s: String, chunkSize: Int) {
+        guard chunkSize > 0 else { return }
+        guard !s.isEmpty else { return }
+        let chars = Array(s)
+        var i = 0
+        while i < chars.count {
+            let end = min(i + chunkSize, chars.count)
+            print(String(chars[i..<end]))
+            i = end
+        }
+    }
+
+    /// 只用于“详情接口”：无视 debug 开关，强制打印后端原始 JSON（便于你核对字段）。
+    private static func debugAlwaysPrintRawDetailJSON(data: Data, remoteId: String) {
+        let body = String(data: data, encoding: .utf8) ?? "<non-utf8 body: \(data.count) bytes>"
+        let header = "[ContactDetail][id=\(remoteId)] raw json:"
+        debugPrintLongString(header + "\n" + body, chunkSize: 900)
+        AppGroupDebugLog.append(header + " " + body)
+    }
+#endif
     
     private static func makeURL(path: String, queryItems: [URLQueryItem]) throws -> URL {
         let base = try resolvedBaseURL()
@@ -455,7 +439,6 @@ enum ContactService {
             return arr.compactMap { parseContactCard($0, keepLocalId: nil) }
         } catch {
             if debugLogsEnabled {
-                print("❌ [ContactService:list] threw error=\(error)")
             }
             throw error
         }
@@ -494,6 +477,10 @@ enum ContactService {
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
             debugPrintResponse(data: data, response: response, error: nil, tag: "detail")
+
+#if DEBUG
+            debugAlwaysPrintRawDetailJSON(data: data, remoteId: trimmed)
+#endif
             
             guard let http = response as? HTTPURLResponse else { throw ContactServiceError.invalidResponse }
             if !(200...299).contains(http.statusCode) {
@@ -516,7 +503,6 @@ enum ContactService {
             throw ContactServiceError.parseFailed("unknown json shape")
         } catch {
             if debugLogsEnabled {
-                print("❌ [ContactService:detail] threw error=\(error)")
             }
             throw error
         }
@@ -612,7 +598,6 @@ enum ContactService {
             return nil
         } catch {
             if debugLogsEnabled {
-                print("❌ [ContactService:update] threw error=\(error)")
             }
             throw error
         }
@@ -679,7 +664,6 @@ enum ContactService {
             return nil
         } catch {
             if debugLogsEnabled {
-                print("❌ [ContactService:create] threw error=\(error)")
             }
             throw error
         }
@@ -711,7 +695,6 @@ enum ContactService {
             await allPagesCache.invalidateAll()
         } catch {
             if debugLogsEnabled {
-                print("❌ [ContactService:delete] threw error=\(error)")
             }
             throw error
         }

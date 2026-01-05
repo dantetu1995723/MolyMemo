@@ -65,9 +65,7 @@ final class BackendChatService {
 
 #if DEBUG
             // 你要求的“实时后端聊天 print”：请求开始 + 基本信息（不输出 base64）
-            let hasImage = !(lastUser?.images.isEmpty ?? true)
-            let textLen = lastUser?.content.count ?? 0
-            print("🚀 [BackendChat][rid=\(requestId)] start url=\(url.absoluteString) includeShortcut=\(includeShortcut) mode=\(mode) lastUser(textLen=\(textLen) hasImage=\(hasImage))")
+            _ = lastUser
 #endif
 
             // ✅ 即时前端输出：边收边解析，每来一个 json chunk 就回调一次（追加 segments）
@@ -77,7 +75,6 @@ final class BackendChatService {
             }
 
 #if DEBUG
-            print("📡 [BackendChat][rid=\(requestId)] http status=\(httpResponse.statusCode)")
 #endif
 
             // 非 200：读完整 body 作为错误信息
@@ -125,7 +122,6 @@ final class BackendChatService {
                 if joined == "[DONE]" { return }
 #if DEBUG
                 if BackendChatConfig.debugLogChunkSummary {
-                    print("🧱 [BackendChat][rid=\(requestId)] chunk[sse] \(joined)")
                 }
 #endif
                 guard let d = joined.data(using: .utf8),
@@ -168,7 +164,6 @@ final class BackendChatService {
                         guard !trimmedLine.isEmpty else { continue }
 #if DEBUG
                         if BackendChatConfig.debugLogChunkSummary {
-                            print("🧱 [BackendChat][rid=\(requestId)] chunk[ndjson] \(trimmedLine)")
                         }
 #endif
                         guard let d = trimmedLine.data(using: .utf8),
@@ -184,7 +179,6 @@ final class BackendChatService {
             } catch is CancellationError {
                 // 用户中止：不回调 onError
 #if DEBUG
-                print("🛑 [BackendChat] cancelled")
 #endif
                 return
             }
@@ -193,7 +187,6 @@ final class BackendChatService {
             let cleaned = normalizeDisplayText(accumulatedTextParts.joined(separator: "\n\n"))
             if !cleaned.isEmpty {
 #if DEBUG
-                print("✅ [BackendChat][rid=\(requestId)] complete(textLen=\(cleaned.count))")
 #endif
                 await onComplete(cleaned)
                 return
@@ -206,7 +199,6 @@ final class BackendChatService {
                 let cleanedFallback = normalizeDisplayText(structured.text)
                 if cleanedFallback.isEmpty { throw BackendChatError.emptyResponse }
 #if DEBUG
-                print("✅ [BackendChat][rid=\(requestId)] complete(fallback textLen=\(cleanedFallback.count) segments=\(structured.segments.count))")
 #endif
                 await onComplete(cleanedFallback)
             } else {
@@ -214,13 +206,11 @@ final class BackendChatService {
                 let cleanedText = normalizeDisplayText(text)
                 if cleanedText.isEmpty { throw BackendChatError.emptyResponse }
 #if DEBUG
-                print("✅ [BackendChat][rid=\(requestId)] complete(raw textLen=\(cleanedText.count))")
 #endif
                 await onComplete(cleanedText)
             }
         } catch {
 #if DEBUG
-            print("❌ [BackendChat] error: \(error)")
 #endif
             await MainActor.run {
                 onError(error)
@@ -320,7 +310,6 @@ final class BackendChatService {
 
 #if DEBUG
         if BackendChatConfig.debugLogFullResponse || BackendChatConfig.debugDumpResponseToFile {
-            print("🔎 [BackendChat] parseStructuredOutput raw(\(raw.count)):")
             debugPrintResponseBody(raw)
         }
 #endif
@@ -373,11 +362,10 @@ final class BackendChatService {
             let blocks = raw.components(separatedBy: "\n\n")
 #if DEBUG
             if BackendChatConfig.debugLogStreamEvents {
-                print("📡 [BackendChat] detected SSE blocks=\(blocks.count)")
             }
 #endif
 
-            for (bIndex, block) in blocks.enumerated() {
+            for block in blocks {
                 let lines = block.split(separator: "\n")
                 for lineSub in lines {
                     let line = String(lineSub)
@@ -385,19 +373,11 @@ final class BackendChatService {
                     let jsonString = line.dropFirst("data:".count).trimmingCharacters(in: .whitespaces)
                     guard !jsonString.isEmpty else { continue }
 
-#if DEBUG
-                    if BackendChatConfig.debugLogStreamEvents {
-                        let s = truncate(redactBase64(jsonString), limit: 520)
-                        print("📡 [SSE data] block=\(bIndex) \(s)")
-                    }
-#endif
-
                     guard let d = jsonString.data(using: .utf8),
                           let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any]
                     else {
 #if DEBUG
                         if BackendChatConfig.debugLogStreamEvents {
-                            print("⚠️ [BackendChat] SSE json parse failed at block=\(bIndex) preview: \(truncate(jsonString, limit: 220))")
                         }
 #endif
                         continue
@@ -407,7 +387,6 @@ final class BackendChatService {
                     debugPrintSingleChunkSummary(o, source: "sse", index: events.count)
                     // 某些后端会把 event/type 打在 SSE event 行里，这里顺手打印一下，便于对照
                     if BackendChatConfig.debugLogStreamEvents, line.contains("event:") {
-                        print("📡 [SSE meta] block=\(bIndex) line=\(truncate(line, limit: 220))")
                     }
 #endif
                     events.append(o)
@@ -426,16 +405,14 @@ final class BackendChatService {
         let ndLines = raw.split(separator: "\n")
 #if DEBUG
         if BackendChatConfig.debugLogStreamEvents {
-            print("🧱 [BackendChat] detected NDJSON lines=\(ndLines.count)")
         }
 #endif
-        for (i, lineSub) in ndLines.enumerated() {
+        for lineSub in ndLines {
             let s = String(lineSub).trimmingCharacters(in: .whitespacesAndNewlines)
             guard !s.isEmpty else { continue }
 
 #if DEBUG
             if BackendChatConfig.debugLogStreamEvents {
-                print("🧱 [NDJSON line] \(i): \(truncate(redactBase64(s), limit: 520))")
             }
 #endif
 
@@ -444,7 +421,6 @@ final class BackendChatService {
             else {
 #if DEBUG
                 if BackendChatConfig.debugLogStreamEvents {
-                    print("⚠️ [BackendChat] NDJSON json parse failed at line=\(i) preview: \(truncate(s, limit: 220))")
                 }
 #endif
                 continue
@@ -641,8 +617,7 @@ final class BackendChatService {
         let status = (tool["status"] as? String)?.lowercased() ?? ""
 #if DEBUG
         if BackendChatConfig.debugLogChunkSummary {
-            let obsLen = (tool["observation"] as? String)?.count ?? 0
-            print("🛠️ [BackendChat->Tool] name=\(name) status=\(status) observationLen=\(obsLen)")
+            _ = (tool["observation"] as? String)?.count ?? 0
         }
 #endif
         // ✅ 统一以“后端 card chunk”为准：
@@ -736,7 +711,6 @@ final class BackendChatService {
         guard let start = parseISODate(dict["start_time"]) else {
 #if DEBUG
             if BackendChatConfig.debugLogChunkSummary {
-                print("🧩 [BackendChat->ToolSchedule] parse start_time failed: \(String(describing: dict["start_time"])) title=\(title)")
             }
 #endif
             return nil
@@ -758,7 +732,6 @@ final class BackendChatService {
         }
 #if DEBUG
         if BackendChatConfig.debugLogChunkSummary {
-            print("🧩 [BackendChat->ToolSchedule] parsed schedule id=\(event.id) title=\(event.title) start=\(event.startTime) end=\(event.endTime)")
         }
 #endif
         return event
@@ -1023,7 +996,6 @@ final class BackendChatService {
             if let d = tryFormat("yyyy-MM-dd HH:mm:ss") { return d }
 #if DEBUG
             if normalized.contains("T") || normalized.contains("-") {
-                print("🧩 [BackendChat->DateParse] failed: '\(normalized)' (raw='\(trimmed)')")
             }
 #endif
             return nil
@@ -1161,44 +1133,24 @@ final class BackendChatService {
     // MARK: - Debug helpers
     
     private static func debugPrintHeaders(_ request: URLRequest) {
-        print("Headers:")
-        let headers = request.allHTTPHeaderFields ?? [:]
-        for (k, v) in headers.sorted(by: { $0.key < $1.key }) {
-            if k.lowercased() == "authorization" {
-                print("  \(k): Bearer ***")
-            } else {
-                print("  \(k): \(v)")
-            }
-        }
+        _ = request.allHTTPHeaderFields
     }
     
     private static func debugPrintBody(_ request: URLRequest) {
         guard let body = request.httpBody, !body.isEmpty else {
-            print("Body: <empty>")
             return
         }
-        let str = String(data: body, encoding: .utf8) ?? ""
-        let redacted = redactBase64(str)
-        print("Body(\(str.count)):")
-        print(truncate(redacted, limit: 1200))
+        _ = String(data: body, encoding: .utf8)
     }
     
     private static func debugPrintHTTPHeaders(_ response: HTTPURLResponse) {
-        print("Response headers:")
-        for (kAny, vAny) in response.allHeaderFields {
-            let k = String(describing: kAny)
-            let v = String(describing: vAny)
-            print("  \(k): \(v)")
-        }
+        _ = response.allHeaderFields
     }
     
     private static func debugPrintJSONKeys(_ data: Data) {
         guard let obj = try? JSONSerialization.jsonObject(with: data) else { return }
         if let dict = obj as? [String: Any] {
-            print("JSON keys: \(dict.keys.sorted())")
-            if let inner = dict["data"] as? [String: Any] {
-                print("JSON data.* keys: \(inner.keys.sorted())")
-            }
+            _ = dict["data"] as? [String: Any]
         }
     }
     
@@ -1211,9 +1163,7 @@ final class BackendChatService {
     private static func debugPrintResponseBody(_ raw: String) {
 #if DEBUG
         if BackendChatConfig.debugDumpResponseToFile {
-            if let path = dumpStringToDocuments(raw, prefix: "yy_backend_response") {
-                print("📄 [BackendChat] full response saved: \(path)")
-            }
+            _ = dumpStringToDocuments(raw, prefix: "yy_backend_response")
         }
 
         if BackendChatConfig.debugLogFullResponse {
@@ -1222,24 +1172,20 @@ final class BackendChatService {
         }
 #endif
         // 默认：仍保持截断，避免刷爆控制台
-        print(truncate(raw, limit: 1200))
     }
 
 #if DEBUG
     private static func printLongString(_ s: String, chunkSize: Int) {
         guard chunkSize > 0 else {
-            print(s)
             return
         }
         let chars = Array(s)
         if chars.isEmpty {
-            print("")
             return
         }
         var i = 0
         while i < chars.count {
             let end = min(i + chunkSize, chars.count)
-            print(String(chars[i..<end]))
             i = end
         }
     }
@@ -1253,7 +1199,6 @@ final class BackendChatService {
             try s.write(to: fileURL, atomically: true, encoding: .utf8)
             return fileURL.path
         } catch {
-            print("⚠️ [BackendChat] dump response failed: \(error)")
             return nil
         }
     }
@@ -1325,7 +1270,7 @@ final class BackendChatService {
             .sorted(by: { $0.key < $1.key })
             .map { "\($0.key)=\($0.value)" }
             .joined(separator: ", ")
-        print("📊 [BackendChat] chunkSummary(\(source)) total=\(chunks.count) \(summary)")
+        print("[BackendChat][\(source)] chunkTypes: \(summary)")
     }
 
     private static func debugPrintSingleChunkSummary(_ chunk: [String: Any], source: String, index: Int) {
@@ -1333,9 +1278,9 @@ final class BackendChatService {
         // 需求：控制台 chunk 打印改为后端 chunk 的原始 JSON 内容（不做摘要/preview）
         if let data = try? JSONSerialization.data(withJSONObject: chunk, options: []),
            let json = String(data: data, encoding: .utf8) {
-            print("🧱 [BackendChat] chunk[\(source)#\(index)] \(json)")
+            print("[BackendChat][\(source)#\(index)] \(json)")
         } else {
-            print("🧱 [BackendChat] chunk[\(source)#\(index)] \(chunk)")
+            print("[BackendChat][\(source)#\(index)] <non-json>")
         }
     }
 #endif

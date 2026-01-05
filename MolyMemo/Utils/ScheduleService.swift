@@ -124,7 +124,6 @@ enum ScheduleService {
     private static func applyCommonHeaders(to request: inout URLRequest) throws {
         guard let sessionId = currentSessionId(), !sessionId.isEmpty else {
             if debugLogsEnabled {
-                print("❌ [ScheduleService] 缺少 X-Session-Id：请先登录，或检查 AuthStore 是否成功保存 sessionId")
             }
             throw ScheduleServiceError.missingSessionId
         }
@@ -174,42 +173,38 @@ enum ScheduleService {
         guard debugLogsEnabled else { return }
         let method = request.httpMethod ?? "GET"
         let url = request.url?.absoluteString ?? "(nil)"
-        print("🌐 [ScheduleService:\(tag)] \(method) \(url)")
         let headers = request.allHTTPHeaderFields ?? [:]
+        print("[ScheduleService][\(tag)] \(method) \(url)")
         if headers.isEmpty { return }
-        print("🌐 [ScheduleService:\(tag)] headers:")
         for (k, v) in headers.sorted(by: { $0.key < $1.key }) {
             if k.lowercased() == "x-session-id" {
-                print("  \(k): \(maskedSessionId(v))")
+                print("[ScheduleService][\(tag)] \(k): \(maskedSessionId(v))")
             } else {
-                print("  \(k): \(v)")
+                print("[ScheduleService][\(tag)] \(k): \(v)")
             }
         }
     }
     
     private static func debugPrintResponse(data: Data, response: URLResponse?, error: Error?, tag: String) {
         guard debugLogsEnabled else { return }
-        if let error {
-            print("❌ [ScheduleService:\(tag)] error=\(error)")
-        }
         if let http = response as? HTTPURLResponse {
-            print("🌐 [ScheduleService:\(tag)] status=\(http.statusCode)")
+            print("[ScheduleService][\(tag)] status=\(http.statusCode)")
         } else {
-            print("🌐 [ScheduleService:\(tag)] status=(non-http)")
+            print("[ScheduleService][\(tag)] status=(non-http)")
+        }
+        if let error {
+            print("[ScheduleService][\(tag)] error=\(error)")
         }
         let body = String(data: data, encoding: .utf8) ?? "<non-utf8 body: \(data.count) bytes>"
-        print("🌐 [ScheduleService:\(tag)] raw body (len=\(body.count)):")
         printLongString(body, chunkSize: 900)
     }
 
     /// 避免 Xcode 控制台截断超长 JSON：分段打印
     private static func printLongString(_ s: String, chunkSize: Int) {
         guard chunkSize > 0 else {
-            print(s)
             return
         }
         if s.isEmpty {
-            print("")
             return
         }
         let chars = Array(s)
@@ -220,6 +215,16 @@ enum ScheduleService {
             i = end
         }
     }
+
+#if DEBUG
+    /// 只用于“详情接口”：无视 debug 开关，强制打印后端原始 JSON（便于你核对字段）。
+    private static func debugAlwaysPrintRawDetailJSON(data: Data, remoteId: String) {
+        let body = String(data: data, encoding: .utf8) ?? "<non-utf8 body: \(data.count) bytes>"
+        let header = "[ScheduleDetail][id=\(remoteId)] raw json:"
+        printLongString(header + "\n" + body, chunkSize: 900)
+        AppGroupDebugLog.append(header + " " + body)
+    }
+#endif
 
     private static func debugPrintParsedTimeFieldsIfNeeded(raw dict: [String: Any], parsed event: ScheduleEvent) {
         guard debugLogsEnabled else { return }
@@ -236,9 +241,7 @@ enum ScheduleService {
         let startRaw = dict["start_time"] ?? dict["startTime"] ?? dict["start_date"] ?? dict["startDate"]
         let endRaw = dict["end_time"] ?? dict["endTime"] ?? dict["end_date"] ?? dict["endDate"]
         let tzName = TimeZone.current.identifier
-        print("🗓️ [ScheduleService] parsed event title='\(event.title)' remoteId=\(event.remoteId ?? "nil") tz=\(tzName) isFullDay=\(event.isFullDay) endProvided=\(event.endTimeProvided)")
-        print("    raw full_day=\(anyToString(fullDayRaw)) start_time=\(anyToString(startRaw)) end_time=\(anyToString(endRaw))")
-        print("    parsed start=\(event.startTime) end=\(event.endTime)")
+        print("[ScheduleService][parse] tz=\(tzName) fullDayRaw=\(anyToString(fullDayRaw)) startRaw=\(anyToString(startRaw)) endRaw=\(anyToString(endRaw)) -> start=\(event.startTime) end=\(event.endTime) endProvided=\(event.endTimeProvided)")
     }
     
     private static func makeURL(path: String, queryItems: [URLQueryItem]) throws -> URL {
@@ -422,7 +425,9 @@ enum ScheduleService {
         else {
 #if DEBUG
             let raw = (dict["start_time"] ?? dict["startTime"] ?? dict["start_date"] ?? dict["startDate"])
-            print("⚠️ [ScheduleService] parse start_time failed, title=\(title) raw=\(String(describing: raw))")
+            if debugLogsEnabled {
+                print("[ScheduleService][parse] start_time parse failed raw=\(String(describing: raw))")
+            }
 #endif
             return nil
         }
@@ -554,7 +559,6 @@ enum ScheduleService {
             return events
         } catch {
             if debugLogsEnabled {
-                print("❌ [ScheduleService:list] threw error=\(error)")
             }
             throw error
         }
@@ -594,6 +598,10 @@ enum ScheduleService {
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
             debugPrintResponse(data: data, response: response, error: nil, tag: "detail")
+
+#if DEBUG
+            debugAlwaysPrintRawDetailJSON(data: data, remoteId: trimmed)
+#endif
             
             guard let http = response as? HTTPURLResponse else { throw ScheduleServiceError.invalidResponse }
             if !(200...299).contains(http.statusCode) {
@@ -617,7 +625,6 @@ enum ScheduleService {
             throw ScheduleServiceError.parseFailed("unknown json shape")
         } catch {
             if debugLogsEnabled {
-                print("❌ [ScheduleService:detail] threw error=\(error)")
             }
             throw error
         }
@@ -726,7 +733,6 @@ enum ScheduleService {
             return event
         } catch {
             if debugLogsEnabled {
-                print("❌ [ScheduleService:update] threw error=\(error)")
             }
             throw error
         }
@@ -751,7 +757,6 @@ enum ScheduleService {
             if !(200...299).contains(http.statusCode) {
                 let body = String(data: data, encoding: .utf8) ?? ""
                 if debugLogsEnabled {
-                    print("❌ [ScheduleService:delete] HTTP \(http.statusCode) url=\(url.absoluteString) remoteId=\(trimmed) body=\(body)")
                 }
                 throw ScheduleServiceError.httpStatus(http.statusCode, body)
             }
@@ -762,7 +767,6 @@ enum ScheduleService {
             await postRemoteScheduleDidChange()
         } catch {
             if debugLogsEnabled {
-                print("❌ [ScheduleService:delete] threw error=\(error)")
             }
             throw error
         }

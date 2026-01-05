@@ -2,11 +2,89 @@ import SwiftUI
 import SwiftData
 import UIKit
 
-// MARK: - 滚动偏移 PreferenceKey
-private struct TodoListScrollOffsetKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
+// MARK: - ScrollView contentOffset 观察（用于“是否真正到顶”的可靠判定）
+private struct ScrollViewOffsetObserver: UIViewRepresentable {
+    var onUpdate: (_ contentOffsetY: CGFloat, _ topY: CGFloat, _ topOverscroll: CGFloat, _ isAtTop: Bool) -> Void
+    var topTolerance: CGFloat = 1.0
+
+    func makeUIView(context: Context) -> UIView {
+        let v = UIView(frame: .zero)
+        v.isUserInteractionEnabled = false
+        return v
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        // 在 SwiftUI 更新周期中异步查找 UIScrollView，避免层级尚未完成时找不到
+        DispatchQueue.main.async {
+            context.coordinator.attachIfNeeded(from: uiView)
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onUpdate: onUpdate, topTolerance: topTolerance)
+    }
+
+    final class Coordinator: NSObject {
+        private let onUpdate: (_ contentOffsetY: CGFloat, _ topY: CGFloat, _ topOverscroll: CGFloat, _ isAtTop: Bool) -> Void
+        private let topTolerance: CGFloat
+        private weak var scrollView: UIScrollView?
+        private var offsetObservation: NSKeyValueObservation?
+
+        init(
+            onUpdate: @escaping (_ contentOffsetY: CGFloat, _ topY: CGFloat, _ topOverscroll: CGFloat, _ isAtTop: Bool) -> Void,
+            topTolerance: CGFloat
+        ) {
+            self.onUpdate = onUpdate
+            self.topTolerance = topTolerance
+        }
+
+        deinit {
+            offsetObservation?.invalidate()
+        }
+
+        func attachIfNeeded(from view: UIView) {
+            let sv = view.findEnclosingScrollView()
+                ?? view.superview?.findDescendantScrollView(maxDepth: 8)
+            guard let sv else { return }
+            if scrollView === sv { return }
+            scrollView = sv
+
+            offsetObservation?.invalidate()
+            offsetObservation = sv.observe(\.contentOffset, options: [.initial, .new]) { [weak self] scrollView, _ in
+                guard let self else { return }
+                let topY = -scrollView.adjustedContentInset.top
+                let y = scrollView.contentOffset.y
+                let atTop = y <= (topY + self.topTolerance)
+                let overscroll = max(0, topY - y) // 仅“拉过顶部”才为正
+                self.onUpdate(y, topY, overscroll, atTop)
+            }
+        }
+    }
+}
+
+private extension UIView {
+    func findEnclosingScrollView() -> UIScrollView? {
+        var v: UIView? = self
+        // 向上找 30 层足够覆盖 SwiftUI 的包装层
+        for _ in 0..<30 {
+            if let sv = v as? UIScrollView { return sv }
+            v = v?.superview
+        }
+        return nil
+    }
+
+    func findDescendantScrollView(maxDepth: Int) -> UIScrollView? {
+        guard maxDepth > 0 else { return nil }
+        var queue: [(UIView, Int)] = [(self, 0)]
+        while let (node, depth) = queue.first {
+            queue.removeFirst()
+            if let sv = node as? UIScrollView { return sv }
+            if depth >= maxDepth { continue }
+            for sub in node.subviews {
+                queue.append((sub, depth + 1))
+            }
+        }
+        return nil
     }
 }
 
@@ -187,13 +265,25 @@ struct TodoListView: View {
     // 日历折叠进度：0 = 完全展开（月视图），1 = 完全折叠（周视图）
     @State private var calendarProgress: CGFloat = 0
     
-    // 列表滚动位置
-    @State private var listScrollOffset: CGFloat = 0
-    @State private var isListAtBottom: Bool = false
+    // 列表滚动位置（用 UIScrollView contentOffset 进行可靠判定）
+    @State private var listContentOffsetY: CGFloat = 0
+    @State private var listTopY: CGFloat = 0
+    @State private var listTopOverscroll: CGFloat = 0
+    @State private var isListAtTop: Bool = true
     
     // 拖拽临时状态
     @State private var dragStartProgress: CGFloat?
+    @State private var dragStartTopOverscroll: CGFloat?
     @State private var didInitialize = false
+
+    private enum CalendarEdgeDragMode {
+        case none
+        case collapseToWeekAtTop   // 顶部上推：月 -> 周
+        case expandToMonthAtTop    // 顶部下拉回弹：周 -> 月
+    }
+    @State private var edgeDragMode: CalendarEdgeDragMode = .none
+
+    private var isListNearTop: Bool { isListAtTop }
     
     // MARK: - 后端日程（/api/v1/schedules）
     @State private var remoteEvents: [ScheduleEvent] = []
@@ -270,30 +360,21 @@ struct TodoListView: View {
                 // 日程列表区域
                 ScrollView {
                     VStack(spacing: 0) {
-                        // 顶部探测器，用于检测滚动位置
-                        GeometryReader { proxy in
-                            Color.clear.preference(
-                                key: TodoListScrollOffsetKey.self,
-                                value: proxy.frame(in: .named("listScroll")).minY
-                            )
-                        }
-                        .frame(height: 0)
-                        
-                        // 今日行程标题
-                        todayScheduleHeader()
-                        
                         // 行程列表
                         scheduleListSectionContent()
                     }
                 }
+                .scrollIndicators(.hidden)
                 .coordinateSpace(name: "listScroll")
-                .onPreferenceChange(TodoListScrollOffsetKey.self) { offset in
-                    listScrollOffset = offset
-                }
-                // 只有在日历折叠（周视图）时才允许列表滚动，
-                // 或者列表已经滚下去了一点（offset < 0）时允许滚动回来
-                // 这样在月视图下，手指滑动会优先触发日历折叠
-                .scrollDisabled(calendarProgress < 1.0 && listScrollOffset >= 0)
+                .background(
+                    ScrollViewOffsetObserver { y, topY, overscroll, atTop in
+                        // 这个回调在主线程触发（KVO），直接写 State 即可
+                        listContentOffsetY = y
+                        listTopY = topY
+                        listTopOverscroll = overscroll
+                        isListAtTop = atTop
+                    }
+                )
             }
             // 整体手势监听：用于“上滑折叠月历/下拉展开月历”
             //
@@ -410,29 +491,68 @@ struct TodoListView: View {
                 return
             }
         }
-        
-        // ✅ 反向操作：周视图 + 列表到底部时，继续下拉（回弹）允许展开月历
-        let canExpandFromBottomBounce = (calendarProgress >= 0.999 && isListAtBottom && verticalTranslation > 0)
-        
-        // 列表不在顶部时，不允许继续收缩或展开
-        if !canExpandFromBottomBounce, listScrollOffset < -5 && verticalTranslation < 0 {
-            dragStartProgress = nil
+
+        // 仅在“列表顶部”触发周/月切换（符合你截图描述的交互）：
+        // - 顶部上推：月 -> 周
+        // - 顶部下拉回弹：周 -> 月
+        if dragStartProgress == nil {
+            guard isListNearTop else {
+                edgeDragMode = .none
+                return
+            }
+
+            if calendarProgress < 0.5 && verticalTranslation < 0 {
+                edgeDragMode = .collapseToWeekAtTop
+            } else if calendarProgress > 0.5 && verticalTranslation > 0 {
+                edgeDragMode = .expandToMonthAtTop
+            } else {
+                edgeDragMode = .none
+                return
+            }
+        } else if edgeDragMode == .none {
             return
         }
-        
-        if !canExpandFromBottomBounce, verticalTranslation > 0 && listScrollOffset < -2 {
-            dragStartProgress = nil
+
+        // 拖拽过程中如果方向反了，就取消本次 edge 手势，避免“手感怪/抢手”
+        if edgeDragMode == .collapseToWeekAtTop && verticalTranslation > 0 {
+            edgeDragMode = .none
+            return
+        }
+        if edgeDragMode == .expandToMonthAtTop && verticalTranslation < 0 {
+            edgeDragMode = .none
             return
         }
 
         if dragStartProgress == nil {
             dragStartProgress = calendarProgress
+            dragStartTopOverscroll = listTopOverscroll
         }
         
-        // 向上滑 (translation < 0) -> progress 增加 (趋向1)
-        // 向下滑 (translation > 0) -> progress 减小 (趋向0)
+        // 顶部边界触发：上推增加 progress（更接近周视图=1），下拉减少 progress（更接近月视图=0）
         let sensitivity: CGFloat = 260
-        var newProgress = (dragStartProgress ?? calendarProgress) - verticalTranslation / sensitivity
+        let startProgress = (dragStartProgress ?? calendarProgress)
+
+        // ✅ 周 -> 月：必须先“拉出顶部回弹”超过阈值，才开始驱动日历（避免列表中间误触）
+        let requiredOverscroll: CGFloat = 12
+        let requiredPullDistance: CGFloat = 72
+        let effectiveTranslation: CGFloat
+        switch edgeDragMode {
+        case .collapseToWeekAtTop:
+            // 上推：直接用手势位移驱动（verticalTranslation 为负）
+            effectiveTranslation = -verticalTranslation
+        case .expandToMonthAtTop:
+            // 下拉：用“回弹增量”驱动，超过阈值后才生效
+            let baseline = (dragStartTopOverscroll ?? 0)
+            let grown = max(0, listTopOverscroll - baseline)
+            // 双保险：有些情况下 overscroll 更新会滞后，用手指下拉距离兜底
+            let overscrollDriven = max(0, grown - requiredOverscroll)
+            let pullDriven = max(0, verticalTranslation - requiredPullDistance)
+            effectiveTranslation = max(overscrollDriven, pullDriven)
+        case .none:
+            return
+        }
+
+        var newProgress = startProgress - effectiveTranslation / sensitivity
         newProgress = max(0, min(1, newProgress))
         
         guard abs(newProgress - calendarProgress) > 0.001 else { return }
@@ -444,25 +564,47 @@ struct TodoListView: View {
     
     private func handleDragEnd(_ value: DragGesture.Value) {
         dragStartProgress = nil
+        let startOverscroll = dragStartTopOverscroll
+        dragStartTopOverscroll = nil
+        let mode = edgeDragMode
+        edgeDragMode = .none
+        guard mode != .none else { return }
         
         // 决定最终停靠点
         let velocity = value.predictedEndTranslation.height - value.translation.height
-        let threshold: CGFloat = 0.3
-        
+        let threshold: CGFloat = 0.5
         let targetProgress: CGFloat
-        
-        if velocity < -150 { // 快速上滑
-            targetProgress = 1.0
-        } else if velocity > 150 && (listScrollOffset >= 0 || (calendarProgress >= 0.999 && isListAtBottom)) { // 快速下滑：列表在顶 或 列表在底部回弹
-            targetProgress = 0.0
-        } else {
-            // 就近停靠
-            targetProgress = calendarProgress > 0.5 ? 1.0 : 0.0
-        }
-        
-        // 如果列表不在顶部且是下滑操作，不要强制展开日历
-        if listScrollOffset < -10 && targetProgress == 0.0 && !(calendarProgress >= 0.999 && isListAtBottom) {
-             return
+        switch mode {
+        case .collapseToWeekAtTop:
+            // 顶部上推：倾向折叠到周视图
+            if velocity < -150 {
+                targetProgress = 1.0
+            } else {
+                targetProgress = calendarProgress > threshold ? 1.0 : 0.0
+            }
+        case .expandToMonthAtTop:
+            // 只有真的产生“顶部回弹增量”超过阈值，才允许 snap 到月视图（避免假阳性）
+            let requiredOverscroll: CGFloat = 12
+            let requiredPullDistance: CGFloat = 72
+            let baseline = (startOverscroll ?? 0)
+            let grown = max(0, listTopOverscroll - baseline)
+            let hasEnoughOverscroll = grown >= requiredOverscroll
+            let hasEnoughPull = value.translation.height >= requiredPullDistance
+
+            // 不满足阈值：保持周视图，不做 snap
+            if !hasEnoughOverscroll && !hasEnoughPull {
+                return
+            }
+
+            // 顶部下拉回弹：倾向展开到月视图
+            if velocity > 150 {
+                targetProgress = 0.0
+            } else {
+                // 只要达到阈值就直接回到月视图（不要求 progress 先跨过 0.5）
+                targetProgress = 0.0
+            }
+        case .none:
+            return
         }
         
         withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
@@ -543,20 +685,6 @@ struct TodoListView: View {
             }
         }
         .frame(height: 52)
-    }
-    
-    // MARK: - 今日行程标题
-    private func todayScheduleHeader() -> some View {
-        HStack {
-            Text("今日行程")
-                .font(.system(size: 16, weight: .bold, design: .rounded))
-                .foregroundColor(.black.opacity(0.85))
-            
-            Spacer()
-        }
-        .padding(.horizontal, 20)
-        .padding(.top, 16)
-        .padding(.bottom, 8)
     }
     
     // MARK: - 行程列表内容
@@ -657,11 +785,7 @@ struct TodoListView: View {
                 }
             }
             
-            // 底部哨兵：用于识别“列表已到底部”，配合周视图的“下拉回弹”手势实现 周 -> 月
-            Color.clear
-                .frame(height: 1)
-                .onAppear { isListAtBottom = true }
-                .onDisappear { isListAtBottom = false }
+            // 不使用“列表到底部触发切换”，避免触发条件冲突导致手感怪异
         }
         .padding(.horizontal, 16) // 统一水平内边距
         .padding(.bottom, 160)
@@ -747,7 +871,6 @@ struct TodoListView: View {
                 applyRemoteEventDelete(event)
             } catch {
                 // 不做 UI 兜底提示，只打印，方便定位后端 404 的原因
-                print("❌ [TodoListView:deleteRemoteEvent] title=\(event.title) remoteId=\(rid) error=\(error)")
             }
         }
     }
@@ -940,7 +1063,6 @@ struct AdaptiveMonthGrid: View {
                 
                 // 2. 在周视图中的目标 Y 坐标
                 // 选中行移动到 0，其他行也移动到 0（并淡出）
-                let weekY: CGFloat = 0
                 
                 // 3. 插值计算当前 Y 坐标
                 // 注意：我们希望选中行始终保持在最上层，并且平滑移动到顶部
@@ -1045,7 +1167,7 @@ struct CalendarDayCellNew: View {
     
     private var textColor: Color {
         if isSelected {
-            return .black.opacity(0.85)
+            return .white
         } else if !isCurrentMonth {
             return .black.opacity(0.25)
         } else {
@@ -1056,7 +1178,8 @@ struct CalendarDayCellNew: View {
     @ViewBuilder
     private var selectionBackground: some View {
         if isSelected {
-            LiquidGlassCircle()
+            Circle()
+                .fill(Color.black)
                 .frame(width: 44, height: 44)
                 .transition(.scale(scale: 0.92).combined(with: .opacity))
         } else if isToday {

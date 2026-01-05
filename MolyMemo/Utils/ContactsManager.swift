@@ -14,17 +14,14 @@ class ContactsManager: ObservableObject {
             // iOS 18+ 需要使用新的权限请求方式
             if #available(iOS 18.0, *) {
                 let granted = try await store.requestAccess(for: .contacts)
-                print(granted ? "✅ 通讯录权限已授予" : "⚠️ 通讯录权限被拒绝")
                 // 等待一下让权限生效
                 try? await Task.sleep(nanoseconds: 100_000_000) // 0.1秒
                 return granted
             } else {
                 let granted = try await store.requestAccess(for: .contacts)
-                print(granted ? "✅ 通讯录权限已授予" : "⚠️ 通讯录权限被拒绝")
                 return granted
             }
         } catch {
-            print("❌ 请求通讯录权限失败: \(error)")
             return false
         }
     }
@@ -58,7 +55,6 @@ class ContactsManager: ObservableObject {
             contacts.append(contact)
         }
         
-        print("✅ 从通讯录获取了 \(contacts.count) 个联系人")
         return contacts
     }
     
@@ -138,7 +134,6 @@ class ContactsManager: ObservableObject {
             
             return false
         } catch {
-            print("❌ 检查重复联系人失败: \(error)")
             return false
         }
     }
@@ -207,10 +202,8 @@ class ContactsManager: ObservableObject {
         
         do {
             try store.execute(saveRequest)
-            print("✅ 联系人「\(contact.name)」已同步到系统通讯录")
             return .success
         } catch {
-            print("❌ 保存联系人到系统通讯录失败: \(error)")
             throw ContactsError.saveFailed
         }
     }

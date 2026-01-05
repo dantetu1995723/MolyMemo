@@ -520,11 +520,6 @@ class AppState: ObservableObject {
     /// 触发截图分析流程 - 打开聊天室并从剪贴板发送截图（由快捷指令/URL scheme 注入）
     /// - Parameter category: 预分类结果（可选）
     func handleScreenshotFromClipboard(category: ScreenshotCategory? = nil) {
-        print("🔍 触发截图分析流程（从剪贴板获取截图）")
-        if let category = category {
-            print("📊 预分类结果: \(category.rawValue)")
-        }
-
         // 保存预分类结果
         screenshotCategory = category
 
@@ -538,7 +533,6 @@ class AppState: ObservableObject {
 
         // 打开聊天室
         showChatRoom = true
-        print("✅ 已打开聊天室，标记已设置: shouldSendClipboardImage = true")
     }
 
     /// ChatView 出现时调用：若检测到快捷指令/URL scheme 标记，则从剪贴板取图并直接发送给 AI（无需“转发截图”按钮）。
@@ -561,7 +555,6 @@ class AppState: ObservableObject {
         }()
 
         guard let image else {
-            print("⚠️ 剪贴板里没有可用的截图数据，跳过自动发送")
             return
         }
 
@@ -584,20 +577,17 @@ class AppState: ObservableObject {
         // 与 App 内一致：AI 正在生成时不允许再发新消息，避免并发链路混乱
         guard !isAgentTyping else {
             #if DEBUG
-            print("🧩 [PendingScreenshot] skip: isAgentTyping=true")
             #endif
             return
         }
 
         let pending = PendingScreenshotQueue.listPendingRelativePaths(limit: 4)
         #if DEBUG
-        print("🧩 [PendingScreenshot] pendingCount=\(pending.count)")
         #endif
         guard let first = pending.first else { return }
 
         guard let image = PendingScreenshotQueue.loadImage(relativePath: first) else {
             #if DEBUG
-            print("🧩 [PendingScreenshot] decode failed, remove file rel=\(first)")
             #endif
             PendingScreenshotQueue.remove(relativePath: first)
             return
@@ -606,7 +596,6 @@ class AppState: ObservableObject {
         // 先删除文件防止重复（发送过程若失败，可由用户再次截图触发）
         PendingScreenshotQueue.remove(relativePath: first)
         #if DEBUG
-        print("🧩 [PendingScreenshot] drain one rel=\(first) size=\(image.size)")
         #endif
 
         showChatRoom = true
@@ -629,7 +618,6 @@ class AppState: ObservableObject {
     
     /// 停止生成
     func stopGeneration() {
-        print("🛑 用户手动中止生成")
         
         // 1. 取消任务
         currentGenerationTask?.cancel()
@@ -666,11 +654,9 @@ class AppState: ObservableObject {
     /// 设置完整响应内容 - 由AIBubble负责逐字显示动画
     func playResponse(_ content: String, for messageId: UUID) async {
         let normalized = BackendChatService.normalizeDisplayText(content)
-        print("🎬 设置响应内容，总长度: \(normalized.count)")
         
         // 查找消息索引
         guard let messageIndex = chatMessages.firstIndex(where: { $0.id == messageId }) else {
-            print("⚠️ 找不到消息ID: \(messageId)")
             return
         }
         
@@ -679,7 +665,6 @@ class AppState: ObservableObject {
         await MainActor.run {
             // 如果内容为空，显示错误提示
             guard !normalized.isEmpty else {
-                print("⚠️ 收到空内容")
                 var updatedMessage = chatMessages[messageIndex]
                 updatedMessage.content = "抱歉，没有收到AI的回复内容"
                 updatedMessage.streamingState = .error("空响应")
@@ -701,7 +686,6 @@ class AppState: ObservableObject {
             
             // 内容与状态一起更新，避免 UI 闪一下空白
             // isAgentTyping = false // 交给 AIBubble 打字机结束后处理，以支持打字过程中也能显示停止按钮
-            print("✅ 消息内容已设置，由AIBubble负责逐字显示")
         }
     }
 
@@ -733,15 +717,6 @@ class AppState: ObservableObject {
         let beforeScheduleSignatures: Set<String> = Set((msg.scheduleEvents ?? []).map(scheduleSignature))
         let beforeScheduleToolRunning = msg.isScheduleToolRunning
 
-#if DEBUG
-        let beforeSchedule = msg.scheduleEvents?.count ?? -1
-        let beforeContacts = msg.contacts?.count ?? -1
-        let beforeInvoices = msg.invoices?.count ?? -1
-        let beforeMeetings = msg.meetings?.count ?? -1
-        print("🧩 [Structured->AppState] apply to msg=\(messageId) BEFORE schedule=\(beforeSchedule) contacts=\(beforeContacts) invoices=\(beforeInvoices) meetings=\(beforeMeetings) textLen=\(msg.content.count)")
-        print("🧩 [Structured->AppState] incoming taskId=\(output.taskId ?? "nil") schedule=\(output.scheduleEvents.count) contacts=\(output.contacts.count) invoices=\(output.invoices.count) meetings=\(output.meetings.count) textLen=\(output.text.count)")
-#endif
-
         StructuredOutputApplier.apply(output, to: &msg)
 
         // ✅ 每次“聊天室创建或修改完日程”后立刻强刷：
@@ -757,15 +732,6 @@ class AppState: ObservableObject {
         }
 
         chatMessages[index] = msg
-
-#if DEBUG
-        let after = chatMessages[index]
-        let afterSchedule = after.scheduleEvents?.count ?? -1
-        let afterContacts = after.contacts?.count ?? -1
-        let afterInvoices = after.invoices?.count ?? -1
-        let afterMeetings = after.meetings?.count ?? -1
-        print("🧩 [Structured->AppState] AFTER  schedule=\(afterSchedule) contacts=\(afterContacts) invoices=\(afterInvoices) meetings=\(afterMeetings) notes=\(after.notes ?? "nil")")
-#endif
     }
 
     private func mergeContactsPreservingImpression(existing: [ContactCard]?, incoming: [ContactCard]) -> [ContactCard] {
@@ -816,7 +782,6 @@ class AppState: ObservableObject {
             try upsertOrDeleteInvoiceBatch(for: message, modelContext: modelContext)
             try upsertOrDeleteMeetingBatch(for: message, modelContext: modelContext)
         } catch {
-            print("⚠️ 卡片批次持久化失败: \(error)")
         }
     }
 
@@ -984,7 +949,6 @@ class AppState: ObservableObject {
                 if let m = meetingMap[mid], !m.isEmpty { messages[i].meetings = m }
             }
         } catch {
-            print("⚠️ 卡片批次回填失败: \(error)")
         }
     }
     
@@ -1006,10 +970,8 @@ class AppState: ObservableObject {
             
             DispatchQueue.main.async {
                 self.chatMessages = loadedMessages
-                print("✅ 从本地加载了 \(loadedMessages.count) 条聊天记录")
             }
         } catch {
-            print("⚠️ 加载聊天记录失败: \(error)")
         }
     }
 
@@ -1039,7 +1001,6 @@ class AppState: ObservableObject {
                     let old = existing.content.trimmingCharacters(in: .whitespacesAndNewlines)
                     let new = m.content.trimmingCharacters(in: .whitespacesAndNewlines)
                     if old != new {
-                        print("🧱 [ChatStorageMerge] skipOverwrite id=\(m.id) oldLen=\(existing.content.count) newLen=\(m.content.count)")
                     }
 #endif
                     continue
@@ -1049,7 +1010,6 @@ class AppState: ObservableObject {
             let merged = mergedMap.values.sorted(by: { $0.timestamp < $1.timestamp })
             self.chatMessages = merged
         } catch {
-            print("⚠️ 增量刷新聊天记录失败: \(error)")
         }
     }
 
@@ -1079,7 +1039,6 @@ class AppState: ObservableObject {
 
 #if DEBUG
         // 你要求的实时链路日志：这里打印一次“跨进程刷新命中”的关键字段
-        print("🔔 [ChatStorageUpdated] id=\(id) contentLen=\(chatMessages[idx].content.count) tool(contact=\(chatMessages[idx].isContactToolRunning) schedule=\(chatMessages[idx].isScheduleToolRunning)) segments=\(chatMessages[idx].segments?.count ?? 0)")
 #endif
     }
 
@@ -1126,9 +1085,7 @@ class AppState: ObservableObject {
             persistCardBatchesIfNeeded(for: message, modelContext: modelContext)
 
             try modelContext.save()
-            print("✅ 消息已保存到本地: \(message.content.prefix(20))...")
         } catch {
-            print("⚠️ 保存消息失败: \(error)")
         }
     }
 
@@ -1282,9 +1239,7 @@ class AppState: ObservableObject {
             try modelContext.delete(model: StoredInvoiceCardBatch.self)
             try modelContext.delete(model: StoredMeetingCardBatch.self)
             try modelContext.save()
-            print("✅ 已清空所有聊天记录")
         } catch {
-            print("⚠️ 清空聊天记录失败: \(error)")
         }
     }
     
@@ -1293,7 +1248,6 @@ class AppState: ObservableObject {
     /// 开始新的session
     func startNewSession() {
         sessionStartTime = Date()
-        print("🆕 开始新Session - 时间: \(sessionStartTime)")
     }
     
     // MARK: - 调试/演示
@@ -1453,7 +1407,6 @@ class AppState: ObservableObject {
         withAnimation {
             chatMessages.append(message)
         }
-        print("✅ 会议卡片消息已添加: \(meetingCard.title)")
         return message
     }
 

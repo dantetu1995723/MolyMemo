@@ -1,6 +1,7 @@
 import AppIntents
 import ActivityKit
 import UIKit
+import UniformTypeIdentifiers
 
 private let yyPendingLogPrefix = "🧩 [PendingScreenshot]"
 
@@ -13,11 +14,11 @@ struct MollyScreenshotIntent: AppIntent {
     @Parameter(
         title: "截图",
         description: "直接接收上一步“截屏/拍摄屏幕截图”的输出（不弹文件选择器）。",
-        supportedTypeIdentifiers: [
-            "public.image",
-            "public.png",
-            "public.jpeg",
-            "public.heic"
+        supportedContentTypes: [
+            .image,
+            .png,
+            .jpeg,
+            .heic
         ],
         requestValueDialog: IntentDialog("请先在快捷指令里加「截屏」并把输出连接到这里"),
         inputConnectionBehavior: .connectToPreviousIntentResult
@@ -32,7 +33,6 @@ struct MollyScreenshotIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        print("📸➡️💬 MollyScreenshotIntent 触发")
         #if DEBUG
         AppGroupDebugLog.append("MollyScreenshotIntent start")
         #endif
@@ -62,13 +62,11 @@ struct MollyScreenshotIntent: AppIntent {
         await ScreenshotSendNotifications.postSending(thumbnailRelativePath: thumbRelPath)
 
         #if DEBUG
-        print("\(yyPendingLogPrefix) enqueue file rel=\(pendingRelPath) thumb=\(thumbRelPath ?? "nil")")
         AppGroupDebugLog.append("enqueue rel=\(pendingRelPath) thumb=\(thumbRelPath ?? "nil")")
         #endif
 
         DarwinNotificationCenter.post(ChatDarwinNames.pendingScreenshot)
         #if DEBUG
-        print("\(yyPendingLogPrefix) posted darwin=\(ChatDarwinNames.pendingScreenshot)")
         AppGroupDebugLog.append("post darwin \(ChatDarwinNames.pendingScreenshot)")
         #endif
 
@@ -105,7 +103,6 @@ struct MollyScreenshotIntent: AppIntent {
             // 返回“相对 App Group”的路径，避免 Widget/主App 的 URL 计算不一致
             return "screenshot_thumbnails/\(filename)"
         } catch {
-            print("⚠️ [MollyScreenshotIntent] 缩略图写入失败: \(error)")
             return nil
         }
     }

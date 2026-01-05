@@ -18,10 +18,8 @@ enum DeleteActions {
     static func deleteRemoteSchedule(_ event: ScheduleEvent) async throws {
         let rid = (event.remoteId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         if rid.isEmpty {
-            print("❌ [DeleteActions:deleteRemoteSchedule] remoteId empty; title=\(event.title)")
             throw ScheduleService.ScheduleServiceError.parseFailed("remoteId empty")
         }
-        print("🗑️ [DeleteActions:deleteRemoteSchedule] title=\(event.title) remoteId=\(rid)")
         try await ScheduleService.deleteSchedule(remoteId: rid)
     }
 }

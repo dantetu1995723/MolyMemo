@@ -77,7 +77,7 @@ struct MeetingSummaryCardStackView: View {
                                             if let onDeleteRequest {
                                                 onDeleteRequest(meeting)
                                             } else if let idx = meetings.firstIndex(where: { $0.id == meeting.id }) {
-                                                withAnimation { meetings.remove(at: idx) }
+                                                _ = withAnimation { meetings.remove(at: idx) }
                                             }
                                         },
                                         onDismiss: {

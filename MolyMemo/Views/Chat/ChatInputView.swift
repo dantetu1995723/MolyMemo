@@ -8,6 +8,7 @@ struct ChatInputView: View {
     
     @FocusState private var isFocused: Bool
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.displayScale) private var displayScale
     
     // 输入框高度：随内容增长到上限后内部滚动（不更换组件）
     @State private var inputTextHeight: CGFloat = 52
@@ -59,7 +60,7 @@ struct ChatInputView: View {
                                         // 输入框聚焦时不需要 toolbox frame（录音动画也不会触发），
                                         // 避免键盘动画期间 global frame 高频变化导致 UI 自激刷新。
                                         guard !isFocused else { return }
-                                        let f = normalizeFrame(geo.frame(in: .global))
+                                        let f = normalizeFrame(geo.frame(in: .global), scale: displayScale)
                                         DispatchQueue.main.async {
                                             if viewModel.toolboxFrame != f {
                                                 viewModel.toolboxFrame = f
@@ -69,7 +70,7 @@ struct ChatInputView: View {
                                     .onChange(of: geo.frame(in: .global)) { _, newFrame in
                                         // 同上：聚焦时停止上报，且做像素取整 + 变更才写入，避免高频状态更新卡死主线程。
                                         guard !isFocused else { return }
-                                        let f = normalizeFrame(newFrame)
+                                        let f = normalizeFrame(newFrame, scale: displayScale)
                                         DispatchQueue.main.async {
                                             if viewModel.toolboxFrame != f {
                                                 viewModel.toolboxFrame = f
@@ -377,7 +378,7 @@ struct ChatInputView: View {
                 }
             }
         }
-        .modifier(InputContainerFrameReporter(viewModel: viewModel, isFocused: isFocused))
+        .modifier(InputContainerFrameReporter(viewModel: viewModel, isFocused: isFocused, scale: displayScale))
         .overlay(
             RoundedRectangle(cornerRadius: 24)
                 .inset(by: 0.5)
@@ -534,6 +535,7 @@ extension ChatInputView {
 private struct InputContainerFrameReporter: ViewModifier {
     @ObservedObject var viewModel: ChatInputViewModel
     var isFocused: Bool
+    var scale: CGFloat
     
     func body(content: Content) -> some View {
         content.background(
@@ -551,7 +553,7 @@ private struct InputContainerFrameReporter: ViewModifier {
                                     }
                                     return
                                 }
-                                let f = normalizeFrame(geo.frame(in: .global))
+                                let f = normalizeFrame(geo.frame(in: .global), scale: scale)
                                 DispatchQueue.main.async {
                                     if viewModel.inputFrame != f {
                                         viewModel.inputFrame = f
@@ -569,7 +571,7 @@ private struct InputContainerFrameReporter: ViewModifier {
                                     }
                                     return
                                 }
-                                let f = normalizeFrame(newFrame)
+                                let f = normalizeFrame(newFrame, scale: scale)
                                 DispatchQueue.main.async {
                                     if viewModel.inputFrame != f {
                                         viewModel.inputFrame = f
@@ -588,9 +590,9 @@ private struct InputContainerFrameReporter: ViewModifier {
 // MARK: - Frame Helpers
 
 /// 把 frame 按屏幕像素取整，减少键盘动画/浮点误差导致的“微抖动”更新风暴。
-private func normalizeFrame(_ rect: CGRect) -> CGRect {
-    let scale = max(UIScreen.main.scale, 1)
-    func r(_ v: CGFloat) -> CGFloat { (v * scale).rounded() / scale }
+private func normalizeFrame(_ rect: CGRect, scale: CGFloat) -> CGRect {
+    let s = max(scale, 1)
+    func r(_ v: CGFloat) -> CGFloat { (v * s).rounded() / s }
     return CGRect(x: r(rect.origin.x), y: r(rect.origin.y), width: r(rect.size.width), height: r(rect.size.height))
 }
 
@@ -602,7 +604,6 @@ private enum DebugProbe {
     private static var lastPrintAt: [String: Date] = [:]
     
     static func log(_ message: String) {
-        print("🧩 [ChatInput] \(Date()) \(message)")
     }
     
     static func throttled(_ key: String, interval: TimeInterval, _ block: () -> Void) {

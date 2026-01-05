@@ -14,15 +14,12 @@ class AIFormFillerService {
         onSuccess: @escaping () -> Void,
         onError: @escaping (String) -> Void
     ) {
-        print("🤖 开始智能表单填写...")
         
         // 阶段1：先用传统规则快速尝试
         fillFormWithRules(webView: webView, companyInfo: companyInfo) { success in
             if success {
-                print("✅ 传统规则填写成功")
                 onSuccess()
             } else {
-                print("⚠️ 传统规则填写失败，启动AI智能识别...")
                 // 阶段2：AI辅助填写
                 Task {
                     await fillFormWithAI(
@@ -134,17 +131,11 @@ class AIFormFillerService {
         """
         
         webView.evaluateJavaScript(javascript) { result, error in
-            if let error = error {
-                print("❌ 规则填写执行失败: \(error)")
+            if error != nil {
                 completion(false)
                 return
             }
-            
-            if let success = result as? Bool, success {
-                completion(true)
-            } else {
-                completion(false)
-            }
+            completion((result as? Bool) == true)
         }
     }
     
@@ -155,7 +146,6 @@ class AIFormFillerService {
         onSuccess: @escaping () -> Void,
         onError: @escaping (String) -> Void
     ) async {
-        print("🎨 启动AI视觉分析...")
         
         // 1. 截取当前页面
         guard let screenshot = await captureWebViewScreenshot(webView: webView) else {
@@ -163,7 +153,6 @@ class AIFormFillerService {
             return
         }
         
-        print("📸 页面截图完成")
         
         // 2. 调用AI分析页面结构
         let prompt = """
@@ -194,7 +183,6 @@ class AIFormFillerService {
         
         do {
             let analysisResult = try await analyzeFormWithAI(screenshot: screenshot, prompt: prompt)
-            print("🧠 AI分析结果: \(analysisResult)")
             
             // 3. 解析AI返回的选择器
             guard let selectors = parseAIResponse(analysisResult) else {
@@ -205,29 +193,22 @@ class AIFormFillerService {
             // 4. 根据AI返回的选择器生成填写代码
             let fillScript = generateFillScript(selectors: selectors, companyInfo: companyInfo)
             
-            // 5. 执行填写
-            webView.evaluateJavaScript(fillScript) { result, error in
-                if let error = error {
-                    print("❌ AI填写执行失败: \(error)")
-                    onError("填写失败：\(error.localizedDescription)")
-                    return
-                }
-                
-                print("✅ AI辅助填写成功")
-                
-                // 尝试点击提交按钮
-                if let submitSelector = selectors["submitButton"]?["selector"] as? String {
-                    let submitScript = "document.querySelector('\(submitSelector)')?.click();"
-                    webView.evaluateJavaScript(submitScript) { _, _ in
-                        onSuccess()
-                    }
-                } else {
-                    onSuccess()
-                }
+            // 5. 执行填写（使用 async API，避免 evaluateJavaScript 的 deprecation/提示）
+            do {
+                _ = try await webView.evaluateJavaScript(fillScript)
+            } catch {
+                onError("填写失败：\(error.localizedDescription)")
+                return
             }
+
+            // 尝试点击提交按钮
+            if let submitSelector = selectors["submitButton"]?["selector"] as? String {
+                let submitScript = "document.querySelector('\(submitSelector)')?.click();"
+                _ = try? await webView.evaluateJavaScript(submitScript)
+            }
+            onSuccess()
             
         } catch {
-            print("❌ AI分析失败: \(error)")
             onError("AI分析失败：\(error.localizedDescription)")
         }
     }
@@ -238,8 +219,7 @@ class AIFormFillerService {
             DispatchQueue.main.async {
                 let config = WKSnapshotConfiguration()
                 webView.takeSnapshot(with: config) { image, error in
-                    if let error = error {
-                        print("❌ 截图失败: \(error)")
+                    if error != nil {
                         continuation.resume(returning: nil)
                         return
                     }
@@ -284,7 +264,6 @@ class AIFormFillerService {
         // 提取JSON部分（AI可能返回带解释的文字）
         guard let jsonStart = response.range(of: "{"),
               let jsonEnd = response.range(of: "}", options: .backwards) else {
-            print("⚠️ 未找到JSON格式")
             return nil
         }
         
@@ -292,7 +271,6 @@ class AIFormFillerService {
         
         guard let jsonData = jsonString.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: [String: Any]] else {
-            print("⚠️ JSON解析失败")
             return nil
         }
         

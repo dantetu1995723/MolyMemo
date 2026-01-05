@@ -64,15 +64,12 @@ struct MailComposeView: UIViewControllerRepresentable {
         func mailComposeController(_ controller: MFMailComposeViewController, didFinishWith result: MFMailComposeResult, error: Error?) {
             switch result {
             case .sent:
-                print("✅ 邮件发送成功")
                 HapticFeedback.success()
             case .saved:
-                print("📝 邮件已保存草稿")
                 HapticFeedback.light()
             case .cancelled:
-                print("❌ 取消发送")
+                break
             case .failed:
-                print("❌ 邮件发送失败: \(error?.localizedDescription ?? "未知错误")")
                 HapticFeedback.error()
             @unknown default:
                 break

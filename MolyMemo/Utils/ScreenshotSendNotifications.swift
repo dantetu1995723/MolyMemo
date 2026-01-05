@@ -35,7 +35,7 @@ enum ScreenshotSendNotifications {
             return
         }
 
-        var content = UNMutableNotificationContent()
+        let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
         content.threadIdentifier = threadId

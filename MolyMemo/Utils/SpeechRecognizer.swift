@@ -43,9 +43,9 @@ class SpeechRecognizer: ObservableObject {
             DispatchQueue.main.async {
                 switch authStatus {
                 case .authorized:
-                    print("✅ 语音识别权限已授权")
+                    break
                 case .denied, .restricted, .notDetermined:
-                    print("❌ 语音识别权限未授权")
+                    break
                 @unknown default:
                     break
                 }
@@ -55,7 +55,6 @@ class SpeechRecognizer: ObservableObject {
     
     func startRecording(onTextUpdate: @escaping (String) -> Void) {
         guard let speechRecognizer = speechRecognizer, speechRecognizer.isAvailable else {
-            print("❌ 语音识别器不可用")
             return
         }
         
@@ -118,7 +117,6 @@ class SpeechRecognizer: ObservableObject {
                     }
                 }
             } catch {
-                print("❌ 音频会话配置失败: \(error)")
                 DispatchQueue.main.async {
                     self.isRecording = false
                     self.shouldAcceptUpdates = false
@@ -129,7 +127,6 @@ class SpeechRecognizer: ObservableObject {
             // 创建识别请求
             self.recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
             guard let recognitionRequest = self.recognitionRequest else {
-                print("❌ 无法创建识别请求")
                 DispatchQueue.main.async {
                     self.isRecording = false
                     self.shouldAcceptUpdates = false
@@ -177,9 +174,7 @@ class SpeechRecognizer: ObservableObject {
             
             do {
                 try self.audioEngine.start()
-                print("🎤 开始录音")
             } catch {
-                print("❌ 启动音频引擎失败: \(error)")
                 DispatchQueue.main.async {
                     self.isRecording = false
                     self.shouldAcceptUpdates = false
@@ -208,7 +203,6 @@ class SpeechRecognizer: ObservableObject {
                         return
                     }
                     
-                    print("❌ 语音识别错误: \(error)")
                     self.stopRecording()
                 }
             }
@@ -267,7 +261,6 @@ class SpeechRecognizer: ObservableObject {
             self.isStopping = true
         }
         
-        print("🛑 停止录音")
         
         audioQueue.async { [weak self] in
             guard let self = self else { return }
@@ -310,11 +303,9 @@ class SpeechRecognizer: ObservableObject {
                 self.isSessionActive = false
                 self.isSessionConfigured = false
                 #if DEBUG
-                print("🔇 [SpeechRecognizer] AudioSession deactivated")
                 #endif
             } catch {
                 #if DEBUG
-                print("⚠️ [SpeechRecognizer] AudioSession deactivate failed: \(error)")
                 #endif
             }
         }

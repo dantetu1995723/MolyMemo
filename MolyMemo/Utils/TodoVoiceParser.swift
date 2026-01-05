@@ -145,7 +145,6 @@ class TodoVoiceParser {
         - 只返回需要更新的字段，没有提到的字段设为null
         """
 
-        print("🎤 解析待办语音指令: \(voiceText.prefix(50))...")
 
         let prompt = """
         \(instruction)
@@ -158,7 +157,6 @@ class TodoVoiceParser {
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw ParserError.emptyResponse }
         
-        print("📥 解析响应: \(trimmed)")
         
         // 清理markdown代码块
         var cleanedContent = trimmed
@@ -182,7 +180,6 @@ class TodoVoiceParser {
         // 解析JSON结果
         guard let jsonData = cleanedContent.data(using: .utf8),
               let result = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else {
-            print("⚠️ 无法解析AI返回的JSON")
             throw ParserError.invalidJSON
         }
         
@@ -224,7 +221,6 @@ class TodoVoiceParser {
             }
         }
         
-        print("✅ 解析完成: title=\(parseResult.title ?? "nil"), startTime=\(parseResult.startTime?.description ?? "nil")")
         
         return parseResult
     }

@@ -83,7 +83,7 @@ struct InvoiceCardStackView: View {
                                                 onDeleteRequest(invoice)
                                             } else {
                                                 if let idx = invoices.firstIndex(where: { $0.id == invoice.id }) {
-                                                    withAnimation { invoices.remove(at: idx) }
+                                                    _ = withAnimation { invoices.remove(at: idx) }
                                                 }
                                             }
                                         },

@@ -35,6 +35,10 @@ struct ChatView: View {
     @State private var showSearch: Bool = false
     @State private var pendingScrollToMessageId: UUID? = nil
 
+    // 聊天滚动（用于：首次进入自动滚到最新；回到前台刷新后也能滚动）
+    @State private var chatScrollProxy: ScrollViewProxy? = nil
+    @State private var didAutoScrollOnFirstAppear: Bool = false
+
     // AppIntent/快捷指令后台写入的 AI 回复：一次性打字机动画目标由 AppState.pendingAnimatedAgentMessageId 统一管理
 
     // 日程详情弹窗（点击卡片打开）
@@ -74,8 +78,6 @@ struct ChatView: View {
     @State private var todayScheduleIsLoading: Bool = false
     @State private var todayScheduleErrorText: String? = nil
     @State private var isTodayScheduleExpanded: Bool = false
-    @State private var lastLoadedScheduleDayKey: String = ""
-    @State private var todayReadIds: Set<String> = []
 
     // MARK: - Helpers (Segment aggregation)
     /// 当用户在卡片里删除/编辑时，同步把 segments 展平回写到 message 的聚合字段（用于复制/详情页逻辑复用）
@@ -129,6 +131,14 @@ struct ChatView: View {
                         .scrollDisabled(isCardHorizontalPaging)
                         .scrollIndicators(.hidden)
                         .scrollDismissesKeyboard(.interactively)
+                        .onAppear {
+                            // 缓存 proxy，便于外层（如回到前台刷新）也能触发滚动
+                            chatScrollProxy = proxy
+                            if !didAutoScrollOnFirstAppear {
+                                didAutoScrollOnFirstAppear = true
+                                scrollToLatestMessageOnOpen(proxy: proxy)
+                            }
+                        }
                         .safeAreaInset(edge: .top) {
                             // 动态计算占位高度：顶部安全区域 + 导航栏与提醒卡片的高度
                             // 修正：此处不应重复叠加 safeAreaInsets.top，除非外层已忽略安全区。
@@ -153,7 +163,7 @@ struct ChatView: View {
                             NotificationCenter.default.post(name: .dismissScheduleMenu, object: nil)
                         }
                         .onChange(of: appState.chatMessages.count) { _, _ in
-                            scrollToBottom(proxy: proxy)
+                            scrollToLatestMessageOnOpen(proxy: proxy)
                         }
                         .onChange(of: pendingScrollToMessageId) { _, newValue in
                             guard let id = newValue else { return }
@@ -483,6 +493,10 @@ struct ChatView: View {
             // 前台恢复时同步一次聊天记录，确保快捷指令后台发送的消息能出现在 UI
             appState.refreshChatMessagesFromStorageIfNeeded(modelContext: modelContext, limit: 80)
             refreshTodaySchedules(force: true)
+            // 若此时 ScrollView 仍在内存中，补一次滚动到最新（避免刷新后停在中间）
+            if let proxy = chatScrollProxy {
+                scrollToLatestMessageOnOpen(proxy: proxy)
+            }
         }
         // 系统显著时间变化（含跨天/时区变化）时强刷
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in
@@ -497,17 +511,10 @@ struct ChatView: View {
     // MARK: - 首页通知栏：数据同步
 
     private func bootstrapTodayScheduleNotice(forceRefresh: Bool = false) {
-        let key = todayDayKey()
-        if lastLoadedScheduleDayKey != key {
-            lastLoadedScheduleDayKey = key
-            todayReadIds = loadReadIds(dayKey: key)
-        }
         refreshTodaySchedules(force: forceRefresh)
     }
 
     private func refreshTodaySchedules(force: Bool) {
-        let dayKey = todayDayKey()
-        
         // 不设置日期范围，获取所有日程
         let base = ScheduleService.ListParams(
             page: nil,
@@ -529,39 +536,27 @@ struct ChatView: View {
                     .sorted(by: { $0.startTime < $1.startTime })
                 
                 await MainActor.run {
-                    // 跨天时重置"已读"缓存，避免复用昨天状态
-                    if lastLoadedScheduleDayKey != dayKey {
-                        lastLoadedScheduleDayKey = dayKey
-                        todayReadIds = loadReadIds(dayKey: dayKey)
-                    }
                     todayScheduleEvents = sorted
                     todayScheduleIsLoading = false
                     todayScheduleErrorText = nil
                 }
                 
                 // 即使缓存新鲜，也后台静默刷新，确保数据及时更新
-                await refreshTodaySchedulesFromNetwork(base: base, dayKey: dayKey, forceRefresh: true, showError: false)
+                await refreshTodaySchedulesFromNetwork(base: base, forceRefresh: true, showError: false)
                 return
             }
             
             // 2) 首次/强刷：走网络
-            await refreshTodaySchedulesFromNetwork(base: base, dayKey: dayKey, forceRefresh: force, showError: true)
+            await refreshTodaySchedulesFromNetwork(base: base, forceRefresh: force, showError: true)
         }
     }
 
     @MainActor
     private func refreshTodaySchedulesFromNetwork(
         base: ScheduleService.ListParams,
-        dayKey: String,
         forceRefresh: Bool,
         showError: Bool
     ) async {
-        // 跨天时重置"已读"缓存，避免复用昨天状态
-        if lastLoadedScheduleDayKey != dayKey {
-            lastLoadedScheduleDayKey = dayKey
-            todayReadIds = loadReadIds(dayKey: dayKey)
-        }
-        
         todayScheduleIsLoading = true
         if showError { todayScheduleErrorText = nil }
         defer { todayScheduleIsLoading = false }
@@ -585,47 +580,6 @@ struct ChatView: View {
                 todayScheduleErrorText = error.localizedDescription
             }
         }
-    }
-
-    private func todayDayKey(_ date: Date = Date()) -> String {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "zh_CN")
-        f.dateFormat = "yyyy-MM-dd"
-        return f.string(from: date)
-    }
-
-    private func readIdsKey(dayKey: String) -> String {
-        "yuanyuan_today_schedule_read_ids_\(dayKey)"
-    }
-
-    private func scheduleStableId(_ event: ScheduleEvent) -> String {
-        let rid = (event.remoteId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        if !rid.isEmpty { return "rid:\(rid)" }
-        return "lid:\(event.id.uuidString)"
-    }
-
-    private func loadReadIds(dayKey: String) -> Set<String> {
-        let key = readIdsKey(dayKey: dayKey)
-        let arr = UserDefaults.standard.stringArray(forKey: key) ?? []
-        return Set(arr)
-    }
-
-    private func saveReadIds(dayKey: String, ids: Set<String>) {
-        let key = readIdsKey(dayKey: dayKey)
-        UserDefaults.standard.set(Array(ids), forKey: key)
-    }
-
-    private func markAllReadForToday() {
-        let dayKey = todayDayKey()
-        let all = Set(todayScheduleEvents.map { scheduleStableId($0) })
-        todayReadIds.formUnion(all)
-        saveReadIds(dayKey: dayKey, ids: todayReadIds)
-    }
-
-    private func markRead(_ event: ScheduleEvent) {
-        let dayKey = todayDayKey()
-        todayReadIds.insert(scheduleStableId(event))
-        saveReadIds(dayKey: dayKey, ids: todayReadIds)
     }
     
     // MARK: - Components
@@ -677,13 +631,7 @@ struct ChatView: View {
             events: todayScheduleEvents,
             isLoading: todayScheduleIsLoading,
             errorText: todayScheduleErrorText,
-            isExpanded: $isTodayScheduleExpanded,
-            onTapMarkAllRead: {
-                markAllReadForToday()
-            },
-            onTapRow: { event in
-                markRead(event)
-            }
+            isExpanded: $isTodayScheduleExpanded
         )
     }
     
@@ -704,7 +652,6 @@ struct ChatView: View {
                            let segments = appState.chatMessages[msgIndex].segments,
                            !segments.isEmpty {
                             
-                            let hasAnyCards = segments.contains(where: { $0.kind != .text })
                             let firstTextSegmentId = segments.first(where: { $0.kind == .text })?.id
                             let lastTextSegmentId = segments.last(where: { $0.kind == .text })?.id
                             
@@ -792,7 +739,6 @@ struct ChatView: View {
                                                         scheduleDetailEvent = detail
                                                     }
                                                 } catch {
-                                                    print("❌ [ChatView] fetch schedule detail failed rid=\(rid) error=\(error)")
                                                     await MainActor.run {
                                                         scheduleDetailMessageId = msgId
                                                         scheduleDetailEventId = localEventId
@@ -1143,11 +1089,25 @@ struct ChatView: View {
     
     // MARK: - Helper Methods
     
-    private func scrollToBottom(proxy: ScrollViewProxy) {
-        if let lastId = appState.chatMessages.last?.id {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                withAnimation {
-                    proxy.scrollTo(lastId, anchor: .bottom)
+    /// 自动滚动到“最新消息”（优先：最新 AI 气泡；否则：最新一条；再否则：底部锚点）
+    private func scrollToLatestMessageOnOpen(proxy: ScrollViewProxy) {
+        // 选择滚动目标：
+        // - 通常对话最后一条是 AI；如果最后一条是用户且 AI 仍在输入/尚未追加气泡，则滚到最后一条更符合直觉
+        let targetId: UUID? = {
+            guard !appState.chatMessages.isEmpty else { return nil }
+            if let last = appState.chatMessages.last {
+                if last.role == .agent { return last.id }
+                if appState.isAgentTyping { return last.id }
+            }
+            return appState.chatMessages.last(where: { $0.role == .agent })?.id ?? appState.chatMessages.last?.id
+        }()
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+            withAnimation(.easeInOut(duration: 0.22)) {
+                if let id = targetId {
+                    proxy.scrollTo(id, anchor: .bottom)
+                } else {
+                    proxy.scrollTo("bottomID", anchor: .bottom)
                 }
             }
         }
@@ -1171,7 +1131,6 @@ private enum DebugProbe {
     private static var lastPrintAt: [String: Date] = [:]
     
     static func log(_ message: String) {
-        print("⌨️ [ChatView] \(Date()) \(message)")
     }
     
     static func throttled(_ key: String, interval: TimeInterval, _ block: () -> Void) {

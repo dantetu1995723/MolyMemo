@@ -74,7 +74,6 @@ final class RecordingPlaybackController: ObservableObject {
 
     func togglePlay(meeting: MeetingCard) {
         #if DEBUG
-        print("🎧 [RecordingPlaybackController] togglePlay meetingId=\(meeting.id) remoteId=\(meeting.remoteId ?? "nil") remoteURL=\(meeting.audioRemoteURL ?? "nil")")
         #endif
         // 当前正在播同一条：切换 pause/resume
         if isCurrent(meeting: meeting), url(for: meeting) != nil {
@@ -85,7 +84,6 @@ final class RecordingPlaybackController: ObservableObject {
         // 1) 先尝试本地/缓存 URL
         if let u = url(for: meeting) {
             #if DEBUG
-            print("🎧 [RecordingPlaybackController] 直接播放 URL: \(u.isFileURL ? u.path : u.absoluteString)")
             #endif
             currentMeetingId = meeting.id
             currentURL = u
@@ -98,7 +96,6 @@ final class RecordingPlaybackController: ObservableObject {
               let remoteURL = resolveRemoteURL(from: remote)
         else {
             #if DEBUG
-            print("⚠️ [RecordingPlaybackController] 无可用 remoteURL，无法播放")
             #endif
             return
         }
@@ -111,7 +108,6 @@ final class RecordingPlaybackController: ObservableObject {
         downloadTask = Task {
             do {
                 #if DEBUG
-                print("⬇️ [RecordingPlaybackController] 开始下载录音: \(remoteURL.absoluteString)")
                 #endif
                 let local = try await downloadToTemp(remoteURL: remoteURL)
                 if Task.isCancelled { return }
@@ -125,18 +121,6 @@ final class RecordingPlaybackController: ObservableObject {
                 if Task.isCancelled { return }
                 await MainActor.run {
                     self.isDownloading = false
-                    print("⚠️ [RecordingPlaybackController] 下载录音失败: \(error.localizedDescription)")
-                    #if DEBUG
-                    let ns = error as NSError
-                    print("⚠️ [RecordingPlaybackController] error domain=\(ns.domain) code=\(ns.code)")
-                    if let failingURL = ns.userInfo[NSURLErrorFailingURLErrorKey] {
-                        print("⚠️ [RecordingPlaybackController] failingURL=\(failingURL)")
-                    }
-                    if let underlying = ns.userInfo[NSUnderlyingErrorKey] {
-                        print("⚠️ [RecordingPlaybackController] underlying=\(underlying)")
-                    }
-                    // 提示：如果是 ATS(-1022)，不会有 HTTP 状态码，因为请求未发出
-                    #endif
                 }
             }
         }
@@ -156,7 +140,6 @@ final class RecordingPlaybackController: ObservableObject {
         // 本地已存在就不需要预下载
         if let local = url(for: meeting), local.isFileURL {
             #if DEBUG
-            print("⬇️ [RecordingPlaybackController] prefetch 跳过：本地音频已存在 \(local.path)")
             #endif
             return
         }
@@ -166,7 +149,6 @@ final class RecordingPlaybackController: ObservableObject {
               let remoteURL = resolveRemoteURL(from: remote)
         else {
             #if DEBUG
-            print("⬇️ [RecordingPlaybackController] prefetch 跳过：无 remoteURL 或已缓存")
             #endif
             return
         }
@@ -174,18 +156,15 @@ final class RecordingPlaybackController: ObservableObject {
         Task {
             do {
                 #if DEBUG
-                print("⬇️ [RecordingPlaybackController] prefetch 开始下载: \(remoteURL.absoluteString)")
                 #endif
                 let local = try await downloadToTemp(remoteURL: remoteURL)
                 await MainActor.run {
                     self.remoteCache[remote] = local
                 }
                 #if DEBUG
-                print("✅ [RecordingPlaybackController] prefetch 完成: \(local.path)")
                 #endif
             } catch {
                 #if DEBUG
-                print("⚠️ [RecordingPlaybackController] prefetch 失败: \(error.localizedDescription)")
                 #endif
             }
         }
@@ -204,40 +183,14 @@ final class RecordingPlaybackController: ObservableObject {
         var request = URLRequest(url: remoteURL, timeoutInterval: 60)
         request.httpMethod = "GET"
         applyDownloadHeaders(to: &request)
-
-        #if DEBUG
-        print("🌐 [RecordingPlaybackController] 下载录音 request: \(remoteURL.absoluteString)")
-        if let headers = request.allHTTPHeaderFields {
-            let masked: [String: String] = headers.reduce(into: [:]) { acc, kv in
-                let k = kv.key
-                let v = kv.value
-                if k.lowercased() == "x-session-id" {
-                    acc[k] = v.count <= 8 ? "***" : "\(v.prefix(4))...\(v.suffix(4))"
-                } else {
-                    acc[k] = v
-                }
-            }
-            print("🌐 [RecordingPlaybackController] 下载录音 headers: \(masked)")
-        }
-        #endif
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else {
             #if DEBUG
-            print("⚠️ [RecordingPlaybackController] 下载响应不是 HTTPURLResponse")
             #endif
             throw URLError(.badServerResponse)
         }
 
-        #if DEBUG
-        print("🌐 [RecordingPlaybackController] 下载响应状态码: \(http.statusCode) data=\(data.count) bytes")
-        let ct = http.value(forHTTPHeaderField: "Content-Type") ?? "nil"
-        let cl = http.value(forHTTPHeaderField: "Content-Length") ?? "nil"
-        let loc = http.value(forHTTPHeaderField: "Location") ?? "nil"
-        print("🌐 [RecordingPlaybackController] resp Content-Type=\(ct) Content-Length=\(cl) Location=\(loc)")
-        #endif
-
         guard (200...299).contains(http.statusCode) else {
-            print("⚠️ [RecordingPlaybackController] 下载状态码: \(http.statusCode)")
             throw URLError(.badServerResponse)
         }
 
@@ -248,17 +201,14 @@ final class RecordingPlaybackController: ObservableObject {
         // 已存在直接复用
         if FileManager.default.fileExists(atPath: fileURL.path) {
             #if DEBUG
-            print("✅ [RecordingPlaybackController] 命中本地缓存文件: \(fileURL.path)")
             #endif
             return fileURL
         }
 
         #if DEBUG
-        print("💾 [RecordingPlaybackController] 写入临时文件: \(fileURL.path)")
         #endif
         try data.write(to: fileURL, options: [.atomic])
         #if DEBUG
-        print("✅ [RecordingPlaybackController] 写入完成: exists=\(FileManager.default.fileExists(atPath: fileURL.path)) size=\(data.count) bytes")
         #endif
         return fileURL
     }
@@ -270,7 +220,6 @@ final class RecordingPlaybackController: ObservableObject {
         // 1) 已是完整 URL
         if let u = URL(string: trimmed), u.scheme != nil {
             #if DEBUG
-            print("🔗 [RecordingPlaybackController] remoteURL 是完整 URL: \(u.absoluteString)")
             #endif
             return u
         }
@@ -282,7 +231,6 @@ final class RecordingPlaybackController: ObservableObject {
         let path = trimmed.hasPrefix("/") ? trimmed : "/" + trimmed
         let final = normalizedBase + path
         #if DEBUG
-        print("🔗 [RecordingPlaybackController] remoteURL 是相对路径，拼接为: \(final)")
         #endif
         return URL(string: final)
     }

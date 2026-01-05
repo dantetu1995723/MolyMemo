@@ -27,7 +27,6 @@ final class ChatDarwinObserver {
 
         DarwinNotificationCenter.addObserver(t, name: ChatDarwinNames.chatUpdated, callback: callback)
         DarwinNotificationCenter.addObserver(t, name: ChatDarwinNames.pendingScreenshot, callback: callback)
-        print("✅ ChatDarwinObserver 已注册 Darwin 聊天更新监听")
     }
 
     func uninstallIfNeeded() {
@@ -35,7 +34,6 @@ final class ChatDarwinObserver {
         DarwinNotificationCenter.removeObserver(t)
         token = nil
         installed = false
-        print("🧹 ChatDarwinObserver 已移除 Darwin 聊天更新监听")
     }
 
     private func handleNotification(name: CFNotificationName?) {

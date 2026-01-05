@@ -15,7 +15,6 @@ enum YuanyuanGroupMigration {
     @MainActor
     static func runIfNeeded(targetContainer: ModelContainer) {
         guard let targetGroupURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: AppIdentifiers.appGroupId) else {
-            print("🧳 [Migration] target group unavailable: \(AppIdentifiers.appGroupId)")
             return
         }
 
@@ -25,7 +24,6 @@ enum YuanyuanGroupMigration {
         }
 
         guard let legacyGroupURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: legacyGroupId) else {
-            print("🧳 [Migration] legacy group unavailable: \(legacyGroupId)")
             return
         }
 
@@ -44,7 +42,6 @@ enum YuanyuanGroupMigration {
         let targetContext = targetContainer.mainContext
         if (try? targetContext.fetchCount(FetchDescriptor<PersistentChatMessage>())) ?? 0 > 0 {
             try? Data("skipped_target_not_empty".utf8).write(to: markerURL, options: [.atomic])
-            print("🧳 [Migration] skipped: target already has chat data")
             return
         }
 
@@ -66,9 +63,7 @@ enum YuanyuanGroupMigration {
 
             let summary = "ok messages=\(msgCount) batches=\(batchCount) legacyStore=\(legacyStoreURL.lastPathComponent)"
             try Data(summary.utf8).write(to: markerURL, options: [.atomic])
-            print("🧳 [Migration] \(summary)")
         } catch {
-            print("🧳 [Migration] failed: \(error)")
             // 不写 marker：让用户修复签名/权限后还能再试一次
         }
     }

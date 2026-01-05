@@ -73,11 +73,8 @@ struct RecordingItem: Identifiable {
         }
 
         // 🔍 调试：打印列表 JSON 里的时间字段
-        print("🕒 [RecordingItem] 时间字段: id=\(remoteItem.id ?? "nil") meeting_date=\(remoteItem.meetingDate ?? remoteItem.date ?? "nil") created_at=\(remoteItem.createdAt ?? "nil") updated_at=\(remoteItem.updatedAt ?? "nil") -> createdAt=\(self.createdAt)")
         
-        print("🔍 [RecordingItem] 初始化时长: audioDuration=\(String(describing: remoteItem.audioDuration)) (raw duration=\(String(describing: remoteItem.duration)))")
         self.duration = remoteItem.audioDuration ?? 0
-        print("🔍 [RecordingItem] 设置 self.duration = \(self.duration)")
         self.meetingSummary = remoteItem.summary ?? remoteItem.meetingSummary
         self.title = remoteItem.title ?? "会议录音"
         
@@ -330,21 +327,17 @@ struct MeetingRecordView: View {
             
             // 如果LiveRecordingManager正在录音，确保状态同步
             if recordingManager.isRecording {
-                print("✅ 检测到录音正在进行中，状态已同步")
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("StopRecordingFromWidget"))) { _ in
             // 从灵动岛停止录音后，延迟刷新列表
-            print("📱 会议纪要界面收到停止录音通知，准备刷新...")
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-                print("🔄 刷新会议录音列表")
                 loadRecordingsFromMeetings()
             }
         }
         .onChange(of: recordingManager.isRecording) { oldValue, newValue in
             // 监听录音状态变化，录音停止时刷新列表
             if oldValue && !newValue {
-                print("🔄 检测到录音已停止，刷新列表")
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                     loadRecordingsFromMeetings()
                 }
@@ -370,27 +363,14 @@ struct MeetingRecordView: View {
     /// 从服务器加载会议纪要列表
     @MainActor
     private func loadRecordingsFromServer() async {
-        print("📡 ========== 开始加载会议纪要 ==========")
-        print("📡 [MeetingRecordView] 搜索关键词: \(searchText.isEmpty ? "(空)" : searchText)")
         
         isLoading = true
         loadError = nil
         
         do {
-            print("📡 [MeetingRecordView] 正在请求后端API...")
-            let startTime = Date()
-            
             let remoteItems = try await MeetingMinutesService.getMeetingMinutesList(
                 search: searchText.isEmpty ? nil : searchText
             )
-            
-            let elapsed = Date().timeIntervalSince(startTime)
-            print("📡 [MeetingRecordView] 请求耗时: \(String(format: "%.2f", elapsed))秒")
-            print("📡 [MeetingRecordView] 返回数据条数: \(remoteItems.count)")
-            // 🔍 调试：确认列表接口是否返回 created_at/updated_at（带时间）
-            for it in remoteItems.prefix(8) {
-                print("🕒 [MeetingRecordView] list item id=\(it.id ?? "nil") meeting_date=\(it.meetingDate ?? it.date ?? "nil") created_at=\(it.createdAt ?? "nil") updated_at=\(it.updatedAt ?? "nil")")
-            }
             
             // 转换为 RecordingItem
             recordingItems = remoteItems.map { remoteItem in
@@ -398,13 +378,9 @@ struct MeetingRecordView: View {
                 return recordingItem
             }
             
-            print("✅ [MeetingRecordView] 成功加载 \(recordingItems.count) 条会议纪要")
-            print("📡 ========== 加载完成 ==========\n")
             isLoading = false
             
         } catch {
-            print("❌ ========== 加载失败 ==========")
-            print("❌ [MeetingRecordView] 错误详情: \(error)")
             
             isLoading = false
             loadError = "加载失败: \(error.localizedDescription)"
@@ -417,7 +393,7 @@ struct MeetingRecordView: View {
         guard let index = recordingItems.firstIndex(where: { $0.id == item.id }) else { return }
 
         // 先做 UI 乐观更新：立即从列表移除
-        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+        _ = withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
             recordingItems.remove(at: index)
         }
 
@@ -435,7 +411,6 @@ struct MeetingRecordView: View {
                 }
 
                 #if DEBUG
-                print("✅ [MeetingRecordView] 删除成功 remoteId=\(item.remoteId ?? "nil")")
                 #endif
             } catch {
                 // 失败回滚：把条目插回去，并弹窗提示

@@ -510,7 +510,6 @@ struct TodoEditView: View {
             } catch {
                 await MainActor.run {
                     isParsingVoice = false
-                    print("❌ 解析语音指令失败: \(error)")
                     
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                         recognizedVoiceText = ""
@@ -523,14 +522,9 @@ struct TodoEditView: View {
     private func saveTodo() {
         HapticFeedback.medium()
         
-        print("📝 saveTodo 开始")
-        print("📝 isEditing: \(isEditing)")
-        print("📝 todo: \(String(describing: todo))")
-        print("📝 modelContext: \(modelContext)")
         
         // 同步更新模型 - 不使用 Task，避免异步问题
         if isEditing, let todo = todo {
-            print("📝 编辑模式 - 更新前 startTime: \(todo.startTime)")
             
             // 直接更新模型属性
             todo.title = title
@@ -541,20 +535,16 @@ struct TodoEditView: View {
             todo.imageData = selectedImages.compactMap { $0.jpegData(compressionQuality: 0.8) }
             todo.textAttachments = textNotes.isEmpty ? nil : textNotes
             
-            print("📝 编辑模式 - 更新后 startTime: \(todo.startTime)")
             
             let wasSynced = todo.syncToCalendar
             todo.syncToCalendar = syncToCalendar
             
             // 检查是否有未保存的更改
-            print("📝 hasChanges: \(modelContext.hasChanges)")
             
             // 保存修改
             do {
                 try modelContext.save()
-                print("✅ 待办编辑保存成功: \(title), startTime: \(startTime)")
             } catch {
-                print("❌ 保存待办失败: \(error)")
             }
             
             // 异步处理日历同步（不影响保存）
@@ -626,9 +616,7 @@ struct TodoEditView: View {
             
             do {
                 try modelContext.save()
-                print("✅ 新建待办保存成功: \(title)")
             } catch {
-                print("❌ 新建待办失败: \(error)")
             }
             
             // 异步处理日历同步
@@ -748,7 +736,6 @@ struct TodoImagePickerView: UIViewControllerRepresentable {
                             }
                             loadedImages.append(image)
                         } catch {
-                            print("加载图片失败: \(error)")
                         }
                     }
                 }
@@ -810,7 +797,6 @@ struct DocumentPicker: UIViewControllerRepresentable {
                         selectedFiles.append((name: fileName, data: data))
                     }
                 } catch {
-                    print("❌ 读取文件失败: \(url.lastPathComponent)")
                 }
             }
             

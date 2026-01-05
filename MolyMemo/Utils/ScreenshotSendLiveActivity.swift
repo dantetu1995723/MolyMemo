@@ -5,7 +5,6 @@ import ActivityKit
 enum ScreenshotSendLiveActivity {
     static func start() async -> Activity<ScreenshotSendAttributes>? {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else {
-            print("⚠️ [ScreenshotSendLiveActivity] Live Activity 未启用")
             return nil
         }
 
@@ -14,10 +13,8 @@ enum ScreenshotSendLiveActivity {
         do {
             let content = ActivityContent(state: state, staleDate: nil, relevanceScore: 100.0)
             let activity = try Activity<ScreenshotSendAttributes>.request(attributes: attributes, content: content, pushType: nil)
-            print("✅ [ScreenshotSendLiveActivity] 已启动")
             return activity
         } catch {
-            print("❌ [ScreenshotSendLiveActivity] 启动失败: \(error)")
             return nil
         }
     }

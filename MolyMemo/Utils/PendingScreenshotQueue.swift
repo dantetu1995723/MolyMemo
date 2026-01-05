@@ -16,8 +16,7 @@ enum PendingScreenshotQueue {
 
     /// 写入一条待发送截图（jpg），返回相对路径（相对 App Group 根目录）。
     static func enqueue(image: UIImage) -> String? {
-        guard let groupURL = appGroupURL(),
-              let dir = directoryURL() else { return nil }
+        guard let dir = directoryURL() else { return nil }
 
         do {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

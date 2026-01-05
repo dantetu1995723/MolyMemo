@@ -49,7 +49,6 @@ final class AuthStore: ObservableObject {
         defer { isLoading = false }
         
         #if DEBUG
-        print("🔐 [Auth] login start, phone=\(p), verification_code_len=\(c.count)")
         #endif
         
         do {
@@ -70,17 +69,11 @@ final class AuthStore: ObservableObject {
             
             lastError = nil
             isLoggedIn = true
-            
-            #if DEBUG
-            let masked = sessionId.count <= 8 ? "***" : "\(sessionId.prefix(4))...\(sessionId.suffix(4))"
-            print("✅ [Auth] login success, session_id=\(masked), isLoggedIn=true")
-            #endif
         } catch {
             lastError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             isLoggedIn = false
             
             #if DEBUG
-            print("❌ [Auth] login failed, error=\(lastError ?? error.localizedDescription)")
             #endif
         }
     }
@@ -92,11 +85,6 @@ final class AuthStore: ObservableObject {
     func logoutAsync() async {
         let sessionId = (sessionId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         
-        #if DEBUG
-        let masked = sessionId.count <= 8 ? "***" : "\(sessionId.prefix(4))...\(sessionId.suffix(4))"
-        print("🔐 [Auth] logout start, sessionId=\(masked)")
-        #endif
-        
         // 先尝试通知后端登出；即使失败也会清本地，避免用户被卡住
         if !BackendChatConfig.baseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             do {
@@ -105,12 +93,10 @@ final class AuthStore: ObservableObject {
                     sessionId: sessionId
                 )
                 #if DEBUG
-                print("✅ [Auth] logout API success")
                 #endif
             } catch {
                 lastError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
                 #if DEBUG
-                print("⚠️ [Auth] logout API failed, error=\(lastError ?? error.localizedDescription)")
                 #endif
             }
         }
@@ -125,7 +111,6 @@ final class AuthStore: ObservableObject {
         BackendChatConfig.apiKey = ""
         
         #if DEBUG
-        print("✅ [Auth] local logout done, isLoggedIn=false")
         #endif
     }
 }

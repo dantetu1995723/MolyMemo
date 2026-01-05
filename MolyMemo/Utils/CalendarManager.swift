@@ -17,7 +17,6 @@ class CalendarManager {
             do {
                 return try await eventStore.requestFullAccessToEvents()
             } catch {
-                print("请求日历权限失败: \(error)")
                 return false
             }
         } else {
@@ -35,7 +34,6 @@ class CalendarManager {
             do {
                 return try await eventStore.requestFullAccessToReminders()
             } catch {
-                print("请求提醒权限失败: \(error)")
                 return false
             }
         } else {
@@ -58,7 +56,6 @@ class CalendarManager {
             }
             return settings.authorizationStatus == .authorized
         } catch {
-            print("请求通知权限失败: \(error)")
             return false
         }
     }
@@ -77,7 +74,6 @@ class CalendarManager {
         // 请求权限
         let hasAccess = await requestCalendarAccess()
         guard hasAccess else {
-            print("没有日历访问权限")
             return nil
         }
         
@@ -97,10 +93,8 @@ class CalendarManager {
         
         do {
             try eventStore.save(event, span: .thisEvent)
-            print("日历事件创建成功: \(event.eventIdentifier ?? "")")
             return event.eventIdentifier
         } catch {
-            print("创建日历事件失败: \(error)")
             return nil
         }
     }
@@ -116,7 +110,6 @@ class CalendarManager {
         alarmDate: Date?
     ) async -> Bool {
         guard let event = eventStore.event(withIdentifier: eventIdentifier) else {
-            print("找不到日历事件")
             return false
         }
         
@@ -134,10 +127,8 @@ class CalendarManager {
         
         do {
             try eventStore.save(event, span: .thisEvent)
-            print("日历事件更新成功")
             return true
         } catch {
-            print("更新日历事件失败: \(error)")
             return false
         }
     }
@@ -146,16 +137,13 @@ class CalendarManager {
     @discardableResult
     func deleteCalendarEvent(eventIdentifier: String) async -> Bool {
         guard let event = eventStore.event(withIdentifier: eventIdentifier) else {
-            print("找不到日历事件")
             return false
         }
         
         do {
             try eventStore.remove(event, span: .thisEvent)
-            print("日历事件删除成功")
             return true
         } catch {
-            print("删除日历事件失败: \(error)")
             return false
         }
     }
@@ -173,7 +161,6 @@ class CalendarManager {
         // 请求权限
         let hasPermission = await requestNotificationPermission()
         guard hasPermission else {
-            print("没有通知权限")
             return false
         }
         
@@ -199,10 +186,8 @@ class CalendarManager {
         
         do {
             try await UNUserNotificationCenter.current().add(request)
-            print("本地通知创建成功")
             return true
         } catch {
-            print("创建本地通知失败: \(error)")
             return false
         }
     }
@@ -210,7 +195,6 @@ class CalendarManager {
     /// 取消本地通知
     func cancelNotification(id: String) {
         UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [id])
-        print("本地通知已取消")
     }
     
     /// 更新本地通知

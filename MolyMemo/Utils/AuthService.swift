@@ -45,27 +45,10 @@ enum AuthService {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: body, options: [])
         
-        #if DEBUG
-        print("🌐 [AuthAPI] POST \(url.absoluteString)")
-        print("🌐 [AuthAPI] body phone=\(phone), verification_code_len=\(verificationCode.count)")
-        if let data = request.httpBody, let raw = String(data: data, encoding: .utf8) {
-            print("🌐 [AuthAPI] request body raw: \(raw)")
-        }
-        #endif
-        
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw AuthError.invalidResponse }
         
         let raw = String(data: data, encoding: .utf8)
-        
-        #if DEBUG
-        print("🌐 [AuthAPI] response status=\(http.statusCode)")
-        if let raw, !raw.isEmpty {
-            print("🌐 [AuthAPI] response raw: \(raw)")
-        } else {
-            print("🌐 [AuthAPI] response raw: <empty>")
-        }
-        #endif
         
         guard (200...299).contains(http.statusCode) else {
             throw AuthError.httpError(http.statusCode, raw)
@@ -89,25 +72,11 @@ enum AuthService {
         request.httpMethod = "POST"
         request.setValue(sessionId, forHTTPHeaderField: "X-Session-Id")
         
-        #if DEBUG
-        let masked = sessionId.count <= 8 ? "***" : "\(sessionId.prefix(4))...\(sessionId.suffix(4))"
-        print("🌐 [AuthAPI] POST \(url.absoluteString)")
-        print("🌐 [AuthAPI] header X-Session-Id=\(masked)")
-        #endif
-        
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw AuthError.invalidResponse }
         
         let raw = String(data: data, encoding: .utf8)
         
-        #if DEBUG
-        print("🌐 [AuthAPI] response status=\(http.statusCode)")
-        if let raw, !raw.isEmpty {
-            print("🌐 [AuthAPI] response raw: \(raw)")
-        } else {
-            print("🌐 [AuthAPI] response raw: <empty>")
-        }
-        #endif
         guard (200...299).contains(http.statusCode) else {
             throw AuthError.httpError(http.statusCode, raw)
         }

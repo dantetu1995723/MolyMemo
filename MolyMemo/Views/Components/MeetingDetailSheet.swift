@@ -24,7 +24,6 @@ struct MeetingDetailSheet: View {
         let duration = max(playerDuration > 0 ? playerDuration : backendDuration, 0.0001)
         #if DEBUG
         let _ = {
-            print("🔍 [MeetingDetailSheet] duration 选择: player=\(playerDuration) backend=\(backendDuration) used=\(duration)")
             return true
         }()
         #endif
@@ -362,10 +361,8 @@ struct MeetingDetailSheet: View {
         for attempt in 1...maxAttempts {
             if Task.isCancelled { break }
             do {
-                print("🌐 [MeetingDetailSheet] GET 会议详情: id=\(remoteId) attempt=\(attempt)/\(maxAttempts)")
                 let item = try await MeetingMinutesService.getMeetingMinutesDetail(id: remoteId)
                 let status = (item.status ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                print("🔍 [MeetingDetailSheet] 当前 status=\(status.isEmpty ? "nil" : status) audioDuration=\(String(describing: item.audioDuration))")
             
             // 更新标题（如果不为空）
             if let newTitle = item.title, !newTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -399,19 +396,15 @@ struct MeetingDetailSheet: View {
             }
             
             // 更新时长和路径（只使用 audio_duration）
-            print("🔍 [MeetingDetailSheet] 收到时长: audioDuration=\(String(describing: item.audioDuration)) (raw duration=\(String(describing: item.duration)))")
             if let duration = item.audioDuration {
-                print("🔍 [MeetingDetailSheet] 更新 meeting.duration = \(duration)")
                 meeting.duration = duration
             } else {
-                print("⚠️ [MeetingDetailSheet] audioDuration 为 nil，不更新时长")
             }
             // 音频：audio_url 作为远程原始文件链接；audio_path 可能是服务端路径，不保证本地可用
             if let audioUrl = item.audioUrl, !audioUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 meeting.audioRemoteURL = audioUrl
             }
             
-            print("✅ [MeetingDetailSheet] 会议详情已更新")
                 // 轮询退出条件（更贴近用户感知）：
                 // - 如果 title/summary 任一已经有内容，且后端状态看起来“已完成”，即可结束生成态
                 // - 即使 status 字段不规范，只要 summary 有内容，也可以结束生成态（避免无限 loading）
@@ -425,7 +418,6 @@ struct MeetingDetailSheet: View {
                 let hasSummary = !meeting.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
 
                 if (hasTitle || hasSummary) && (isDone || hasSummary) {
-                    print("✅ [MeetingDetailSheet] 轮询结束：hasTitle=\(hasTitle) hasSummary=\(hasSummary) status=\(status.isEmpty ? "nil" : status)")
                     meeting.isGenerating = false
                     break
                 }
@@ -433,7 +425,6 @@ struct MeetingDetailSheet: View {
                 if attempt < maxAttempts {
                     try await Task.sleep(nanoseconds: delayNs)
                 } else {
-                    print("⚠️ [MeetingDetailSheet] 轮询达到上限，最后 status=\(status.isEmpty ? "nil" : status) audioDuration=\(String(describing: item.audioDuration))")
                     // 达到上限也不要无限显示生成中：如果已经拿到任意内容就收敛；否则给出可重试的错误提示
                     let hasAnyContent = !meeting.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                         || !meeting.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -445,7 +436,6 @@ struct MeetingDetailSheet: View {
                     }
                 }
             } catch {
-                print("❌ [MeetingDetailSheet] 获取详情失败 attempt=\(attempt): \(error)")
                 if attempt >= maxAttempts {
                     loadError = "详情更新失败: \(error.localizedDescription)"
                 } else {

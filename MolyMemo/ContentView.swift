@@ -782,7 +782,6 @@ struct YuanyuanHomeView: View {
             }
             .sheet(isPresented: $showImagePicker) {
                 ImagePickerView(onImagesSelected: { images in
-                    print("📸 首页选择了 \(images.count) 张图片")
                     appState.selectedImages = images
                     appState.showChatRoom = true
                 })
@@ -863,7 +862,6 @@ struct YuanyuanHomeView: View {
                         startRecording()
                     },
                     onLongPressEnd: {
-                        print("🔵 ChatTextField onLongPressEnd 被调用")
                         handlePressUp()
                     }
                 )
@@ -1016,12 +1014,10 @@ struct YuanyuanHomeView: View {
     
     // 后台发送录音消息
     private func sendRecordedMessage(messageId: UUID?, text: String) async {
-        print("🔵 准备发送消息，finalText: \(text), currentMessageId: \(String(describing: messageId))")
         
         // 更新用户消息内容并发送
         if let msgId = messageId,
            let index = appState.chatMessages.firstIndex(where: { $0.id == msgId }) {
-            print("🔵 找到消息，更新内容")
             var updatedMessage = appState.chatMessages[index]
             updatedMessage.content = text
             appState.chatMessages[index] = updatedMessage
@@ -1034,7 +1030,6 @@ struct YuanyuanHomeView: View {
             appState.chatMessages.append(agentMsg)
             let agentMessageId = agentMsg.id
             
-            print("🔵 开始调用AI")
             // 调用AI
             appState.isAgentTyping = true
             appState.startStreaming(messageId: agentMessageId)
@@ -1063,7 +1058,6 @@ struct YuanyuanHomeView: View {
                 }
             )
         } else {
-            print("🔵 未找到消息ID，创建新消息")
             // 如果找不到消息ID，直接发送
             let userMsg = ChatMessage(role: .user, content: text)
             appState.chatMessages.append(userMsg)
@@ -1073,7 +1067,6 @@ struct YuanyuanHomeView: View {
             appState.chatMessages.append(agentMsg)
             let agentMessageId = agentMsg.id
             
-            print("🔵 开始调用AI（新消息）")
             appState.isAgentTyping = true
             appState.startStreaming(messageId: agentMessageId)
             
@@ -1130,7 +1123,6 @@ struct YuanyuanHomeView: View {
     
     // 处理松开
     private func handlePressUp() {
-        print("🔵 handlePressUp 被调用，isRecording: \(speechRecognizer.isRecording)")
         
         let wasPressedDown = isPressedDown
         isPressedDown = false
@@ -1141,7 +1133,6 @@ struct YuanyuanHomeView: View {
         
         // 如果正在录音，立即停止并发送
         if speechRecognizer.isRecording {
-            print("🔵 正在录音，调用 stopRecording")
             stopRecording(shouldSend: true)
         } else if wasPressedDown, let startTime = longPressStartTime {
             // 如果按下时间小于0.15秒，视为点击，激活输入框（更敏感）
@@ -1317,7 +1308,6 @@ struct YuanyuanHomeView: View {
             let todos = try modelContext.fetch(descriptor)
             upcomingTodos = Array(todos.prefix(3)) // 最多显示3个
         } catch {
-            print("⚠️ 加载待办失败: \(error)")
             upcomingTodos = []
         }
     }
@@ -1648,13 +1638,11 @@ struct ChatTextField: UIViewRepresentable {
                 parent.onLongPressStart?()
             } else if gesture.state == .ended || gesture.state == .cancelled || gesture.state == .failed {
                 // 长按结束、取消或失败，都触发松开事件
-                print("🔵 UILongPressGestureRecognizer state: \(gesture.state.rawValue)")
                 // 只有真正触发过开始事件，才允许结束事件继续向上传递，避免“没开始却 stop”的竞态。
                 guard didStartLongPressForCurrentGesture else { return }
                 didStartLongPressForCurrentGesture = false
                 // 使用主线程确保立即执行
                 DispatchQueue.main.async {
-                    print("🔵 调用 onLongPressEnd")
                     self.parent.onLongPressEnd?()
                 }
             }

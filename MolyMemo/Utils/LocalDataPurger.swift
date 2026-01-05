@@ -6,7 +6,6 @@ enum LocalDataPurger {
     /// 清理所有本地数据（建议在 App 启动最早期调用一次）。
     static func purgeAll(reason: String) {
         #if DEBUG
-        print("🧹 [LocalDataPurger] 开始清理本地数据：\(reason)")
         #endif
 
         purgeSwiftDataStores()
@@ -16,21 +15,18 @@ enum LocalDataPurger {
         // 如果未来需要“一键清空配置”，应提供用户显式操作入口，而不是启动即清。
 
         #if DEBUG
-        print("🧹 [LocalDataPurger] 清理完成")
         #endif
     }
 
     /// 启动期清理：只清理临时文件/缓存，不触碰 SwiftData store（否则会抹掉 AppIntent 写入的聊天记录）。
     static func purgeCaches(reason: String) {
         #if DEBUG
-        print("🧹 [LocalDataPurger] 开始清理缓存：\(reason)")
         #endif
 
         purgeMeetingRecordings()
         purgeTemporaryAudioCache()
 
         #if DEBUG
-        print("🧹 [LocalDataPurger] 缓存清理完成")
         #endif
     }
 

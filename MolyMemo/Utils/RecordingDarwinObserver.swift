@@ -29,7 +29,6 @@ final class RecordingDarwinObserver {
         DarwinNotificationCenter.addObserver(t, name: RecordingDarwinNames.resume, callback: callback)
         DarwinNotificationCenter.addObserver(t, name: RecordingDarwinNames.stop, callback: callback)
 
-        print("✅ RecordingDarwinObserver 已注册 Darwin 录音命令监听")
     }
 
     func uninstallIfNeeded() {
@@ -37,7 +36,6 @@ final class RecordingDarwinObserver {
         DarwinNotificationCenter.removeObserver(t)
         token = nil
         installed = false
-        print("🧹 RecordingDarwinObserver 已移除 Darwin 录音命令监听")
     }
 
     private func handleNotification(name: CFNotificationName?) {

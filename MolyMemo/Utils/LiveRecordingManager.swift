@@ -43,13 +43,11 @@ class LiveRecordingManager: ObservableObject {
     // 开始录音
     /// - Parameter publishTranscriptionToUI: 是否在 Live Activity / 灵动岛显示实时转写文本（默认 true）。
     func startRecording(publishTranscriptionToUI: Bool = true) {
-        print("🎤 准备开始录音...")
         self.publishTranscriptionToUI = publishTranscriptionToUI
         
         // 请求权限
         requestPermissions { [weak self] granted in
             guard granted else {
-                print("❌ 权限被拒绝")
                 return
             }
             
@@ -98,7 +96,6 @@ class LiveRecordingManager: ObservableObject {
             try audioSession.setCategory(.playAndRecord, mode: .default, options: options)
             try audioSession.setActive(true)
         } catch {
-            print("❌ 音频会话配置失败: \(error)")
             return
         }
         
@@ -141,23 +138,19 @@ class LiveRecordingManager: ObservableObject {
             // 启动 Live Activity
             startLiveActivity()
             
-            print("✅ 录音已启动: \(audioURL.lastPathComponent)")
         } catch {
-            print("❌ 录音启动失败: \(error)")
         }
     }
     
     // 启动实时语音识别
     private func startSpeechRecognition() {
         guard let speechRecognizer = speechRecognizer, speechRecognizer.isAvailable else {
-            print("❌ 语音识别器不可用")
             return
         }
         
         // 创建识别请求
         recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
         guard let recognitionRequest = recognitionRequest else {
-            print("❌ 无法创建识别请求")
             return
         }
         
@@ -178,9 +171,7 @@ class LiveRecordingManager: ObservableObject {
         
         do {
             try audioEngine.start()
-            print("✅ 音频引擎已启动")
         } catch {
-            print("❌ 启动音频引擎失败: \(error)")
             return
         }
         
@@ -199,7 +190,6 @@ class LiveRecordingManager: ObservableObject {
             if let error = error {
                 let nsError = error as NSError
                 if nsError.code != 301 {  // 忽略取消错误
-                    print("❌ 语音识别错误: \(error)")
                 }
             }
         }
@@ -209,7 +199,6 @@ class LiveRecordingManager: ObservableObject {
     func pauseRecording() {
         guard isRecording && !isPaused else { return }
         
-        print("⏸️ 暂停录音...")
         isPaused = true
         
         // 暂停录音器
@@ -222,14 +211,12 @@ class LiveRecordingManager: ObservableObject {
         // 更新 Live Activity
         updateLiveActivity()
         
-        print("✅ 录音已暂停")
     }
     
     // 继续录音
     func resumeRecording() {
         guard isRecording && isPaused else { return }
         
-        print("▶️ 继续录音...")
         isPaused = false
         
         // 继续录音器
@@ -247,21 +234,17 @@ class LiveRecordingManager: ObservableObject {
         do {
             try audioEngine.start()
         } catch {
-            print("❌ 继续音频引擎失败: \(error)")
         }
         
         // 更新 Live Activity
         updateLiveActivity()
         
-        print("✅ 录音已继续")
     }
     
     // 停止录音
     func stopRecording(modelContext: ModelContext? = nil) {
-        print("🛑 ========== 停止录音 ==========")
         
         guard isRecording else { 
-            print("⚠️ 当前没有在录音，跳过")
             return 
         }
         
@@ -287,15 +270,12 @@ class LiveRecordingManager: ObservableObject {
         do {
             try AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
             #if DEBUG
-            print("🔇 [LiveRecordingManager] AudioSession deactivated")
             #endif
         } catch {
             #if DEBUG
-            print("⚠️ [LiveRecordingManager] AudioSession deactivate failed: \(error)")
             #endif
         }
         
-        print("🎙️ 录音已停止，准备上传到后端...")
         
         // 调用后端API生成会议纪要
         uploadToBackend()
@@ -304,14 +284,12 @@ class LiveRecordingManager: ObservableObject {
         endLiveActivity()
         
         
-        print("✅ ========== 停止录音完成 ==========\n")
     }
     
     /// 通知主App上传音频到后端生成会议纪要
     /// 注意：这里只发送通知，实际的后端调用由主App处理（因为Widget Extension无法访问MeetingMinutesService）
     private func uploadToBackend() {
         guard let audioURL = audioURL else {
-            print("❌ [uploadToBackend] 没有音频文件URL")
             return
         }
         
@@ -320,10 +298,6 @@ class LiveRecordingManager: ObservableObject {
         let duration = recordingDuration
         let audioPath = audioURL.path
         
-        print("📤 ========== 准备上传到后端 ==========")
-        print("📤 [uploadToBackend] 音频路径: \(audioPath)")
-        print("📤 [uploadToBackend] 标题: \(title)")
-        print("📤 [uploadToBackend] 时长: \(duration)秒")
         
         // 发送通知，让主App处理后端上传
         // RecordingNeedsUpload: 主App会监听这个通知并调用MeetingMinutesService
@@ -341,17 +315,14 @@ class LiveRecordingManager: ObservableObject {
                 object: nil,
                 userInfo: meetingData
             )
-            print("📤 [uploadToBackend] 已发送上传请求通知到主App")
         }
         
-        print("📤 ========== 通知已发送 ==========\n")
     }
     
     // MARK: - Live Activity 管理
     
     private func startLiveActivity() {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else {
-            print("⚠️ Live Activity 未启用")
             return
         }
         
@@ -376,9 +347,7 @@ class LiveRecordingManager: ObservableObject {
                 content: activityContent,
                 pushType: nil
             )
-            print("✅ Live Activity 已启动（展开模式）")
         } catch {
-            print("❌ Live Activity 启动失败: \(error)")
         }
     }
     
@@ -427,7 +396,6 @@ class LiveRecordingManager: ObservableObject {
                 relevanceScore: 100.0
             )
             await currentActivity.update(updateContent)
-            print("✨ 灵动岛已切换至“已完成”状态")
             
             // 2. 停留 2.5 秒，让用户有充足的时间感受到录音已经成功结束并保存
             try? await Task.sleep(nanoseconds: 2_500_000_000)
@@ -440,7 +408,6 @@ class LiveRecordingManager: ObservableObject {
             } else {
                 await currentActivity.end(dismissalPolicy: .after(.now + 1.0))
             }
-            print("✅ Live Activity 已平滑消失")
         }
         
         // 置空实例，防止重复操作
@@ -478,21 +445,17 @@ class LiveRecordingManager: ObservableObject {
         }
         _ = semaphore.wait(timeout: .now() + 0.5)
         self.activity = nil
-        print("✅ Live Activity 已立即结束")
     }
     
     // 清理所有残留的Live Activity
     private func cleanupStaleActivities() {
-        print("🧹 检查并清理残留的Live Activity...")
         
         Task { @MainActor in
             let activities = Activity<MeetingRecordingAttributes>.activities
             guard !activities.isEmpty else {
-                print("   没有残留的Activity")
                 return
             }
             
-            print("   发现 \(activities.count) 个残留的Activity，开始清理...")
             for activity in activities {
                 let finalState = MeetingRecordingAttributes.ContentState(
                     transcribedText: "",
@@ -510,9 +473,7 @@ class LiveRecordingManager: ObservableObject {
                 } else {
                     await activity.end(dismissalPolicy: .immediate)
                 }
-                print("   ✅ 已清理一个残留Activity")
             }
-            print("✅ 所有残留Activity已清理完成")
         }
     }
     
@@ -569,7 +530,6 @@ class LiveRecordingManager: ObservableObject {
     }
     
     @objc private func handleAppDidEnterBackground() {
-        print("📱 App进入后台，确保录音继续...")
         
         guard isRecording else { return }
         
@@ -577,7 +537,6 @@ class LiveRecordingManager: ObservableObject {
         do {
             try AVAudioSession.sharedInstance().setActive(true)
         } catch {
-            print("❌ 后台音频会话激活失败: \(error)")
         }
         
         // 立即更新Live Activity
@@ -585,7 +544,6 @@ class LiveRecordingManager: ObservableObject {
     }
     
     @objc private func handleAppWillEnterForeground() {
-        print("📱 App回到前台")
         
         // 更新Live Activity状态
         if isRecording {
@@ -594,13 +552,9 @@ class LiveRecordingManager: ObservableObject {
     }
     
     @objc private func handleAppWillTerminate() {
-        print("🚨 App即将终止")
         
         // 如果正在录音，立即停止（但无法上传到后端，因为app即将终止）
         if isRecording {
-            print("⚠️ [handleAppWillTerminate] 录音正在进行中，强制停止...")
-            print("⚠️ [handleAppWillTerminate] 注意：App终止时无法异步上传，录音文件已保存在本地")
-            print("⚠️ [handleAppWillTerminate] 音频文件: \(audioURL?.path ?? "nil")")
             
             // 同步停止录音（因为时间紧迫）
             isRecording = false
@@ -644,10 +598,8 @@ class LiveRecordingManager: ObservableObject {
                 // 最多等待0.5秒
                 _ = semaphore.wait(timeout: .now() + 0.5)
                 self.activity = nil
-                print("✅ Live Activity 已强制结束")
             }
             
-            print("✅ 录音已停止（App终止，未上传后端）")
         } else {
             // 即使没在录音，也要清理可能残留的Activity
             endLiveActivityImmediately()
@@ -663,13 +615,11 @@ class LiveRecordingManager: ObservableObject {
         
         switch type {
         case .began:
-            print("⚠️ 音频中断开始")
             if isRecording && !isPaused {
                 pauseRecording()
             }
             
         case .ended:
-            print("✅ 音频中断结束")
             if let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt {
                 let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
                 if options.contains(.shouldResume) && isPaused {
@@ -683,14 +633,12 @@ class LiveRecordingManager: ObservableObject {
     }
     
     @objc private func handlePauseFromWidget() {
-        print("⏸️ 收到来自Widget的暂停命令")
         DispatchQueue.main.async { [weak self] in
             self?.pauseRecording()
         }
     }
     
     @objc private func handleResumeFromWidget() {
-        print("▶️ 收到来自Widget的继续命令")
         DispatchQueue.main.async { [weak self] in
             self?.resumeRecording()
         }
@@ -713,7 +661,6 @@ class LiveRecordingManager: ObservableObject {
             do {
                 try FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true)
             } catch {
-                print("❌ 创建录音目录失败: \(error)")
             }
         }
         

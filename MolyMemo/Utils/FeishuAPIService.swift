@@ -238,7 +238,6 @@ class FeishuAPIService: NSObject, ObservableObject {
         UserDefaults.standard.removeObject(forKey: tokenExpiryKey)
         UserDefaults.standard.removeObject(forKey: userInfoKey)
         updateLoginStatus()
-        print("✅ 飞书账号已退出")
     }
     
     // MARK: - 用户信息
