@@ -115,14 +115,14 @@ struct ScheduleCardStackView: View {
     // MARK: - 单张卡片视图（含手势）
     @ViewBuilder
     private func cardView(for index: Int, relativeIndex: Int) -> some View {
+        let focusScale: CGFloat = (index == currentIndex
+                                   ? (showMenu ? 1.05 : (isPressingCurrentCard ? 0.985 : 1.0))
+                                   : 1.0)
+        let scale = getScale(relativeIndex) * focusScale
+        
         ScheduleCardView(event: $events[index])
             .frame(width: cardWidth, height: cardHeight)
-            .scaleEffect(
-                getScale(relativeIndex)
-                * (index == currentIndex
-                   ? (showMenu ? 1.05 : (isPressingCurrentCard ? 0.985 : 1.0))
-                   : 1.0)
-            )
+            .scaleEffect(scale)
             .rotationEffect(.degrees(getRotation(relativeIndex)))
             .offset(x: getOffsetX(relativeIndex), y: 0)
             .zIndex(getZIndex(relativeIndex))
@@ -192,7 +192,8 @@ struct ScheduleCardStackView: View {
                             withAnimation { showMenu = false }
                         }
                     )
-                    .offset(y: -60)
+                    // 让胶囊跟随卡片缩放后的左边缘（默认缩放 anchor 是中心，leading 会向左/右移动半个增量）
+                    .offset(x: -(cardWidth * (scale - 1) / 2), y: -60)
                     .transition(.opacity)
                     .zIndex(1000)
                 }
@@ -407,37 +408,73 @@ struct CardCapsuleMenuView: View {
     var onDismiss: () -> Void
     
     @State private var showRescanMenu: Bool = false
+    @State private var rescanSegmentFrame: CGRect = .zero
+    @State private var editRescanWidth: CGFloat = 0
+    
+    // 直接控制下拉框宽度：按固定值缩小（你要更窄/更宽就改这里即可）
+    private let dropdownFallbackWidth: CGFloat = 210
+    private let dropdownCornerRadius: CGFloat = 16
+    private let dropdownOverlapY: CGFloat = -10
+    
+    /// 下拉框宽度：从“编辑”起点到“重新识别”段结束（两格宽），拿不到时用 fallback
+    private var computedDropdownWidth: CGFloat {
+        // 简单策略：宽度永远不超过固定 fallback（避免怎么改都“看不出变化”）
+        let measured = editRescanWidth
+        let base = measured > 10 ? measured : dropdownFallbackWidth
+        return min(base, dropdownFallbackWidth)
+    }
     
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 0) {
-                // 编辑
-                Text("编辑")
-                    .font(.system(size: 14, weight: .medium))
+                // “编辑 + 重新识别”两段：用于精确测量下拉宽度
+                HStack(spacing: 0) {
+                    // 编辑
+                    Text("编辑")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(Color(hex: "333333"))
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                        .contentShape(Rectangle())
+                        .onTapGesture { onEdit() }
+                    
+                    Divider().background(Color.black.opacity(0.1)).frame(height: 16)
+                    
+                    // 重新识别
+                    HStack(spacing: 2) {
+                        Text("重新识别")
+                            .font(.system(size: 14, weight: .medium))
+                        Image(systemName: showRescanMenu ? "chevron.down" : "chevron.right")
+                            .font(.system(size: 10, weight: .bold))
+                    }
                     .foregroundColor(Color(hex: "333333"))
                     .padding(.horizontal, 16)
                     .padding(.vertical, 12)
                     .contentShape(Rectangle())
-                    .onTapGesture { onEdit() }
-                
-                Divider().background(Color.black.opacity(0.1)).frame(height: 16)
-                
-                // 重新识别
-                HStack(spacing: 2) {
-                    Text("重新识别")
-                        .font(.system(size: 14, weight: .medium))
-                    Image(systemName: showRescanMenu ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 10, weight: .bold))
-                }
-                .foregroundColor(Color(hex: "333333"))
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                        showRescanMenu.toggle()
+                    .background(
+                        GeometryReader { geo in
+                            Color.clear
+                                .preference(
+                                    key: RescanSegmentFramePreferenceKey.self,
+                                    value: geo.frame(in: .named("CapsuleMenuSpace"))
+                                )
+                        }
+                    )
+                    .onTapGesture {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                            showRescanMenu.toggle()
+                        }
                     }
                 }
+                .background(
+                    GeometryReader { geo in
+                        Color.clear
+                            .preference(
+                                key: EditRescanWidthPreferenceKey.self,
+                                value: geo.size.width
+                            )
+                    }
+                )
                 
                 Divider().background(Color.black.opacity(0.1)).frame(height: 16)
                 
@@ -451,32 +488,84 @@ struct CardCapsuleMenuView: View {
                     .onTapGesture { onDelete() }
             }
             .modifier(ConditionalCapsuleBackground(showRescanMenu: showRescanMenu))
+            .coordinateSpace(name: "CapsuleMenuSpace")
+            .onPreferenceChange(RescanSegmentFramePreferenceKey.self) { frame in
+                rescanSegmentFrame = frame
+            }
+            .onPreferenceChange(EditRescanWidthPreferenceKey.self) { w in
+                editRescanWidth = w
+            }
             
             // 重新识别下拉
             if showRescanMenu {
                 VStack(spacing: 0) {
+                    // Title（与截图一致）
+                    HStack {
+                        Text("重新识别")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(Color(hex: "333333"))
+                        Spacer()
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(Color(hex: "666666"))
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    
+                    Divider()
+                        .padding(.horizontal, 16)
+                    
                     ForEach(["这是日程", "这是人脉", "这是发票"], id: \.self) { option in
                         Text(option)
                             .font(.system(size: 15))
                             .foregroundColor(Color(hex: "333333"))
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 20)
-                            .padding(.vertical, 14)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 11)
                             .contentShape(Rectangle())
                             .onTapGesture {
-                                withAnimation { showRescanMenu = false }
+                                withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
+                                    showRescanMenu = false
+                                }
                                 onDismiss()
                             }
                         if option != "这是发票" {
-                            Divider().padding(.horizontal, 20)
+                            Divider().padding(.horizontal, 16)
                         }
                     }
                 }
-                .glassEffect(in: .rect(cornerRadius: 16))
-                .frame(width: 200)
-                .transition(.opacity.combined(with: .move(edge: .top)))
+                .frame(width: computedDropdownWidth, alignment: .leading)
+                // 注意：先定 frame 再 glassEffect，否则 glassEffect 可能按未设定尺寸渲染，导致宽度看起来“不生效”
+                .glassEffect(in: .rect(cornerRadius: dropdownCornerRadius))
+                // 与胶囊轻微重叠，看起来像从“重新识别”按钮处弹出
+                .offset(y: dropdownOverlapY)
+                // 左对齐胶囊；出现锚点对准“重新识别”按钮位置，让它从那里自然弹出
+                .transition(
+                    .scale(
+                        scale: 0.96,
+                        anchor: UnitPoint(
+                            x: max(0, min(1, rescanSegmentFrame.midX / max(1, computedDropdownWidth))),
+                            y: 0
+                        )
+                    )
+                    .combined(with: .opacity)
+                )
             }
         }
+    }
+}
+
+private struct RescanSegmentFramePreferenceKey: PreferenceKey {
+    static var defaultValue: CGRect = .zero
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+        value = nextValue()
+    }
+}
+
+private struct EditRescanWidthPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }
 
@@ -702,12 +791,15 @@ struct ConditionalCapsuleBackground: ViewModifier {
     let showRescanMenu: Bool
     
     func body(content: Content) -> some View {
-        Group {
-            if showRescanMenu {
-                content.background(Capsule().fill(Color(hex: "F5F5F5")))
-            } else {
-                content.glassEffect(in: .capsule)
+        // 默认保持磨砂胶囊质感；展开下拉时“变灰但仍玻璃透明”，并增强轮廓避免与背景同色糊在一起
+        content
+            .glassEffect(in: .capsule)
+            .overlay {
+                if showRescanMenu {
+                    Capsule()
+                        .fill(Color(hex: "F5F5F5").opacity(0.55))
+                }
             }
-        }
     }
 }
+

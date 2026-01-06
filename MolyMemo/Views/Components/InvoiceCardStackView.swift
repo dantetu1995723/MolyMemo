@@ -30,9 +30,12 @@ struct InvoiceCardStackView: View {
                 VStack(spacing: 12) {
                     ForEach(0..<invoices.count, id: \.self) { index in
                         let invoice = invoices[index]
+                        let scale: CGFloat = (menuInvoiceId == invoice.id
+                                              ? 1.03
+                                              : (pressingInvoiceId == invoice.id ? 0.985 : 1.0))
                         InvoiceCardView(invoice: invoice)
                             .frame(width: cardWidth, height: cardHeight)
-                            .scaleEffect(menuInvoiceId == invoice.id ? 1.03 : (pressingInvoiceId == invoice.id ? 0.985 : 1.0))
+                            .scaleEffect(scale)
                             .shadow(color: Color.black.opacity(menuInvoiceId == invoice.id ? 0.14 : 0.10),
                                     radius: menuInvoiceId == invoice.id ? 14 : 10,
                                     x: 0,
@@ -90,7 +93,8 @@ struct InvoiceCardStackView: View {
                                             withAnimation { menuInvoiceId = nil }
                                         }
                                     )
-                                    .offset(y: -60)
+                                    // 让胶囊跟随卡片缩放后的左边缘（默认缩放 anchor 是中心，leading 会向左/右移动半个增量）
+                                    .offset(x: -(cardWidth * (scale - 1) / 2), y: -60)
                                     .transition(.opacity)
                                     .zIndex(1000)
                                 }

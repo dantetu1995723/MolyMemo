@@ -38,17 +38,16 @@ struct ContactCardStackView: View {
                     ForEach(0..<contacts.count, id: \.self) { index in
                         // Calculate relative index for cyclic view
                         let relativeIndex = getRelativeIndex(index)
+                        let focusScale: CGFloat = (index == currentIndex
+                                                   ? (showMenu ? 1.05 : (isPressingCurrentCard ? 0.985 : 1.0))
+                                                   : 1.0)
+                        let scale = getScale(relativeIndex) * focusScale
                         
                         // Only show relevant cards for performance
                         if relativeIndex < 4 || relativeIndex == contacts.count - 1 {
                             ContactCardView(contact: $contacts[index])
                                 .frame(width: cardWidth, height: cardHeight)
-                                .scaleEffect(
-                                    getScale(relativeIndex)
-                                    * (index == currentIndex
-                                       ? (showMenu ? 1.05 : (isPressingCurrentCard ? 0.985 : 1.0))
-                                       : 1.0)
-                                )
+                                .scaleEffect(scale)
                                 .rotationEffect(.degrees(getRotation(relativeIndex)))
                                 .offset(x: getOffsetX(relativeIndex), y: 0)
                                 .zIndex(getZIndex(relativeIndex))
@@ -122,7 +121,8 @@ struct ContactCardStackView: View {
                                                 withAnimation { showMenu = false }
                                             }
                                         )
-                                        .offset(y: -60)
+                                        // 让胶囊跟随卡片缩放后的左边缘（默认缩放 anchor 是中心，leading 会向左/右移动半个增量）
+                                        .offset(x: -(cardWidth * (scale - 1) / 2), y: -60)
                                         .transition(.opacity)
                                         .zIndex(1000)
                                     }

@@ -28,9 +28,12 @@ struct MeetingSummaryCardStackView: View {
             } else {
                 VStack(spacing: 12) {
                     ForEach(meetings) { meeting in
+                        let scale: CGFloat = (menuMeetingId == meeting.id
+                                              ? 1.03
+                                              : (pressingMeetingId == meeting.id ? 0.985 : 1.0))
                         MeetingSummaryCardView(meeting: meeting, playback: playback)
                             .frame(width: cardWidth, height: cardHeight)
-                            .scaleEffect(menuMeetingId == meeting.id ? 1.03 : (pressingMeetingId == meeting.id ? 0.985 : 1.0))
+                            .scaleEffect(scale)
                             .shadow(color: Color.black.opacity(menuMeetingId == meeting.id ? 0.12 : 0.06),
                                     radius: menuMeetingId == meeting.id ? 14 : 10,
                                     x: 0,
@@ -83,7 +86,8 @@ struct MeetingSummaryCardStackView: View {
                                             withAnimation { menuMeetingId = nil }
                                         }
                                     )
-                                    .offset(y: -60)
+                                    // 让胶囊跟随卡片缩放后的左边缘（默认缩放 anchor 是中心，leading 会向左/右移动半个增量）
+                                    .offset(x: -(cardWidth * (scale - 1) / 2), y: -60)
                                     .transition(.opacity)
                                     .zIndex(1000)
                                 }
