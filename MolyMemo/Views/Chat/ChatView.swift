@@ -4,7 +4,6 @@ import UIKit
 import PhotosUI
 
 // MARK: - 布局常量
-private let agentAvatarSize: CGFloat = 36
 /// 底部输入区域的基础高度（不含安全区），用于计算聊天内容可视区域
 private let bottomInputBaseHeight: CGFloat = 64
 
@@ -118,14 +117,14 @@ struct ChatView: View {
                     // 聊天内容区域
                     ScrollViewReader { proxy in
                         ScrollView {
-                            LazyVStack(spacing: 24) {
+                            LazyVStack(spacing: 12) {
                                 // 聊天内容
                                 normalChatContent
                                 
                                 // 底部垫高 (确保最后一条消息不被输入框遮挡)
                                 Color.clear.frame(height: 20)
                             }
-                            .padding(.horizontal, 16)
+                            .padding(.horizontal, 24)
                             .padding(.vertical, 10)
                         }
                         .scrollDisabled(isCardHorizontalPaging)
@@ -220,12 +219,12 @@ struct ChatView: View {
                         Color.clear.frame(height: geometry.safeAreaInsets.top)
                         
                         headerView
-                            .padding(.horizontal, 20)
+                            .padding(.horizontal, 24)
                             .padding(.top, 8)
                             .padding(.bottom, 12)
                         
                         reminderCard
-                            .padding(.horizontal, 16)
+                            .padding(.horizontal, 24)
                             .padding(.bottom, 8)
                     }
                     .background(backgroundGray)
@@ -658,7 +657,6 @@ struct ChatView: View {
                             ForEach(segments) { seg in
                                 switch seg.kind {
                                 case .text:
-                                    let showAvatar = (seg.id == firstTextSegmentId)
                                     let shouldAnimate = (
                                         (isLatestAgentMessage
                                          && appState.chatMessages[msgIndex].streamingState.isActive
@@ -673,7 +671,6 @@ struct ChatView: View {
                                         shouldAnimate: shouldAnimate,
                                         showActionButtons: false,
                                         isInterrupted: message.isInterrupted,
-                                        showAvatar: showAvatar,
                                         onTypingCompleted: {
                                             // ✅ 仅对“后台插入的那条消息”在打字完成后收尾：把 streamingState 置为 completed，避免反复打字
                                             guard appState.pendingAnimatedAgentMessageId == message.id else { return }
@@ -754,7 +751,7 @@ struct ChatView: View {
                                             }
                                         }
                                     })
-                                    .frame(maxWidth: .infinity)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
                                     .padding(.top, -10)
                                     
                                 case .contactCards:
@@ -793,7 +790,7 @@ struct ChatView: View {
                                             appState.saveMessageToStorage(m, modelContext: modelContext)
                                         }
                                     })
-                                    .frame(maxWidth: .infinity)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
                                     .padding(.top, -10)
                                     
                                 case .invoiceCards:
@@ -831,7 +828,7 @@ struct ChatView: View {
                                             appState.saveMessageToStorage(m, modelContext: modelContext)
                                         }
                                     })
-                                    .frame(maxWidth: .infinity)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
                                     .padding(.top, -10)
                                     
                                 case .meetingCards:
@@ -870,7 +867,7 @@ struct ChatView: View {
                                     }, onOpenDetail: { meeting in
                                         meetingDetailSelection = MeetingDetailSelection(messageId: message.id, meetingId: meeting.id)
                                     })
-                                    .frame(maxWidth: .infinity)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
                                     .padding(.top, -10)
                                 }
                             }
@@ -889,12 +886,8 @@ struct ChatView: View {
                             }()
                             let shouldShowMessageActions = isFinished && !(m.isScheduleToolRunning || m.isContactToolRunning)
                             if shouldShowMessageActions {
-                                HStack(alignment: .center, spacing: 0) {
-                                    Spacer()
-                                        .frame(width: agentAvatarSize + 12)
-                                    MessageActionButtons(messageId: message.id)
-                                }
-                                .padding(.top, 4)
+                                MessageActionButtons(messageId: message.id)
+                                    .padding(.top, 4)
                             }
                         } else {
                             // 没有分段：展示文本（或思考中占位）
@@ -905,23 +898,14 @@ struct ChatView: View {
                                 && appState.isAgentTyping
                                 && (message.isScheduleToolRunning || message.isContactToolRunning) {
                                 
-                                VStack(alignment: .leading, spacing: 12) {
-                                    // 需要 avatar 对齐：与 AIBubble 的 left padding 逻辑保持一致
-                                    HStack(alignment: .top, spacing: 0) {
-                                        AgentAvatarView(size: agentAvatarSize)
-                                            .padding(.top, 2)
-                                        
-                                        VStack(alignment: .leading, spacing: 14) {
-                                            if message.isScheduleToolRunning {
-                                                ScheduleCardLoadingStackView(isParentScrollDisabled: $isCardHorizontalPaging)
-                                                    .padding(.top, -10)
-                                            }
-                                            if message.isContactToolRunning {
-                                                ContactCardLoadingStackView(isParentScrollDisabled: $isCardHorizontalPaging)
-                                                    .padding(.top, -10)
-                                            }
-                                        }
-                                        .padding(.leading, 12)
+                                VStack(alignment: .leading, spacing: 14) {
+                                    if message.isScheduleToolRunning {
+                                        ScheduleCardLoadingStackView(isParentScrollDisabled: $isCardHorizontalPaging)
+                                            .padding(.top, -10)
+                                    }
+                                    if message.isContactToolRunning {
+                                        ContactCardLoadingStackView(isParentScrollDisabled: $isCardHorizontalPaging)
+                                            .padding(.top, -10)
                                     }
                                 }
                             } else {
@@ -940,7 +924,6 @@ struct ChatView: View {
                                     shouldAnimate: shouldAnimate,
                                     showActionButtons: false,
                                     isInterrupted: message.isInterrupted,
-                                    showAvatar: true,
                                     onTypingCompleted: {
                                         guard appState.pendingAnimatedAgentMessageId == message.id else { return }
                                         guard let idx = appState.chatMessages.firstIndex(where: { $0.id == message.id }) else { return }
@@ -972,7 +955,7 @@ struct ChatView: View {
                                         scheduleDetailEventId = event.id
                                         scheduleDetailEvent = event
                                     })
-                                    .frame(maxWidth: .infinity)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
                                     .padding(.top, -10)
                                 }
 
@@ -998,7 +981,7 @@ struct ChatView: View {
                                             appState.saveMessageToStorage(appState.chatMessages[idx], modelContext: modelContext)
                                         }
                                     })
-                                    .frame(maxWidth: .infinity)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
                                     .padding(.top, -10)
                                 }
 
@@ -1023,7 +1006,7 @@ struct ChatView: View {
                                             appState.saveMessageToStorage(appState.chatMessages[idx], modelContext: modelContext)
                                         }
                                     })
-                                    .frame(maxWidth: .infinity)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
                                     .padding(.top, -10)
                                 }
 
@@ -1049,7 +1032,7 @@ struct ChatView: View {
                                     }, onOpenDetail: { meeting in
                                         meetingDetailSelection = MeetingDetailSelection(messageId: message.id, meetingId: meeting.id)
                                     })
-                                    .frame(maxWidth: .infinity)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
                                     .padding(.top, -10)
                                 }
                                 
@@ -1066,16 +1049,13 @@ struct ChatView: View {
                                 }()
                                 let shouldShowMessageActions = isFinished && !(message.isScheduleToolRunning || message.isContactToolRunning)
                                 if shouldShowMessageActions {
-                                    HStack(alignment: .center, spacing: 0) {
-                                        Spacer()
-                                            .frame(width: agentAvatarSize + 12)
-                                        MessageActionButtons(messageId: message.id)
-                                    }
-                                    .padding(.top, 4)
+                                    MessageActionButtons(messageId: message.id)
+                                        .padding(.top, 4)
                                 }
                             }
                         }
                     }
+                    .padding(.leading, 12)
                     .id(message.id)
                 }
             }
@@ -1146,26 +1126,6 @@ private enum DebugProbe {
 
 // MARK: - Subviews
 
-// MARK: - AI 头像（使用 Assets 里的 "Agent" 图片）
-struct AgentAvatarView: View {
-    let size: CGFloat
-    
-    var body: some View {
-        // 让图片在圆形 frame 内略微内缩，避免内容贴边被圆角裁切得太紧
-        let inset = max(2, size * 0.12)
-        
-        return Image("Agent")
-            .resizable()
-            .scaledToFit()
-            .padding(inset)
-            .frame(width: size, height: size)
-            .background(Circle().fill(Color.white))
-            .clipShape(Circle())
-            .overlay(Circle().stroke(Color.black.opacity(0.05), lineWidth: 1))
-            .accessibilityLabel("AI 头像")
-    }
-}
-
 // 打字机效果气泡 (用于引导)
 struct TypewriterBubble: View {
     let text: String
@@ -1179,20 +1139,13 @@ struct TypewriterBubble: View {
     var body: some View {
         Group {
             if isAI {
-                HStack(alignment: .top, spacing: 12) {
-                    AgentAvatarView(size: agentAvatarSize)
-                    
-                    Text(displayedText)
-                        .font(.system(size: 16))
-                        .foregroundColor(Color(hex: "333333"))
-                        .lineSpacing(6)
-                        .multilineTextAlignment(.leading)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    
-                    Spacer(minLength: 20)
-                }
-                .frame(maxWidth: ScreenMetrics.width * 0.75)
+                Text(displayedText)
+                    .font(.system(size: 16))
+                    .foregroundColor(Color(hex: "333333"))
+                    .lineSpacing(6)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: ScreenMetrics.width * 0.85, alignment: .leading)
             } else {
                 UserBubble(message: ChatMessage(role: .user, content: displayedText))
             }
@@ -1247,7 +1200,6 @@ struct AIBubble: View {
     var shouldAnimate: Bool = false
     var showActionButtons: Bool = true // 控制是否显示操作按钮
     var isInterrupted: Bool = false // 是否被中断
-    var showAvatar: Bool = true // 是否显示头像（用于“卡片后的续写文本”不重复头像）
     var onTypingCompleted: (() -> Void)? = nil
     
     @EnvironmentObject var appState: AppState
@@ -1258,57 +1210,45 @@ struct AIBubble: View {
     @State private var timer: Timer?
     
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            // 头像（或占位，确保对齐一致）
-            if showAvatar {
-                AgentAvatarView(size: agentAvatarSize)
-            } else {
-                Color.clear
-                    .frame(width: agentAvatarSize, height: agentAvatarSize)
-            }
+        VStack(alignment: .leading, spacing: 12) {
+            // 内容文字（打字机效果）
+            Text(displayedText)
+                .font(.system(size: 16))
+                .foregroundColor(Color(hex: "333333"))
+                .lineSpacing(6)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
             
-            VStack(alignment: .leading, spacing: 12) {
-                // 内容文字（打字机效果）
-                Text(displayedText)
-                    .font(.system(size: 16))
-                    .foregroundColor(Color(hex: "333333"))
-                    .lineSpacing(6)
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                
-                // 操作栏（仅在需要时显示）
-                if showActionButtons {
-                    HStack(alignment: .center, spacing: 12) {
-                        // 复制按钮
-                        Button(action: {
-                            HapticFeedback.light()
-                            copyToClipboard()
-                        }) {
-                            Image(systemName: "square.on.square")
-                                .font(.system(size: 16))
-                                .foregroundColor(Color(hex: "999999"))
-                                .frame(height: 18)
-                        }
-                        
-                        // 重新生成按钮
-                        Button(action: {
-                            HapticFeedback.light()
-                            regenerateMessage()
-                        }) {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.system(size: 16))
-                                .foregroundColor(Color(hex: "999999"))
-                                .frame(height: 18)
-                        }
+            // 操作栏（仅在需要时显示）
+            if showActionButtons {
+                HStack(alignment: .center, spacing: 12) {
+                    // 复制按钮
+                    Button(action: {
+                        HapticFeedback.light()
+                        copyToClipboard()
+                    }) {
+                        Image(systemName: "square.on.square")
+                            .font(.system(size: 16))
+                            .foregroundColor(Color(hex: "999999"))
+                            .frame(height: 18)
                     }
-                    .opacity(isCompleted ? 1 : 0)
+                    
+                    // 重新生成按钮
+                    Button(action: {
+                        HapticFeedback.light()
+                        regenerateMessage()
+                    }) {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 16))
+                            .foregroundColor(Color(hex: "999999"))
+                            .frame(height: 18)
+                    }
                 }
+                .opacity(isCompleted ? 1 : 0)
             }
-            .frame(maxWidth: ScreenMetrics.width * 0.75, alignment: .leading)
-            
-            Spacer(minLength: 20)
         }
+        .frame(maxWidth: ScreenMetrics.width * 0.85, alignment: .leading)
         .onAppear {
             // 历史消息：永远不触发打字机（避免 ScrollView 复用导致“滑到哪里打到哪里”）
             guard shouldAnimate else {
@@ -1482,8 +1422,8 @@ struct UserBubble: View {
     private let messageImageSize: CGFloat = 120
     
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Spacer(minLength: agentAvatarSize + 12) // 对齐到AI文本左侧起点（头像 + spacing12）
+        HStack(alignment: .top, spacing: 0) {
+            Spacer(minLength: 40) // 确保左侧有足够空间
             
             VStack(alignment: .trailing, spacing: 8) {
                 if !message.images.isEmpty {
@@ -1510,9 +1450,7 @@ struct UserBubble: View {
                         )
                 }
             }
-            .frame(maxWidth: ScreenMetrics.width * 0.80 + 28, alignment: .trailing)
-            
-            Spacer(minLength: 4)
+            .frame(maxWidth: ScreenMetrics.width * 0.80, alignment: .trailing)
         }
     }
 }
@@ -1789,10 +1727,10 @@ struct BubbleShape: Shape {
         
         // 用户：所有角都是圆角
         // AI：左上角为小圆角（气泡尾巴在左上）
-        let topLeftRadius: CGFloat = myRole == .agent ? 4 : 20
-        let topRightRadius: CGFloat = 20
-        let bottomLeftRadius: CGFloat = 20
-        let bottomRightRadius: CGFloat = 20
+        let topLeftRadius: CGFloat = myRole == .agent ? 4 : 12
+        let topRightRadius: CGFloat = 12
+        let bottomLeftRadius: CGFloat = 12
+        let bottomRightRadius: CGFloat = 12
         
         return Path { path in
             path.move(to: CGPoint(x: topLeftRadius, y: 0))

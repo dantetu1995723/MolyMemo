@@ -115,6 +115,12 @@ struct ScheduleEvent: Identifiable, Equatable, Codable {
     var description: String
     var startTime: Date
     var endTime: Date
+    /// 提醒时间（后端字段 reminder_time），例如：-5m / -30m / -1h / -1d
+    var reminderTime: String? = nil
+    /// 日程分类（后端字段 category），例如：meeting / client_visit / travel
+    var category: String? = nil
+    /// 地点（后端字段 location）
+    var location: String? = nil
     /// 是否为全天日程（优先由后端 `full_day` 明确给出）
     /// - 全天展示语义：00:00 ~ 24:00（endTime 存为次日 00:00，但 UI 会展示为 24:00）
     var isFullDay: Bool = false
@@ -162,7 +168,7 @@ struct ScheduleEvent: Identifiable, Equatable, Codable {
 
     // MARK: - Codable（向后兼容：旧数据没有 isFullDay 字段）
     private enum CodingKeys: String, CodingKey {
-        case id, remoteId, title, description, startTime, endTime, isFullDay, endTimeProvided, isSynced, hasConflict
+        case id, remoteId, title, description, startTime, endTime, reminderTime, category, location, isFullDay, endTimeProvided, isSynced, hasConflict
     }
 
     init(
@@ -172,6 +178,9 @@ struct ScheduleEvent: Identifiable, Equatable, Codable {
         description: String,
         startTime: Date,
         endTime: Date,
+        reminderTime: String? = nil,
+        category: String? = nil,
+        location: String? = nil,
         isFullDay: Bool = false,
         endTimeProvided: Bool = true,
         isSynced: Bool = false,
@@ -183,6 +192,9 @@ struct ScheduleEvent: Identifiable, Equatable, Codable {
         self.description = description
         self.startTime = startTime
         self.endTime = endTime
+        self.reminderTime = reminderTime
+        self.category = category
+        self.location = location
         self.isFullDay = isFullDay
         self.endTimeProvided = endTimeProvided
         self.isSynced = isSynced
@@ -197,6 +209,9 @@ struct ScheduleEvent: Identifiable, Equatable, Codable {
         description = try c.decodeIfPresent(String.self, forKey: .description) ?? ""
         startTime = try c.decode(Date.self, forKey: .startTime)
         endTime = try c.decode(Date.self, forKey: .endTime)
+        reminderTime = try c.decodeIfPresent(String.self, forKey: .reminderTime)
+        category = try c.decodeIfPresent(String.self, forKey: .category)
+        location = try c.decodeIfPresent(String.self, forKey: .location)
         isFullDay = try c.decodeIfPresent(Bool.self, forKey: .isFullDay) ?? false
         endTimeProvided = try c.decodeIfPresent(Bool.self, forKey: .endTimeProvided) ?? true
         isSynced = try c.decodeIfPresent(Bool.self, forKey: .isSynced) ?? false

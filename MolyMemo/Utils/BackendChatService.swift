@@ -820,6 +820,7 @@ final class BackendChatService {
             var event = ScheduleEvent(title: title, description: description, startTime: fullDayStart, endTime: end)
             event.isFullDay = true
             event.endTimeProvided = true
+            event.location = (dict["location"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
             // remoteId：以 card 外层 id 为准；否则回退到 data 内字段
             if !forcedRid.isEmpty {
                 event.remoteId = forcedRid
@@ -839,6 +840,7 @@ final class BackendChatService {
 
         var event = ScheduleEvent(title: title, description: description, startTime: start, endTime: end)
         event.endTimeProvided = (parsedEnd != nil)
+        event.location = (dict["location"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
         // remoteId：以 card 外层 id 为准；否则回退到 data 内字段
         if !forcedRid.isEmpty {
             event.remoteId = forcedRid

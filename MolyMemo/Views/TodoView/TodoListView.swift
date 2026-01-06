@@ -266,24 +266,11 @@ struct TodoListView: View {
     @State private var calendarProgress: CGFloat = 0
     
     // 列表滚动位置（用 UIScrollView contentOffset 进行可靠判定）
-    @State private var listContentOffsetY: CGFloat = 0
-    @State private var listTopY: CGFloat = 0
-    @State private var listTopOverscroll: CGFloat = 0
     @State private var isListAtTop: Bool = true
     
-    // 拖拽临时状态
-    @State private var dragStartProgress: CGFloat?
-    @State private var dragStartTopOverscroll: CGFloat?
+    // 列表顶部边界手势：只在“手势开始时就在顶部”才允许触发月/周切换
+    @State private var dragBeganAtTop: Bool? = nil
     @State private var didInitialize = false
-
-    private enum CalendarEdgeDragMode {
-        case none
-        case collapseToWeekAtTop   // 顶部上推：月 -> 周
-        case expandToMonthAtTop    // 顶部下拉回弹：周 -> 月
-    }
-    @State private var edgeDragMode: CalendarEdgeDragMode = .none
-
-    private var isListNearTop: Bool { isListAtTop }
     
     // MARK: - 后端日程（/api/v1/schedules）
     @State private var remoteEvents: [ScheduleEvent] = []
@@ -366,34 +353,30 @@ struct TodoListView: View {
                 }
                 .scrollIndicators(.hidden)
                 .coordinateSpace(name: "listScroll")
+                // 仅在“列表到顶”后继续下拉 / 继续上推时切换月/周（离散触发，避免拖拽过程改高度导致抖动）
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 18)
+                        .onChanged { _ in
+                            if dragBeganAtTop == nil {
+                                dragBeganAtTop = isListAtTop
+                            }
+                        }
+                        .onEnded { value in
+                            handleListEdgeDragEnd(value)
+                        }
+                )
                 .background(
                     ScrollViewOffsetObserver { y, topY, overscroll, atTop in
-                        // 这个回调在主线程触发（KVO），直接写 State 即可
-                        listContentOffsetY = y
-                        listTopY = topY
-                        listTopOverscroll = overscroll
-                        isListAtTop = atTop
+                        // 该回调在滚动/回弹时高频触发：这里仅维护一个 bool，避免频繁重布局。
+                        _ = y
+                        _ = topY
+                        _ = overscroll
+                        if isListAtTop != atTop {
+                            isListAtTop = atTop
+                        }
                     }
                 )
             }
-            // 整体手势监听：用于“上滑折叠月历/下拉展开月历”
-            //
-            // 之前这里使用 highPriorityGesture + including: .all，会把子视图（尤其是日历 TabView 的 page 横滑）
-            // 的单指手势抢走，导致“翻月必须双指”。
-            //
-            // 改为 simultaneousGesture：不阻塞子视图手势，只在 handleDragChange/End 内部按需处理“纵向”拖拽即可。
-            .simultaneousGesture(
-                // 关键：这里一定要设置 minimumDistance。
-                // 否则用户“点击列表项”时手指的轻微抖动也会被识别成拖拽，
-                // 进而导致 SwipeToDeleteCard 的 onTap（打开详情）经常不触发，体感就是“点不进去详情”。
-                DragGesture(minimumDistance: 18)
-                    .onChanged { value in
-                        handleDragChange(value)
-                    }
-                    .onEnded { value in
-                        handleDragEnd(value)
-                    }
-            )
             
             // 底部操作栏（选中事项时显示）
             if selectedTodo != nil {
@@ -474,141 +457,43 @@ struct TodoListView: View {
         }
     }
     
-    // MARK: - 拖拽手势处理
-    private func handleDragChange(_ value: DragGesture.Value) {
-        let verticalTranslation = value.translation.height
-        let horizontalTranslation = value.translation.width
-        
-        // 关键修复：
-        // 这里需要“放行横滑”给 SwipeToDeleteCard（左滑删除），但如果判定过于敏感，
-        // 用户在列表项上做“上下拖拽切换周/月”时会因为轻微横向抖动而被误判为横滑，导致折叠/展开失效。
-        //
-        // 因此仅在“横向明显占优 + 横向位移也足够大”时才放行。
-        if dragStartProgress == nil {
-            let horizontalDominant = abs(horizontalTranslation) > abs(verticalTranslation) + 18
-            let horizontalIsMeaningful = abs(horizontalTranslation) > 24
-            if horizontalDominant && horizontalIsMeaningful {
-                return
-            }
-        }
+    // MARK: - 列表顶部边界：离散切换月/周（简单清晰，避免抖动）
+    private func handleListEdgeDragEnd(_ value: DragGesture.Value) {
+        defer { dragBeganAtTop = nil }
+        guard dragBeganAtTop == true else { return }
 
-        // 仅在“列表顶部”触发周/月切换（符合你截图描述的交互）：
-        // - 顶部上推：月 -> 周
-        // - 顶部下拉回弹：周 -> 月
-        if dragStartProgress == nil {
-            guard isListNearTop else {
-                edgeDragMode = .none
-                return
-            }
+        let dx = value.translation.width
+        let dy = value.translation.height
 
-            if calendarProgress < 0.5 && verticalTranslation < 0 {
-                edgeDragMode = .collapseToWeekAtTop
-            } else if calendarProgress > 0.5 && verticalTranslation > 0 {
-                edgeDragMode = .expandToMonthAtTop
-            } else {
-                edgeDragMode = .none
-                return
+        // 横滑（删除）优先：明显横向占优就不处理
+        let horizontalDominant = abs(dx) > abs(dy) + 18
+        let horizontalIsMeaningful = abs(dx) > 24
+        if horizontalDominant && horizontalIsMeaningful { return }
+
+        // 必须是明显的纵向“继续拉/继续推”才触发（避免轻微手抖）
+        let verticalIsMeaningful = abs(dy) >= 80
+        if !verticalIsMeaningful { return }
+
+        // 仅在两个“稳定态”之间切换：0（月）<-> 1（周）
+        let isMonth = calendarProgress <= 0.01
+        let isWeek = calendarProgress >= 0.99
+
+        if dy < 0, isMonth {
+            // 到顶后继续上推：月 -> 周
+            HapticFeedback.light()
+            withAnimation(.spring(response: 0.34, dampingFraction: 0.88)) {
+                calendarProgress = 1.0
             }
-        } else if edgeDragMode == .none {
             return
         }
 
-        // 拖拽过程中如果方向反了，就取消本次 edge 手势，避免“手感怪/抢手”
-        if edgeDragMode == .collapseToWeekAtTop && verticalTranslation > 0 {
-            edgeDragMode = .none
-            return
-        }
-        if edgeDragMode == .expandToMonthAtTop && verticalTranslation < 0 {
-            edgeDragMode = .none
-            return
-        }
-
-        if dragStartProgress == nil {
-            dragStartProgress = calendarProgress
-            dragStartTopOverscroll = listTopOverscroll
-        }
-        
-        // 顶部边界触发：上推增加 progress（更接近周视图=1），下拉减少 progress（更接近月视图=0）
-        let sensitivity: CGFloat = 260
-        let startProgress = (dragStartProgress ?? calendarProgress)
-
-        // ✅ 周 -> 月：必须先“拉出顶部回弹”超过阈值，才开始驱动日历（避免列表中间误触）
-        let requiredOverscroll: CGFloat = 12
-        let requiredPullDistance: CGFloat = 72
-        let effectiveTranslation: CGFloat
-        switch edgeDragMode {
-        case .collapseToWeekAtTop:
-            // 上推：直接用手势位移驱动（verticalTranslation 为负）
-            effectiveTranslation = -verticalTranslation
-        case .expandToMonthAtTop:
-            // 下拉：用“回弹增量”驱动，超过阈值后才生效
-            let baseline = (dragStartTopOverscroll ?? 0)
-            let grown = max(0, listTopOverscroll - baseline)
-            // 双保险：有些情况下 overscroll 更新会滞后，用手指下拉距离兜底
-            let overscrollDriven = max(0, grown - requiredOverscroll)
-            let pullDriven = max(0, verticalTranslation - requiredPullDistance)
-            effectiveTranslation = max(overscrollDriven, pullDriven)
-        case .none:
-            return
-        }
-
-        var newProgress = startProgress - effectiveTranslation / sensitivity
-        newProgress = max(0, min(1, newProgress))
-        
-        guard abs(newProgress - calendarProgress) > 0.001 else { return }
-        
-        withAnimation(.interactiveSpring(response: 0.22, dampingFraction: 0.85)) {
-            calendarProgress = newProgress
-        }
-    }
-    
-    private func handleDragEnd(_ value: DragGesture.Value) {
-        dragStartProgress = nil
-        let startOverscroll = dragStartTopOverscroll
-        dragStartTopOverscroll = nil
-        let mode = edgeDragMode
-        edgeDragMode = .none
-        guard mode != .none else { return }
-        
-        // 决定最终停靠点
-        let velocity = value.predictedEndTranslation.height - value.translation.height
-        let threshold: CGFloat = 0.5
-        let targetProgress: CGFloat
-        switch mode {
-        case .collapseToWeekAtTop:
-            // 顶部上推：倾向折叠到周视图
-            if velocity < -150 {
-                targetProgress = 1.0
-            } else {
-                targetProgress = calendarProgress > threshold ? 1.0 : 0.0
+        if dy > 0, isWeek {
+            // 到顶后继续下拉：周 -> 月
+            HapticFeedback.light()
+            withAnimation(.spring(response: 0.34, dampingFraction: 0.88)) {
+                calendarProgress = 0.0
             }
-        case .expandToMonthAtTop:
-            // 只有真的产生“顶部回弹增量”超过阈值，才允许 snap 到月视图（避免假阳性）
-            let requiredOverscroll: CGFloat = 12
-            let requiredPullDistance: CGFloat = 72
-            let baseline = (startOverscroll ?? 0)
-            let grown = max(0, listTopOverscroll - baseline)
-            let hasEnoughOverscroll = grown >= requiredOverscroll
-            let hasEnoughPull = value.translation.height >= requiredPullDistance
-
-            // 不满足阈值：保持周视图，不做 snap
-            if !hasEnoughOverscroll && !hasEnoughPull {
-                return
-            }
-
-            // 顶部下拉回弹：倾向展开到月视图
-            if velocity > 150 {
-                targetProgress = 0.0
-            } else {
-                // 只要达到阈值就直接回到月视图（不要求 progress 先跨过 0.5）
-                targetProgress = 0.0
-            }
-        case .none:
             return
-        }
-        
-        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-            calendarProgress = targetProgress
         }
     }
     

@@ -217,8 +217,9 @@ enum ScheduleService {
     }
 
 #if DEBUG
-    /// 只用于“详情接口”：无视 debug 开关，强制打印后端原始 JSON（便于你核对字段）。
+    /// 只用于“详情接口”：打印后端原始 JSON（便于你核对字段）。
     private static func debugAlwaysPrintRawDetailJSON(data: Data, remoteId: String) {
+        guard BackendChatConfig.debugScheduleServiceDetailRawLog else { return }
         let body = String(data: data, encoding: .utf8) ?? "<non-utf8 body: \(data.count) bytes>"
         let header = "[ScheduleDetail][id=\(remoteId)] raw json:"
         printLongString(header + "\n" + body, chunkSize: 900)
@@ -227,7 +228,7 @@ enum ScheduleService {
 #endif
 
     private static func debugPrintParsedTimeFieldsIfNeeded(raw dict: [String: Any], parsed event: ScheduleEvent) {
-        guard debugLogsEnabled else { return }
+        guard BackendChatConfig.debugScheduleServiceParseLog else { return }
         func anyToString(_ any: Any?) -> String {
             guard let any else { return "nil" }
             if any is NSNull { return "null" }
@@ -381,6 +382,47 @@ enum ScheduleService {
             }
             return nil
         }
+
+        func reminderTimeString(_ any: Any?) -> String? {
+            guard let any else { return nil }
+            if let s = any as? String {
+                let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+                return t.isEmpty ? nil : t
+            }
+            // 兼容：后端可能返回秒/分钟的数值（Int/Double）
+            let n: Int?
+            if let i = any as? Int { n = i }
+            else if let d = any as? Double { n = Int(d.rounded()) }
+            else if let f = any as? Float { n = Int(f.rounded()) }
+            else if let s = any as? String, let i = Int(s.trimmingCharacters(in: .whitespacesAndNewlines)) { n = i }
+            else { n = nil }
+            guard let n else { return nil }
+
+            // Heuristic：
+            // - |n|<=1000 视为“分钟”
+            // - 否则视为“秒”
+            let absN = abs(n)
+            let minutes: Int
+            if absN <= 1000 {
+                minutes = n
+            } else {
+                minutes = n / 60
+            }
+            if minutes == 0 { return "0m" }
+            let sign = minutes < 0 ? "-" : ""
+            let m = abs(minutes)
+            // 尽量归一化到 w/d/h/m（匹配你 UI 的选项）
+            if m % (60 * 24 * 7) == 0 {
+                return "\(sign)\(m / (60 * 24 * 7))w"
+            }
+            if m % (60 * 24) == 0 {
+                return "\(sign)\(m / (60 * 24))d"
+            }
+            if m % 60 == 0 {
+                return "\(sign)\(m / 60)h"
+            }
+            return "\(sign)\(m)m"
+        }
         
         let title = str(["title", "name", "summary"]) ?? ""
         guard !title.isEmpty else { return nil }
@@ -393,6 +435,9 @@ enum ScheduleService {
             var event = ScheduleEvent(title: title, description: description, startTime: fullDayStart, endTime: end)
             event.isFullDay = true
             event.endTimeProvided = true
+            event.reminderTime = reminderTimeString(dict["reminder_time"] ?? dict["reminderTime"])
+            event.category = str(["category", "schedule_category", "scheduleCategory", "type"])
+            event.location = str(["location", "place", "address"])
 
             if let keepLocalId { event.id = keepLocalId }
 
@@ -441,6 +486,9 @@ enum ScheduleService {
 
         var event = ScheduleEvent(title: title, description: description, startTime: start, endTime: end)
         event.endTimeProvided = endProvided
+        event.reminderTime = reminderTimeString(dict["reminder_time"] ?? dict["reminderTime"])
+        event.category = str(["category", "schedule_category", "scheduleCategory", "type"])
+        event.location = str(["location", "place", "address"])
         
         if let keepLocalId { event.id = keepLocalId }
         
@@ -541,11 +589,9 @@ enum ScheduleService {
         var request = URLRequest(url: url, timeoutInterval: 30)
         request.httpMethod = "GET"
         try applyCommonHeaders(to: &request)
-        debugPrintRequest(request, tag: "list")
         
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
-            debugPrintResponse(data: data, response: response, error: nil, tag: "list")
             
             guard let http = response as? HTTPURLResponse else { throw ScheduleServiceError.invalidResponse }
             if !(200...299).contains(http.statusCode) {
@@ -558,8 +604,6 @@ enum ScheduleService {
             let events = arr.compactMap { parseEventDict($0, keepLocalId: nil) }
             return events
         } catch {
-            if debugLogsEnabled {
-            }
             throw error
         }
     }
@@ -671,7 +715,7 @@ enum ScheduleService {
     }
 
     /// 更新日程：PUT /api/v1/schedules/{id}
-    /// - Note: 目前客户端只维护 title/description/start_time/end_time；其它字段若后端有默认值，可由后端补齐
+    /// - Note: 客户端维护：title/description/start_time/end_time/reminder_time/category；其它字段若后端有默认值，可由后端补齐
     static func updateSchedule(remoteId: String, event: ScheduleEvent) async throws -> ScheduleEvent {
         let trimmed = remoteId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw ScheduleServiceError.parseFailed("remoteId empty") }
@@ -682,13 +726,31 @@ enum ScheduleService {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         try applyCommonHeaders(to: &request)
 
-        let payload: [String: Any] = [
+        var payload: [String: Any] = [
             "title": event.title,
             "description": event.description,
             "start_time": localDateTimeStringNoTimeZone(event.startTime),
             "end_time": localDateTimeStringNoTimeZone(event.endTime)
         ]
+        if let rt = event.reminderTime?.trimmingCharacters(in: .whitespacesAndNewlines), !rt.isEmpty {
+            payload["reminder_time"] = rt
+        }
+        if let cat = event.category?.trimmingCharacters(in: .whitespacesAndNewlines), !cat.isEmpty {
+            payload["category"] = cat
+        }
+        if let loc = event.location?.trimmingCharacters(in: .whitespacesAndNewlines), !loc.isEmpty {
+            payload["location"] = loc
+        }
         request.httpBody = try JSONSerialization.data(withJSONObject: payload, options: [])
+
+#if DEBUG
+        if debugLogsEnabled {
+            if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
+               let s = String(data: data, encoding: .utf8) {
+                print("[ScheduleService][update] payload=\(s)")
+            }
+        }
+#endif
         debugPrintRequest(request, tag: "update")
 
         do {

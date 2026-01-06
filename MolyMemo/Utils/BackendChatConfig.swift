@@ -18,6 +18,10 @@ enum BackendChatConfig {
         static let debugLogChunkSummary = "backend_chat_debug_log_chunk_summary"
         // 仅用于调试工具箱「日程」列表：打印 /api/v1/schedules 的原始 JSON（避免被 fullResponse 开关影响）
         static let debugScheduleServiceRawLog = "backend_chat_debug_schedule_service_raw_log"
+        // 仅用于调试：ScheduleService 解析时间字段的日志（很吵，默认关闭）
+        static let debugScheduleServiceParseLog = "backend_chat_debug_schedule_service_parse_log"
+        // 仅用于调试：ScheduleService 详情接口 raw json（很吵，默认关闭）
+        static let debugScheduleServiceDetailRawLog = "backend_chat_debug_schedule_service_detail_raw_log"
 #endif
     }
     
@@ -194,6 +198,30 @@ enum BackendChatConfig {
             return UserDefaults.standard.bool(forKey: Keys.debugScheduleServiceRawLog)
         }
         set { UserDefaults.standard.set(newValue, forKey: Keys.debugScheduleServiceRawLog) }
+    }
+
+    /// Debug：是否打印 ScheduleService 解析时间字段的日志（默认关闭）
+    static var debugScheduleServiceParseLog: Bool {
+        get {
+            if UserDefaults.standard.object(forKey: Keys.debugScheduleServiceParseLog) == nil {
+                UserDefaults.standard.set(false, forKey: Keys.debugScheduleServiceParseLog)
+                return false
+            }
+            return UserDefaults.standard.bool(forKey: Keys.debugScheduleServiceParseLog)
+        }
+        set { UserDefaults.standard.set(newValue, forKey: Keys.debugScheduleServiceParseLog) }
+    }
+
+    /// Debug：是否打印 ScheduleService 详情接口 raw json（默认关闭）
+    static var debugScheduleServiceDetailRawLog: Bool {
+        get {
+            if UserDefaults.standard.object(forKey: Keys.debugScheduleServiceDetailRawLog) == nil {
+                UserDefaults.standard.set(false, forKey: Keys.debugScheduleServiceDetailRawLog)
+                return false
+            }
+            return UserDefaults.standard.bool(forKey: Keys.debugScheduleServiceDetailRawLog)
+        }
+        set { UserDefaults.standard.set(newValue, forKey: Keys.debugScheduleServiceDetailRawLog) }
     }
 #endif
 }

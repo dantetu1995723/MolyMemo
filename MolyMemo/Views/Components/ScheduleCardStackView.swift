@@ -26,7 +26,7 @@ struct ScheduleCardStackView: View {
     private let pageSwipeThreshold: CGFloat = 50
     
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 8) {
             // 卡片堆叠区域
             ZStack {
                 if events.isEmpty {
@@ -34,7 +34,7 @@ struct ScheduleCardStackView: View {
                         .foregroundColor(.gray)
                         .frame(width: cardWidth, height: cardHeight)
                         .background(Color.white)
-                        .cornerRadius(24)
+                        .cornerRadius(12)
                 } else {
                     ForEach(0..<events.count, id: \.self) { index in
                         let relativeIndex = getRelativeIndex(index)
@@ -85,7 +85,6 @@ struct ScheduleCardStackView: View {
                         }
                     }
             )
-            .padding(.horizontal)
             
             // Pagination Dots
             if events.count > 1 {
@@ -242,14 +241,13 @@ struct ScheduleCardLoadingStackView: View {
     }
 
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 8) {
             ZStack {
                 ScheduleCardLoadingView(title: title, subtitle: subtitle)
                     .frame(width: cardWidth, height: cardHeight)
                     .shadow(color: Color.black.opacity(0.10), radius: 10, x: 0, y: 5)
             }
             .frame(height: cardHeight + 20)
-            .padding(.horizontal)
             .simultaneousGesture(
                 DragGesture(minimumDistance: 20)
                     .onChanged { value in
@@ -348,9 +346,9 @@ struct ScheduleCardLoadingView: View {
         }
         .padding(14)
         .background(Color.white)
-        .cornerRadius(24)
+        .cornerRadius(12)
         .overlay(
-            RoundedRectangle(cornerRadius: 24)
+            RoundedRectangle(cornerRadius: 12)
                 .stroke(Color.gray.opacity(0.1), lineWidth: 1)
         )
     }
@@ -534,16 +532,17 @@ struct ScheduleCardView: View {
             }
             
             Spacer()
-            
-            Text("日程将在开始前半小时提醒")
-                .font(.system(size: 16))
-                .foregroundColor(Color(hex: "999999"))
+            if let t = scheduleReminderDisplayText(event.reminderTime) {
+                Text(t)
+                    .font(.system(size: 16))
+                    .foregroundColor(Color(hex: "999999"))
+            }
         }
         .padding(14)
         .background(Color.white)
-        .cornerRadius(24)
+        .cornerRadius(12)
         .overlay(
-            RoundedRectangle(cornerRadius: 24)
+            RoundedRectangle(cornerRadius: 12)
                 .stroke(Color.black.opacity(0.03), lineWidth: 1)
         )
     }
@@ -555,6 +554,24 @@ struct ScheduleCardView: View {
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm"
         return formatter.string(from: date)
+    }
+    
+    private func scheduleReminderDisplayText(_ value: String?) -> String? {
+        let v = (value ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !v.isEmpty else { return nil }
+        switch v {
+        case "-5m": return "日程将在开始前5分钟提醒"
+        case "-10m": return "日程将在开始前10分钟提醒"
+        case "-15m": return "日程将在开始前15分钟提醒"
+        case "-30m": return "日程将在开始前30分钟提醒"
+        case "-1h": return "日程将在开始前1小时提醒"
+        case "-2h": return "日程将在开始前2小时提醒"
+        case "-1d": return "日程将在开始前1天提醒"
+        case "-2d": return "日程将在开始前2天提醒"
+        case "-1w": return "日程将在开始前1周提醒"
+        case "-2w": return "日程将在开始前2周提醒"
+        default: return "日程提醒：\(v)"
+        }
     }
 }
 

@@ -18,14 +18,13 @@ struct MeetingSummaryCardStackView: View {
     @State private var pressingMeetingId: UUID? = nil
     
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 8) {
             if meetings.isEmpty {
                 Text("无会议纪要")
                     .foregroundColor(.gray)
                     .frame(width: cardWidth, height: cardHeight)
                     .background(Color.white)
-                    .cornerRadius(24)
-                    .padding(.horizontal)
+                    .cornerRadius(12)
             } else {
                 VStack(spacing: 12) {
                     ForEach(meetings) { meeting in
@@ -93,7 +92,6 @@ struct MeetingSummaryCardStackView: View {
                 }
                 // 与发票卡片一致：顶部仅留 10pt 给阴影/菜单，ChatView 里有 -10，会抵消并贴近上方文字
                 .padding(.top, 10)
-                .padding(.horizontal)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .dismissScheduleMenu)) { _ in
@@ -178,7 +176,7 @@ struct MeetingSummaryCardView: View {
             Spacer(minLength: 0)
         }
         .background(Color.white)
-        .cornerRadius(24)
+        .cornerRadius(12)
     }
 }
 

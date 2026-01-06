@@ -18,15 +18,14 @@ struct InvoiceCardStackView: View {
     private let cardHeight: CGFloat = 260
     
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 8) {
             // 卡片列表 - 垂直排列，不做堆叠
             if invoices.isEmpty {
-                Text("无发票信息")
-                    .foregroundColor(.gray)
-                    .frame(width: cardWidth, height: cardHeight)
-                    .background(Color.white)
-                    .cornerRadius(24)
-                    .padding(.horizontal)
+                    Text("无发票信息")
+                        .foregroundColor(.gray)
+                        .frame(width: cardWidth, height: cardHeight)
+                        .background(Color.white)
+                        .cornerRadius(12)
             } else {
                 VStack(spacing: 12) {
                     ForEach(0..<invoices.count, id: \.self) { index in
@@ -99,7 +98,6 @@ struct InvoiceCardStackView: View {
                     }
                 }
                 .padding(.top, 10) // 与人脉、日程卡片一致，ZStack的frame height是cardHeight+20，卡片居中，上方有10pt空间
-                .padding(.horizontal)
             }
             
             // Pagination Dots - 底部横向，和人脉、日程卡片一致
@@ -213,7 +211,7 @@ struct InvoiceCardView: View {
         // 整个卡片背景和形状
         .background(Color.white)
         .mask(
-            TicketMaskShape(toothWidth: 24, toothHeight: 8, cornerRadius: 16)
+            TicketMaskShape(toothWidth: 24, toothHeight: 8, cornerRadius: 12)
         )
     }
     

@@ -25,7 +25,7 @@ struct ContactCardStackView: View {
     private let pageSwipeVelocityThreshold: CGFloat = 800
     
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 8) {
             // Card Stack
             ZStack {
                 if contacts.isEmpty {
@@ -33,7 +33,7 @@ struct ContactCardStackView: View {
                         .foregroundColor(.gray)
                         .frame(width: cardWidth, height: cardHeight)
                         .background(Color.white)
-                        .cornerRadius(24)
+                        .cornerRadius(12)
                 } else {
                     ForEach(0..<contacts.count, id: \.self) { index in
                         // Calculate relative index for cyclic view
@@ -133,7 +133,6 @@ struct ContactCardStackView: View {
                 }
             }
             .frame(height: cardHeight + 20)
-            .padding(.horizontal)
             // 横滑翻页：与日程一致（不阻塞长按），竖滑放行给外层 ScrollView
             .simultaneousGesture(
                 DragGesture(minimumDistance: 20)
@@ -247,14 +246,13 @@ struct ContactCardLoadingStackView: View {
     }
     
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 8) {
             ZStack {
                 ContactCardLoadingView(title: title, subtitle: subtitle)
                     .frame(width: cardWidth, height: cardHeight)
                     .shadow(color: Color.black.opacity(0.10), radius: 10, x: 0, y: 5)
             }
             .frame(height: cardHeight + 20)
-            .padding(.horizontal)
             // loading 卡片不需要翻页，但要与外层手势保持一致：一旦横向拖动，仍禁用外层滚动
             .simultaneousGesture(
                 DragGesture(minimumDistance: 20)
@@ -353,9 +351,9 @@ struct ContactCardLoadingView: View {
         }
         .padding(14)
         .background(Color.white)
-        .cornerRadius(24)
+        .cornerRadius(12)
         .overlay(
-            RoundedRectangle(cornerRadius: 24)
+            RoundedRectangle(cornerRadius: 12)
                 .stroke(Color.gray.opacity(0.1), lineWidth: 1)
         )
     }
@@ -447,9 +445,9 @@ struct ContactCardView: View {
         }
         .padding(14)
         .background(Color.white)
-        .cornerRadius(24)
+        .cornerRadius(12)
         .overlay(
-            RoundedRectangle(cornerRadius: 24)
+            RoundedRectangle(cornerRadius: 12)
                 .stroke(Color.gray.opacity(0.1), lineWidth: 1)
         )
         .sheet(isPresented: $showPhoneSheet) {
