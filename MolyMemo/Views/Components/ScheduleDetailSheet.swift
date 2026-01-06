@@ -24,6 +24,7 @@ struct ScheduleDetailSheet: View {
     @State private var showCategoryMenu: Bool = false
     @State private var reminderRowFrame: CGRect = .zero
     @State private var categoryRowFrame: CGRect = .zero
+    @State private var deleteMenuAnchorFrame: CGRect = .zero
     
     // 行内编辑（标题/地点/备注）
     private enum FocusField: Hashable { case title, location, description }
@@ -42,16 +43,16 @@ struct ScheduleDetailSheet: View {
     }
     
     private let reminderOptions: [ReminderOption] = [
-        .init(title: "提前5分钟", value: "-5m"),
-        .init(title: "提前10分钟", value: "-10m"),
-        .init(title: "提前15分钟", value: "-15m"),
-        .init(title: "提前30分钟", value: "-30m"),
-        .init(title: "提前1小时", value: "-1h"),
-        .init(title: "提前2小时", value: "-2h"),
-        .init(title: "提前1天", value: "-1d"),
-        .init(title: "提前2天", value: "-2d"),
-        .init(title: "提前1周", value: "-1w"),
-        .init(title: "提前2周", value: "-2w")
+        .init(title: "开始前 5 分钟", value: "-5m"),
+        .init(title: "开始前 10 分钟", value: "-10m"),
+        .init(title: "开始前 15 分钟", value: "-15m"),
+        .init(title: "开始前 30 分钟", value: "-30m"),
+        .init(title: "开始前 1 小时", value: "-1h"),
+        .init(title: "开始前 2 小时", value: "-2h"),
+        .init(title: "开始前 1 天", value: "-1d"),
+        .init(title: "开始前 2 天", value: "-2d"),
+        .init(title: "开始前 1 周", value: "-1w"),
+        .init(title: "开始前 2 周", value: "-2w")
     ]
     
     private let categoryOptions: [CategoryOption] = [
@@ -127,6 +128,8 @@ struct ScheduleDetailSheet: View {
     
     var body: some View {
         ZStack(alignment: .bottom) {
+            bgColor.ignoresSafeArea()
+            
             VStack(spacing: 0) {
                 // Header
                 ZStack {
@@ -145,8 +148,12 @@ struct ScheduleDetailSheet: View {
                         HStack(spacing: 12) {
                             Button(action: {
                                 dismissKeyboard()
-                                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                                    showDeleteMenu = true
+                                HapticFeedback.light()
+                                withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) {
+                                    activeDatePicker = nil
+                                    showReminderMenu = false
+                                    showCategoryMenu = false
+                                    showDeleteMenu.toggle()
                                 }
                             }) {
                                 Image(systemName: "ellipsis")
@@ -156,6 +163,9 @@ struct ScheduleDetailSheet: View {
                                     .background(Circle().fill(Color.white).shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 2))
                             }
                             .disabled(isSubmitting)
+                            .modifier(GlobalFrameReporter(frame: $deleteMenuAnchorFrame))
+                            .opacity(showDeleteMenu ? 0 : 1)
+                            .allowsHitTesting(!showDeleteMenu)
                             
                             Button(action: {
                                 dismissKeyboard()
@@ -183,21 +193,6 @@ struct ScheduleDetailSheet: View {
                         .font(.system(size: 17, weight: .bold))
                         .foregroundColor(primaryTextColor)
                         .onTapGesture { dismissKeyboard() }
-                    
-                    if showDeleteMenu {
-                        TopDeletePillButton(
-                            onDelete: {
-                                dismissKeyboard()
-                                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { showDeleteMenu = false }
-                                HapticFeedback.medium()
-                                Task { await submitDelete() }
-                            }
-                        )
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                        .padding(.trailing, 44 + 10)
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                        .zIndex(10)
-                    }
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 20)
@@ -309,26 +304,26 @@ struct ScheduleDetailSheet: View {
                                 .onTapGesture { dismissKeyboard() }
                                 
                                 // 提醒时间
-                                Button(action: {
-                                    dismissKeyboard()
-                                    HapticFeedback.light()
-                                    withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) {
-                                        showCategoryMenu = false
-                                        showReminderMenu.toggle()
-                                    }
-                                }) {
-                                    HStack(spacing: 16) {
-                                        Image(systemName: "bell")
-                                            .font(.system(size: 18))
-                                            .foregroundColor(iconColor)
-                                            .frame(width: 24)
-                                        
-                                        Text("提醒时间")
-                                            .font(.system(size: 16))
-                                            .foregroundColor(primaryTextColor)
-                                        
-                                        Spacer()
-                                        
+                                HStack(spacing: 16) {
+                                    Image(systemName: "bell")
+                                        .font(.system(size: 18))
+                                        .foregroundColor(iconColor)
+                                        .frame(width: 24)
+                                    
+                                    Text("提醒时间")
+                                        .font(.system(size: 16))
+                                        .foregroundColor(primaryTextColor)
+                                    
+                                    Spacer()
+                                    
+                                    Button(action: {
+                                        dismissKeyboard()
+                                        HapticFeedback.light()
+                                        withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) {
+                                            showCategoryMenu = false
+                                            showReminderMenu.toggle()
+                                        }
+                                    }) {
                                         HStack(spacing: 6) {
                                             Text(reminderDisplayText(editedEvent.reminderTime))
                                                 .font(.system(size: 16))
@@ -337,33 +332,35 @@ struct ScheduleDetailSheet: View {
                                                 .font(.system(size: 12, weight: .medium))
                                                 .foregroundColor(iconColor)
                                         }
+                                        .contentShape(Rectangle())
                                     }
-                                    .contentShape(Rectangle())
+                                    .buttonStyle(.plain)
                                 }
-                                .buttonStyle(.plain)
+                                .contentShape(Rectangle())
+                                .onTapGesture { dismissKeyboard() }
                                 .modifier(GlobalFrameReporter(frame: $reminderRowFrame))
                                 
                                 // 日程分类
-                                Button(action: {
-                                    dismissKeyboard()
-                                    HapticFeedback.light()
-                                    withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) {
-                                        showReminderMenu = false
-                                        showCategoryMenu.toggle()
-                                    }
-                                }) {
-                                    HStack(spacing: 16) {
-                                        Image(systemName: "calendar")
-                                            .font(.system(size: 18))
-                                            .foregroundColor(iconColor)
-                                            .frame(width: 24)
-                                        
-                                        Text("日程分类")
-                                            .font(.system(size: 16))
-                                            .foregroundColor(primaryTextColor)
-                                        
-                                        Spacer()
-                                        
+                                HStack(spacing: 16) {
+                                    Image(systemName: "calendar")
+                                        .font(.system(size: 18))
+                                        .foregroundColor(iconColor)
+                                        .frame(width: 24)
+                                    
+                                    Text("日程分类")
+                                        .font(.system(size: 16))
+                                        .foregroundColor(primaryTextColor)
+                                    
+                                    Spacer()
+                                    
+                                    Button(action: {
+                                        dismissKeyboard()
+                                        HapticFeedback.light()
+                                        withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) {
+                                            showReminderMenu = false
+                                            showCategoryMenu.toggle()
+                                        }
+                                    }) {
                                         HStack(spacing: 10) {
                                             RoundedRectangle(cornerRadius: 3, style: .continuous)
                                                 .fill(categoryDisplayColor(editedEvent.category))
@@ -375,10 +372,12 @@ struct ScheduleDetailSheet: View {
                                                 .font(.system(size: 12, weight: .medium))
                                                 .foregroundColor(iconColor)
                                         }
+                                        .contentShape(Rectangle())
                                     }
-                                    .contentShape(Rectangle())
+                                    .buttonStyle(.plain)
                                 }
-                                .buttonStyle(.plain)
+                                .contentShape(Rectangle())
+                                .onTapGesture { dismissKeyboard() }
                                 .modifier(GlobalFrameReporter(frame: $categoryRowFrame))
                                 
                                 // 地点（接入后端 location）
@@ -407,11 +406,7 @@ struct ScheduleDetailSheet: View {
                                     .onSubmit { dismissKeyboard() }
                                 }
                                 .contentShape(Rectangle())
-                                .onTapGesture {
-                                    // 点击整行即可开始编辑
-                                    HapticFeedback.light()
-                                    focusedField = .location
-                                }
+                                .onTapGesture { dismissKeyboard() }
                             }
                             .padding(.horizontal, 20)
                             
@@ -487,17 +482,10 @@ struct ScheduleDetailSheet: View {
                         }
                         .glassEffect(in: .rect(cornerRadius: 24))
                         .padding(.horizontal, 20)
+                        // 视觉微调：日历弹层与上方时间区域拉开一点距离，避免“挨得太紧”
+                        .offset(y: 12)
                         .transition(.asymmetric(insertion: .scale(scale: 0.9).combined(with: .opacity), removal: .opacity))
                         .zIndex(200)
-                    }
-                    
-                    if showDeleteMenu {
-                        Color.black.opacity(0.001)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .onTapGesture {
-                                dismissKeyboard()
-                                withAnimation { showDeleteMenu = false }
-                            }
                     }
                     
                     // 提交中不在页面上额外展示提示（避免“弹窗/胶囊”影响视觉）
@@ -545,23 +533,23 @@ struct ScheduleDetailSheet: View {
             }
         }
         .coordinateSpace(name: "ScheduleDetailSheetSpace")
-        .background(bgColor)
         .overlay {
             GeometryReader { geo in
                 ZStack(alignment: .topLeading) {
-                    if showReminderMenu || showCategoryMenu {
+                    if showReminderMenu || showCategoryMenu || showDeleteMenu {
                         Color.black.opacity(0.001)
                             .ignoresSafeArea()
                             .onTapGesture {
                                 withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) {
                                     showReminderMenu = false
                                     showCategoryMenu = false
+                                    showDeleteMenu = false
                                 }
                             }
                     }
                     
                     if showReminderMenu {
-                        ScheduleOptionMenu(
+                        SingleSelectOptionMenu(
                             title: "提醒时间类型",
                             options: reminderOptions.map { .init(title: $0.title, value: $0.value) },
                             selectedValue: editedEvent.reminderTime,
@@ -572,12 +560,19 @@ struct ScheduleDetailSheet: View {
                             }
                         )
                         .frame(width: 220)
-                        .offset(menuOffset(for: reminderRowFrame, in: geo, menuWidth: 220, extraTop: 8))
-                        .transition(.asymmetric(insertion: .scale(scale: 0.9).combined(with: .opacity), removal: .opacity))
+                        .offset(
+                            PopupMenuPositioning.coveringRowOffset(
+                                for: reminderRowFrame,
+                                in: geo.frame(in: .global),
+                                menuWidth: 220,
+                                menuHeight: SingleSelectOptionMenu.maxHeight(optionCount: reminderOptions.count)
+                            )
+                        )
+                        .transition(.asymmetric(insertion: .scale(scale: 0.9, anchor: .topTrailing).combined(with: .opacity), removal: .scale(scale: 0.9, anchor: .topTrailing).combined(with: .opacity)))
                     }
                     
                     if showCategoryMenu {
-                        ScheduleOptionMenu(
+                        SingleSelectOptionMenu(
                             title: "日程分类",
                             options: categoryOptions.map { .init(title: $0.title, value: $0.value) },
                             selectedValue: editedEvent.category,
@@ -588,8 +583,30 @@ struct ScheduleDetailSheet: View {
                             }
                         )
                         .frame(width: 220)
-                        .offset(menuOffset(for: categoryRowFrame, in: geo, menuWidth: 220, extraTop: 8))
-                        .transition(.asymmetric(insertion: .scale(scale: 0.9).combined(with: .opacity), removal: .opacity))
+                        .offset(
+                            PopupMenuPositioning.coveringRowOffset(
+                                for: categoryRowFrame,
+                                in: geo.frame(in: .global),
+                                menuWidth: 220,
+                                menuHeight: SingleSelectOptionMenu.maxHeight(optionCount: categoryOptions.count)
+                            )
+                        )
+                        .transition(.asymmetric(insertion: .scale(scale: 0.9, anchor: .topTrailing).combined(with: .opacity), removal: .scale(scale: 0.9, anchor: .topTrailing).combined(with: .opacity)))
+                    }
+
+                    if showDeleteMenu {
+                        TopDeletePillButton(
+                            onDelete: {
+                                dismissKeyboard()
+                                withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) { showDeleteMenu = false }
+                                HapticFeedback.medium()
+                                Task { await submitDelete() }
+                            }
+                        )
+                        .frame(width: 200)
+                        .offset(PopupMenuPositioning.rightAlignedCenterOffset(for: deleteMenuAnchorFrame, in: geo.frame(in: .global), width: 200, height: 52))
+                        .transition(.asymmetric(insertion: .scale(scale: 0.9, anchor: .topTrailing).combined(with: .opacity), removal: .scale(scale: 0.9, anchor: .topTrailing).combined(with: .opacity)))
+                        .zIndex(30)
                     }
                 }
             }
@@ -632,10 +649,15 @@ struct ScheduleDetailSheet: View {
             hasUserEdited = true
             editedEvent.isFullDay = newValue
             guard newValue else { return }
-            // 全天：将 start/end 对齐到当天 00:00 ~ 次日 00:00（UI 会展示为 24:00）
+            // 全天：将 start/end 对齐到当天 00:00 ~ 23:59
             let cal = Calendar.current
             let start = cal.startOfDay(for: editedEvent.startTime)
-            let end = cal.date(byAdding: .day, value: 1, to: start) ?? start.addingTimeInterval(86_400)
+            // 设为当天的 23:59:59
+            var components = DateComponents()
+            components.hour = 23
+            components.minute = 59
+            components.second = 59
+            let end = cal.date(bySettingHour: 23, minute: 59, second: 59, of: start) ?? start.addingTimeInterval(86399)
             editedEvent.startTime = start
             editedEvent.endTime = end
             editedEvent.endTimeProvided = true
@@ -748,14 +770,16 @@ struct ScheduleDetailSheet: View {
     }
     
     private func formatTime(_ date: Date) -> String {
-        // ✅ 全天展示语义：00:00 ~ 24:00（endTime 存为次日 00:00）
+        // ✅ 全天展示语义：00:00 ~ 23:59
         if editedEvent.isFullDay {
-            // 详情页的 endTime 调用也会走这里：用“是否为次日 00:00”判断显示 24:00
             let cal = Calendar.current
             let start = cal.startOfDay(for: editedEvent.startTime)
-            if date == start { return "00:00" }
-            let end = cal.date(byAdding: .day, value: 1, to: start) ?? start.addingTimeInterval(86_400)
-            if date == end { return "24:00" }
+            if cal.isDate(date, inSameDayAs: start) {
+                let hour = cal.component(.hour, from: date)
+                let minute = cal.component(.minute, from: date)
+                if hour == 0 && minute == 0 { return "00:00" }
+                if hour == 23 && minute == 59 { return "23:59" }
+            }
         }
         let f = DateFormatter()
         f.dateFormat = "HH:mm"
@@ -805,12 +829,7 @@ struct ScheduleDetailSheet: View {
         }
     }
     
-    private func menuOffset(for globalFrame: CGRect, in geo: GeometryProxy, menuWidth: CGFloat, extraTop: CGFloat) -> CGSize {
-        let root = geo.frame(in: .global)
-        let x = max(16, min(globalFrame.maxX - root.minX - menuWidth, (root.width - menuWidth - 16)))
-        let y = (globalFrame.maxY - root.minY) + extraTop
-        return CGSize(width: x, height: y)
-    }
+    // PopupMenuPositioning.menuOffset 见 SharedComponents（与“联系人-性别”共用）
     
     // MARK: - 提交后端
     
@@ -874,109 +893,7 @@ struct ScheduleDetailSheet: View {
     }
 }
 
-// MARK: - Liquid glass 选项单（单选）
-private struct ScheduleOptionMenu: View {
-    struct Option: Identifiable, Hashable {
-        let title: String
-        let value: String
-        
-        // 用 value 作为稳定 id，保证 ScrollViewReader 能准确 scrollTo
-        var id: String { value }
-    }
-    
-    let title: String
-    let options: [Option]
-    let selectedValue: String?
-    let onSelect: (String) -> Void
-    
-    /// 初始只展示大约 3 个选项高度，其余通过滚动查看
-    private let maxVisibleRows: Int = 3
-    private let rowHeight: CGFloat = 44
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text(title)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(Color(hex: "666666"))
-                .padding(.horizontal, 14)
-                .padding(.top, 12)
-                .padding(.bottom, 8)
-            
-            ScrollViewReader { proxy in
-                ScrollView(.vertical, showsIndicators: false) {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(options) { opt in
-                            Button(action: {
-                                HapticFeedback.selection()
-                                onSelect(opt.value)
-                            }) {
-                                HStack(spacing: 10) {
-                                    Text(opt.title)
-                                        .font(.system(size: 15, weight: .regular))
-                                        .foregroundColor(Color(hex: "333333"))
-                                    
-                                    Spacer(minLength: 0)
-                                    
-                                    if isSelected(opt.value) {
-                                        Image(systemName: "checkmark")
-                                            .font(.system(size: 13, weight: .semibold))
-                                            .foregroundColor(Color(hex: "333333"))
-                                    }
-                                }
-                                .padding(.horizontal, 14)
-                                .frame(height: rowHeight)
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .id(opt.id)
-                            
-                            if opt.id != options.last?.id {
-                                Divider().padding(.leading, 14)
-                            }
-                        }
-                    }
-                }
-                // 打开时让滚动位置对齐到“已勾选项”附近
-                .onAppear {
-                    let sel = (selectedValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !sel.isEmpty else { return }
-                    DispatchQueue.main.async {
-                        proxy.scrollTo(sel, anchor: .center)
-                    }
-                }
-            }
-            // 约 3.5 行高度：露半行提示“可滚动”
-            .frame(maxHeight: rowHeight * 3.5)
-        }
-        .glassEffect(in: .rect(cornerRadius: 24))
-    }
-    
-    private func isSelected(_ v: String) -> Bool {
-        let a = (selectedValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        let b = v.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !b.isEmpty else { return false }
-        return a == b
-    }
-}
-
-// MARK: - Global frame reporter
-private struct GlobalFrameReporter: ViewModifier {
-    @Binding var frame: CGRect
-    
-    func body(content: Content) -> some View {
-        content.background(
-            GeometryReader { geo in
-                Color.clear
-                    .onAppear {
-                        frame = geo.frame(in: .global)
-                    }
-                    .onChange(of: geo.frame(in: .global)) { _, newValue in
-                        frame = newValue
-                    }
-            }
-        )
-    }
-}
+// SingleSelectOptionMenu / GlobalFrameReporter 见 SharedComponents
 
 struct TopDeletePillButton: View {
     var title: String = "删除日程"

@@ -20,9 +20,19 @@ struct ContactDetailView: View {
     @State private var editedIdentity: String = ""
     @State private var editedPhone: String = ""
     @State private var editedEmail: String = ""
+    @State private var editedIndustry: String = ""
+    @State private var editedLocation: String = ""
+    @State private var editedBirthday: String = ""
+    /// 后端约定：male / female / other（空字符串表示未设置）
+    @State private var editedGender: String = ""
     @State private var editedNotes: String = ""
     @State private var didInitDraft: Bool = false
     @State private var hasUserEdited: Bool = false
+    
+    // 下拉菜单：性别（样式对齐“日程详情-提醒时间”）
+    @State private var showGenderMenu: Bool = false
+    @State private var genderRowFrame: CGRect = .zero
+    @State private var deleteMenuAnchorFrame: CGRect = .zero
 
     private var hasDraftChanges: Bool {
         // 统一：trim + 空字符串当作 nil，避免 “nil vs 空字符串” 导致误判
@@ -36,6 +46,10 @@ struct ContactDetailView: View {
             || norm(editedIdentity) != norm(contact.identity)
             || norm(editedPhone) != norm(contact.phoneNumber)
             || norm(editedEmail) != norm(contact.email)
+            || norm(editedIndustry) != norm(contact.industry)
+            || norm(editedLocation) != norm(contact.location)
+            || norm(editedBirthday) != norm(contact.birthday)
+            || norm(editedGender) != norm(contact.gender)
             || norm(editedNotes) != norm(contact.notes)
     }
     
@@ -63,6 +77,9 @@ struct ContactDetailView: View {
     
     private let silenceGate: Float = 0.12
     
+    // 键盘状态：用于避免“语音编辑”按钮被键盘顶上来（与日程详情一致）
+    @State private var isKeyboardVisible: Bool = false
+    
     var body: some View {
         ZStack(alignment: .bottom) {
             VStack(spacing: 0) {
@@ -81,8 +98,10 @@ struct ContactDetailView: View {
                         
                         HStack(spacing: 12) {
                             Button(action: {
-                                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                                    showDeleteMenu = true
+                                HapticFeedback.light()
+                                withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) {
+                                    showGenderMenu = false
+                                    showDeleteMenu.toggle()
                                 }
                             }) {
                                 Image(systemName: "ellipsis")
@@ -92,6 +111,9 @@ struct ContactDetailView: View {
                                     .background(Circle().fill(Color.white).shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 2))
                             }
                             .disabled(isSubmitting)
+                            .modifier(GlobalFrameReporter(frame: $deleteMenuAnchorFrame))
+                            .opacity(showDeleteMenu ? 0 : 1)
+                            .allowsHitTesting(!showDeleteMenu)
                             
                             Button(action: {
                                 Task { await submitSave() }
@@ -117,18 +139,6 @@ struct ContactDetailView: View {
                     Text("人脉详情")
                         .font(.system(size: 17, weight: .bold))
                         .foregroundColor(primaryTextColor)
-                    
-                    if showDeleteMenu {
-                        TopDeletePillButton(title: "删除人脉") {
-                            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { showDeleteMenu = false }
-                            HapticFeedback.medium()
-                            Task { await submitDelete() }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                        .padding(.trailing, 44 + 10)
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                        .zIndex(10)
-                    }
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 20)
@@ -179,10 +189,26 @@ struct ContactDetailView: View {
                                 )
                                 
                                 // 行业
-                                InfoRow(icon: "bag", text: contact.industry ?? "未填写行业")
+                                EditableSingleRow(
+                                    icon: "bag",
+                                    placeholder: "行业",
+                                    text: $editedIndustry,
+                                    isSubmitting: isSubmitting,
+                                    primaryTextColor: primaryTextColor,
+                                    secondaryTextColor: secondaryTextColor,
+                                    iconColor: iconColor
+                                )
                                 
                                 // 地区
-                                InfoRow(icon: "mappin.and.ellipse", text: contact.location ?? "未填写地区")
+                                EditableSingleRow(
+                                    icon: "mappin.and.ellipse",
+                                    placeholder: "地区",
+                                    text: $editedLocation,
+                                    isSubmitting: isSubmitting,
+                                    primaryTextColor: primaryTextColor,
+                                    secondaryTextColor: secondaryTextColor,
+                                    iconColor: iconColor
+                                )
                                 
                                 Divider()
                                     .padding(.horizontal, 20)
@@ -233,31 +259,43 @@ struct ContactDetailView: View {
                                     .padding(.vertical, 8)
                                 
                                 // 生日
-                                HStack(spacing: 0) {
-                                    LabelWithIcon(icon: "calendar", title: "生日")
-                                    Spacer()
-                                    Text(contact.birthday ?? "未设置")
-                                        .font(.system(size: 16))
-                                        .foregroundColor(primaryTextColor)
-                                        .padding(.trailing, 20)
-                                }
-                                .padding(.leading, 20)
+                                EditableSingleRow(
+                                    icon: "calendar",
+                                    placeholder: "生日（YYYY-MM-DD）",
+                                    text: $editedBirthday,
+                                    keyboardType: .numbersAndPunctuation,
+                                    isSubmitting: isSubmitting,
+                                    primaryTextColor: primaryTextColor,
+                                    secondaryTextColor: secondaryTextColor,
+                                    iconColor: iconColor
+                                )
                                 
                                 // 性别
                                 HStack(spacing: 0) {
                                     LabelWithIcon(icon: "person.fill", title: "性别")
                                     Spacer()
-                                    HStack(spacing: 4) {
-                                        Text(contact.gender ?? "未知")
-                                            .font(.system(size: 16))
-                                            .foregroundColor(primaryTextColor)
-                                        Image(systemName: "chevron.up.chevron.down")
-                                            .font(.system(size: 12, weight: .medium))
-                                            .foregroundColor(iconColor)
+                                    Button(action: {
+                                        HapticFeedback.light()
+                                        withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) {
+                                            showGenderMenu.toggle()
+                                        }
+                                    }) {
+                                        HStack(spacing: 6) {
+                                            Text(genderDisplayText(editedGender))
+                                                .font(.system(size: 16))
+                                                .foregroundColor(secondaryTextColor)
+                                            Image(systemName: "chevron.up.chevron.down")
+                                                .font(.system(size: 12, weight: .medium))
+                                                .foregroundColor(iconColor)
+                                        }
+                                        .contentShape(Rectangle())
                                     }
+                                    .buttonStyle(.plain)
+                                    .disabled(isSubmitting)
                                     .padding(.trailing, 20)
                                 }
                                 .padding(.leading, 20)
+                                .modifier(GlobalFrameReporter(frame: $genderRowFrame))
                                 
                                 Divider()
                                     .padding(.horizontal, 20)
@@ -311,9 +349,13 @@ struct ContactDetailView: View {
                         .foregroundColor(Color(hex: "666666"))
                 }
             }
-            .opacity(isRecording ? 0 : 1)
+            .opacity((isRecording || isKeyboardVisible) ? 0 : 1)
             .padding(.horizontal, 20)
             .padding(.bottom, 20)
+            // 关键：键盘弹出时不要因为 safe area 改变而把按钮抬到键盘上方
+            .ignoresSafeArea(.keyboard, edges: .bottom)
+            // 键盘出现时避免误触（即便在某些场景下仍可点到）
+            .allowsHitTesting(!isKeyboardVisible && !isSubmitting)
             .simultaneousGesture(DragGesture(minimumDistance: 0).onChanged { handleDragChanged($0) }.onEnded { handleDragEnded($0) })
             
             if isRecording || isAnimatingRecordingExit {
@@ -333,9 +375,16 @@ struct ContactDetailView: View {
             }
         }
         .coordinateSpace(name: "ContactDetailViewSpace")
-        .background(bgColor)
+        // 与“日程详情”一致：全屏背景，避免键盘弹出时底部露出系统默认白底
+        .background(bgColor.ignoresSafeArea())
         .onAppear { speechRecognizer.requestAuthorization() }
         .onReceive(speechRecognizer.$audioLevel) { self.audioPower = mapAudioLevelToPower($0) }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+            isKeyboardVisible = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+            isKeyboardVisible = false
+        }
         .navigationBarHidden(true)
         .onAppear { syncDraftFromContactIfNeeded(force: true) }
         .task {
@@ -353,21 +402,58 @@ struct ContactDetailView: View {
             Text(alertMessage ?? "")
         }
         // 点击空白处关闭菜单（与日程一致）
-        // ⚠️ 不能用全屏 overlay 盖住一切，否则会把顶部“删除人脉”胶囊的点击也拦截掉，造成“点了没反应”的体感。
         .overlay {
-            if showDeleteMenu {
-                VStack(spacing: 0) {
-                    // 预留顶部区域给 header + 删除胶囊（避免遮罩吞掉按钮点击）
-                    Color.clear
-                        .frame(height: 140)
-                        .allowsHitTesting(false)
+            GeometryReader { geo in
+                ZStack(alignment: .topLeading) {
+                    if showGenderMenu || showDeleteMenu {
+                        Color.black.opacity(0.001)
+                            .ignoresSafeArea()
+                            .onTapGesture {
+                                withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) {
+                                    showGenderMenu = false
+                                    showDeleteMenu = false
+                                }
+                            }
+                    }
                     
-                    Color.black.opacity(0.001)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .contentShape(Rectangle())
-                        .onTapGesture { withAnimation { showDeleteMenu = false } }
+                    if showGenderMenu {
+                        SingleSelectOptionMenu(
+                            title: "性别",
+                            options: genderOptions,
+                            selectedValue: normalizedGenderValue(editedGender),
+                            onSelect: { v in
+                                hasUserEdited = true
+                                editedGender = v
+                                withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) {
+                                    showGenderMenu = false
+                                }
+                            }
+                        )
+                        .frame(width: 220)
+                        .offset(
+                            PopupMenuPositioning.coveringRowOffset(
+                                for: genderRowFrame,
+                                in: geo.frame(in: .global),
+                                menuWidth: 220,
+                                menuHeight: SingleSelectOptionMenu.maxHeight(optionCount: genderOptions.count)
+                            )
+                        )
+                        .transition(.asymmetric(insertion: .scale(scale: 0.9).combined(with: .opacity), removal: .opacity))
+                        .zIndex(20)
+                    }
+
+                    if showDeleteMenu {
+                        TopDeletePillButton(title: "删除人脉") {
+                            withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) { showDeleteMenu = false }
+                            HapticFeedback.medium()
+                            Task { await submitDelete() }
+                        }
+                        .frame(width: 200)
+                        .offset(PopupMenuPositioning.rightAlignedCenterOffset(for: deleteMenuAnchorFrame, in: geo.frame(in: .global), width: 200, height: 52))
+                        .transition(.asymmetric(insertion: .scale(scale: 0.9, anchor: .topTrailing).combined(with: .opacity), removal: .scale(scale: 0.9, anchor: .topTrailing).combined(with: .opacity)))
+                        .zIndex(30)
+                    }
                 }
-                .ignoresSafeArea()
             }
         }
         // 任何编辑即标记
@@ -376,6 +462,10 @@ struct ContactDetailView: View {
         .onChange(of: editedIdentity) { _, _ in hasUserEdited = true }
         .onChange(of: editedPhone) { _, _ in hasUserEdited = true }
         .onChange(of: editedEmail) { _, _ in hasUserEdited = true }
+        .onChange(of: editedIndustry) { _, _ in hasUserEdited = true }
+        .onChange(of: editedLocation) { _, _ in hasUserEdited = true }
+        .onChange(of: editedBirthday) { _, _ in hasUserEdited = true }
+        .onChange(of: editedGender) { _, _ in hasUserEdited = true }
         .onChange(of: editedNotes) { _, _ in hasUserEdited = true }
     }
     
@@ -526,6 +616,14 @@ struct ContactDetailView: View {
             if !phone.isEmpty { payload["phone"] = phone }
             let email = editedEmail.trimmingCharacters(in: .whitespacesAndNewlines)
             if !email.isEmpty { payload["email"] = email }
+            let industry = editedIndustry.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !industry.isEmpty { payload["industry"] = industry }
+            let location = editedLocation.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !location.isEmpty { payload["location"] = location }
+            let birthday = editedBirthday.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !birthday.isEmpty { payload["birthday"] = birthday }
+            let gender = normalizedGenderValue(editedGender)
+            if !gender.isEmpty { payload["gender"] = gender }
             let notes = editedNotes.trimmingCharacters(in: .whitespacesAndNewlines)
             if !notes.isEmpty { payload["notes"] = notes }
 
@@ -558,6 +656,10 @@ struct ContactDetailView: View {
             contact.identity = (canonical.title?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false) ? canonical.title : (position.isEmpty ? nil : position)
             contact.phoneNumber = (canonical.phone?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false) ? canonical.phone : (phone.isEmpty ? nil : phone)
             contact.email = (canonical.email?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false) ? canonical.email : (email.isEmpty ? nil : email)
+            contact.industry = (canonical.industry?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false) ? canonical.industry : (industry.isEmpty ? nil : industry)
+            contact.location = (canonical.location?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false) ? canonical.location : (location.isEmpty ? nil : location)
+            contact.birthday = (canonical.birthday?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false) ? canonical.birthday : (birthday.isEmpty ? nil : birthday)
+            contact.gender = (canonical.gender?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false) ? canonical.gender : (gender.isEmpty ? nil : gender)
 
             // 备注：只认后端 note/notes（canonical.notes）。若后端没回，才用本次编辑态兜底。
             let n = (canonical.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -586,9 +688,39 @@ struct ContactDetailView: View {
         editedIdentity = contact.identity ?? ""
         editedPhone = contact.phoneNumber ?? ""
         editedEmail = contact.email ?? ""
+        editedIndustry = contact.industry ?? ""
+        editedLocation = contact.location ?? ""
+        editedBirthday = contact.birthday ?? ""
+        editedGender = normalizedGenderValue(contact.gender ?? "")
         editedNotes = contact.notes ?? ""
         didInitDraft = true
         if force { hasUserEdited = false }
+    }
+    
+    // MARK: - 性别下拉
+    
+    private var genderOptions: [SingleSelectOptionMenu.Option] {
+        [
+            .init(title: "男", value: "male"),
+            .init(title: "女", value: "female")
+        ]
+    }
+    
+    private func normalizedGenderValue(_ raw: String) -> String {
+        let v = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        switch v {
+        case "male", "m", "男": return "male"
+        case "female", "f", "女": return "female"
+        default: return ""
+        }
+    }
+    
+    private func genderDisplayText(_ raw: String) -> String {
+        switch normalizedGenderValue(raw) {
+        case "male": return "男"
+        case "female": return "女"
+        default: return "未设置"
+        }
     }
 }
 

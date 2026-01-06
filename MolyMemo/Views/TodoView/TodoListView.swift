@@ -222,8 +222,8 @@ private struct RemoteScheduleRow: View {
     
     private func displayEndTime() -> String? {
         if event.isFullDay {
-            // ✅ 全天展示语义：00:00 ~ 24:00
-            return "24:00"
+            // ✅ 全天展示语义：00:00 ~ 23:59
+            return "23:59"
         }
         guard event.endTimeProvided else { return nil }
         return formatTime(event.endTime)
@@ -1144,7 +1144,7 @@ struct UnifiedScheduleRow: View {
     
     private var startTimeText: String {
         if isAllDay {
-            // ✅ 全天展示语义：00:00 ~ 24:00
+            // ✅ 全天展示语义：00:00 ~ 23:59
             return "00:00"
         }
         return Self.timeFormatter.string(from: todo.startTime)
@@ -1152,8 +1152,8 @@ struct UnifiedScheduleRow: View {
     
     private var endTimeText: String {
         if isAllDay {
-            // ✅ 全天展示语义：00:00 ~ 24:00
-            return "24:00"
+            // ✅ 全天展示语义：00:00 ~ 23:59
+            return "23:59"
         }
         return Self.timeFormatter.string(from: todo.endTime)
     }

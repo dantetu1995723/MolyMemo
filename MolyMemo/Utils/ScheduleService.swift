@@ -429,10 +429,12 @@ enum ScheduleService {
         
         let description = str(["description", "desc", "content", "detail"]) ?? ""
         
-        // ✅ full_day 优先：按本地时区 00:00~24:00 语义落地（endTime 存次日 00:00，但 UI 展示为 24:00）
+        // ✅ full_day 优先：按本地时区 00:00~23:59 语义落地
         if let fullDayStart = parseFullDayStart(dict["full_day"] ?? dict["fullDay"]) {
-            let end = Calendar.current.date(byAdding: .day, value: 1, to: fullDayStart) ?? fullDayStart.addingTimeInterval(86_400)
-            var event = ScheduleEvent(title: title, description: description, startTime: fullDayStart, endTime: end)
+            let cal = Calendar.current
+            let start = cal.startOfDay(for: fullDayStart)
+            let end = cal.date(bySettingHour: 23, minute: 59, second: 59, of: start) ?? start.addingTimeInterval(86399)
+            var event = ScheduleEvent(title: title, description: description, startTime: start, endTime: end)
             event.isFullDay = true
             event.endTimeProvided = true
             event.reminderTime = reminderTimeString(dict["reminder_time"] ?? dict["reminderTime"])

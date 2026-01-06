@@ -122,7 +122,7 @@ struct ScheduleEvent: Identifiable, Equatable, Codable {
     /// 地点（后端字段 location）
     var location: String? = nil
     /// 是否为全天日程（优先由后端 `full_day` 明确给出）
-    /// - 全天展示语义：00:00 ~ 24:00（endTime 存为次日 00:00，但 UI 会展示为 24:00）
+    /// - 全天展示语义：00:00 ~ 23:59
     var isFullDay: Bool = false
     /// 是否由后端明确给出结束时间（end_time 不为 null 且可解析）
     /// - 用于列表展示：避免 end_time=null 时误显示 “+1h”
@@ -161,7 +161,7 @@ struct ScheduleEvent: Identifiable, Equatable, Codable {
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm"
         if isFullDay {
-            return "00:00 ~ 24:00"
+            return "00:00 ~ 23:59"
         }
         return "\(formatter.string(from: startTime)) ~ \(formatter.string(from: endTime))"
     }

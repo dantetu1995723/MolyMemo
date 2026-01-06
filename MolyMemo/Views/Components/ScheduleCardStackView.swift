@@ -19,6 +19,7 @@ struct ScheduleCardStackView: View {
     @State private var showMenu: Bool = false
     @State private var lastMenuOpenedAt: CFTimeInterval = 0
     @State private var isPressingCurrentCard: Bool = false
+    @State private var prefetchedRemoteIds: Set<String> = []
     
     // Constants
     private let cardHeight: CGFloat = 300
@@ -103,6 +104,11 @@ struct ScheduleCardStackView: View {
                 withAnimation { showMenu = false }
             }
             isPressingCurrentCard = false
+        }
+        // ✅ 预取日程详情：避免“提醒文案要点进详情才更新”
+        // 逻辑：当卡片出现或 events 变更时，如果某些 event 有 remoteId 但 reminderTime 为空，就后台拉一次 detail 并回写到 events
+        .task(id: prefetchSignature) {
+            await prefetchDetailsIfNeeded()
         }
     }
     
@@ -214,6 +220,46 @@ struct ScheduleCardStackView: View {
     
     private func getZIndex(_ relativeIndex: Int) -> Double {
         relativeIndex == 0 ? 100 : Double(events.count - relativeIndex)
+    }
+    
+    private var prefetchSignature: String {
+        // 只关心“需要补齐提醒”的那批 remoteId，避免每次 events 任意字段变化都重复触发 task
+        let ids = events.compactMap { ev -> String? in
+            guard let rid = ev.remoteId?.trimmingCharacters(in: .whitespacesAndNewlines), !rid.isEmpty else { return nil }
+            let rt = (ev.reminderTime ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard rt.isEmpty else { return nil }
+            return rid
+        }
+        // 排序保证稳定
+        return ids.sorted().joined(separator: "|")
+    }
+    
+    private func prefetchDetailsIfNeeded() async {
+        // 找出 reminderTime 为空且未预取的事件，做一次轻量补齐
+        let candidates: [(localId: UUID, remoteId: String)] = events.compactMap { ev in
+            guard let rid0 = ev.remoteId?.trimmingCharacters(in: .whitespacesAndNewlines), !rid0.isEmpty else { return nil }
+            let rt = (ev.reminderTime ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard rt.isEmpty else { return nil }
+            guard !prefetchedRemoteIds.contains(rid0) else { return nil }
+            return (ev.id, rid0)
+        }
+        
+        // 小限流：最多补齐前 6 个，避免极端情况下刷屏请求
+        for (localId, rid) in candidates.prefix(6) {
+            await MainActor.run {
+                _ = prefetchedRemoteIds.insert(rid)
+            }
+            do {
+                let detail = try await ScheduleService.fetchScheduleDetail(remoteId: rid, keepLocalId: localId)
+                await MainActor.run {
+                    if let idx = events.firstIndex(where: { $0.id == localId }) {
+                        events[idx] = detail
+                    }
+                }
+            } catch {
+                // 拉取失败也不重试（避免反复刷请求）；用户点进详情仍会再尝试
+            }
+        }
     }
 }
 
@@ -549,7 +595,7 @@ struct ScheduleCardView: View {
     
     private func timeString(_ date: Date, isEnd: Bool) -> String {
         if event.isFullDay {
-            return isEnd ? "24:00" : "00:00"
+            return isEnd ? "23:59" : "00:00"
         }
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm"
@@ -559,19 +605,95 @@ struct ScheduleCardView: View {
     private func scheduleReminderDisplayText(_ value: String?) -> String? {
         let v = (value ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         guard !v.isEmpty else { return nil }
+        
+        // 1) 先识别后端/模型常见的“相对偏移码”
         switch v {
         case "-5m": return "日程将在开始前5分钟提醒"
         case "-10m": return "日程将在开始前10分钟提醒"
         case "-15m": return "日程将在开始前15分钟提醒"
-        case "-30m": return "日程将在开始前30分钟提醒"
+        case "-30m": return "日程将在开始前半小时提醒"
         case "-1h": return "日程将在开始前1小时提醒"
         case "-2h": return "日程将在开始前2小时提醒"
         case "-1d": return "日程将在开始前1天提醒"
         case "-2d": return "日程将在开始前2天提醒"
         case "-1w": return "日程将在开始前1周提醒"
         case "-2w": return "日程将在开始前2周提醒"
-        default: return "日程提醒：\(v)"
+        default: break
         }
+        
+        // 2) 如果是 ISO 时间戳（比如 2026-01-06T09:50:00），转换成“开始前X”样式，避免直接把原始值展示出来
+        if let reminderDate = parseReminderDate(v) {
+            let delta = reminderDate.timeIntervalSince(event.startTime) // <0 表示开始前提醒
+            return reminderTextFromDelta(delta)
+        }
+        
+        // 3) 兜底：不要直接展示原始字符串，避免出现图二这种 ISO 输出
+        return "日程已设置提醒"
+    }
+    
+    private func parseReminderDate(_ raw: String) -> Date? {
+        // ISO8601（带时区）
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = iso.date(from: raw) { return d }
+        
+        let isoNoFraction = ISO8601DateFormatter()
+        isoNoFraction.formatOptions = [.withInternetDateTime]
+        if let d = isoNoFraction.date(from: raw) { return d }
+        
+        // 常见无时区格式：2026-01-06T09:50:00
+        let df = DateFormatter()
+        df.locale = Locale(identifier: "en_US_POSIX")
+        df.timeZone = .current
+        df.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+        if let d = df.date(from: raw) { return d }
+        
+        return nil
+    }
+    
+    private func reminderTextFromDelta(_ delta: TimeInterval) -> String {
+        // delta < 0: 开始前提醒；delta > 0: 开始后提醒（极少见，仍给出合理文案）
+        let isBefore = delta < 0
+        let seconds = abs(delta)
+        
+        // 按分钟取整，避免秒级抖动导致文案跳变
+        let minutes = max(0, Int((seconds / 60.0).rounded()))
+        if minutes == 0 {
+            return isBefore ? "日程将在开始时提醒" : "日程将在开始后提醒"
+        }
+        
+        if minutes == 30, isBefore {
+            return "日程将在开始前半小时提醒"
+        }
+        
+        // < 60 分钟：分钟级
+        if minutes < 60 {
+            return isBefore
+            ? "日程将在开始前\(minutes)分钟提醒"
+            : "日程将在开始后\(minutes)分钟提醒"
+        }
+        
+        // 小时级（以 60 分钟为单位）
+        let hours = Int((Double(minutes) / 60.0).rounded())
+        if hours < 24 {
+            return isBefore
+            ? "日程将在开始前\(hours)小时提醒"
+            : "日程将在开始后\(hours)小时提醒"
+        }
+        
+        // 天级（以 24 小时为单位）
+        let days = Int((Double(hours) / 24.0).rounded())
+        if days < 7 {
+            return isBefore
+            ? "日程将在开始前\(days)天提醒"
+            : "日程将在开始后\(days)天提醒"
+        }
+        
+        // 周级
+        let weeks = Int((Double(days) / 7.0).rounded())
+        return isBefore
+        ? "日程将在开始前\(weeks)周提醒"
+        : "日程将在开始后\(weeks)周提醒"
     }
 }
 

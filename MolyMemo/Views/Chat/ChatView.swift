@@ -6,6 +6,8 @@ import PhotosUI
 // MARK: - 布局常量
 /// 底部输入区域的基础高度（不含安全区），用于计算聊天内容可视区域
 private let bottomInputBaseHeight: CGFloat = 64
+/// 聊天卡片带阴影，视觉上会“显得更靠右”；这里做一个极小的左移补偿，让卡片边缘与上方文字更齐
+private let chatCardVisualLeadingCompensation: CGFloat = 4
 
 struct ChatView: View {
     @EnvironmentObject var appState: AppState
@@ -117,7 +119,7 @@ struct ChatView: View {
                     // 聊天内容区域
                     ScrollViewReader { proxy in
                         ScrollView {
-                            LazyVStack(spacing: 12) {
+                            LazyVStack(spacing: 24) {
                                 // 聊天内容
                                 normalChatContent
                                 
@@ -651,7 +653,6 @@ struct ChatView: View {
                            let segments = appState.chatMessages[msgIndex].segments,
                            !segments.isEmpty {
                             
-                            let firstTextSegmentId = segments.first(where: { $0.kind == .text })?.id
                             let lastTextSegmentId = segments.last(where: { $0.kind == .text })?.id
                             
                             ForEach(segments) { seg in
@@ -752,7 +753,7 @@ struct ChatView: View {
                                         }
                                     })
                                     .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.top, -10)
+                                    .offset(x: -chatCardVisualLeadingCompensation)
                                     
                                 case .contactCards:
                                     ContactCardStackView(contacts: Binding(
@@ -791,7 +792,7 @@ struct ChatView: View {
                                         }
                                     })
                                     .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.top, -10)
+                                    .offset(x: -chatCardVisualLeadingCompensation)
                                     
                                 case .invoiceCards:
                                     InvoiceCardStackView(invoices: Binding(
@@ -829,7 +830,7 @@ struct ChatView: View {
                                         }
                                     })
                                     .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.top, -10)
+                                    .offset(x: -chatCardVisualLeadingCompensation)
                                     
                                 case .meetingCards:
                                     MeetingSummaryCardStackView(meetings: Binding(
@@ -868,7 +869,7 @@ struct ChatView: View {
                                         meetingDetailSelection = MeetingDetailSelection(messageId: message.id, meetingId: meeting.id)
                                     })
                                     .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.top, -10)
+                                    .offset(x: -chatCardVisualLeadingCompensation)
                                 }
                             }
                             
@@ -901,11 +902,11 @@ struct ChatView: View {
                                 VStack(alignment: .leading, spacing: 14) {
                                     if message.isScheduleToolRunning {
                                         ScheduleCardLoadingStackView(isParentScrollDisabled: $isCardHorizontalPaging)
-                                            .padding(.top, -10)
+                                            .offset(x: -chatCardVisualLeadingCompensation)
                                     }
                                     if message.isContactToolRunning {
                                         ContactCardLoadingStackView(isParentScrollDisabled: $isCardHorizontalPaging)
-                                            .padding(.top, -10)
+                                            .offset(x: -chatCardVisualLeadingCompensation)
                                     }
                                 }
                             } else {
@@ -956,7 +957,7 @@ struct ChatView: View {
                                         scheduleDetailEvent = event
                                     })
                                     .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.top, -10)
+                                    .offset(x: -chatCardVisualLeadingCompensation)
                                 }
 
                                 if let contacts = message.contacts, !contacts.isEmpty {
@@ -982,7 +983,7 @@ struct ChatView: View {
                                         }
                                     })
                                     .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.top, -10)
+                                    .offset(x: -chatCardVisualLeadingCompensation)
                                 }
 
                                 if let invoices = message.invoices, !invoices.isEmpty {
@@ -1007,7 +1008,7 @@ struct ChatView: View {
                                         }
                                     })
                                     .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.top, -10)
+                                    .offset(x: -chatCardVisualLeadingCompensation)
                                 }
 
                                 if let meetings = message.meetings, !meetings.isEmpty {
@@ -1033,7 +1034,7 @@ struct ChatView: View {
                                         meetingDetailSelection = MeetingDetailSelection(messageId: message.id, meetingId: meeting.id)
                                     })
                                     .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.top, -10)
+                                    .offset(x: -chatCardVisualLeadingCompensation)
                                 }
                                 
                                 let isFinished: Bool = {
