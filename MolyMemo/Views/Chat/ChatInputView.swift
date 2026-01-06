@@ -2,6 +2,15 @@ import SwiftUI
 import PhotosUI
 import UIKit
 
+// MARK: - Layout Preference
+/// ChatInputView 的“整体高度”（包含建议条/输入框/附件面板），用于让 ChatView 动态给聊天列表做底部避让。
+struct ChatInputTotalHeightPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
 struct ChatInputView: View {
     @ObservedObject var viewModel: ChatInputViewModel
     var namespace: Namespace.ID
@@ -96,6 +105,11 @@ struct ChatInputView: View {
         }
         .padding(.vertical, 12)
         .background(Color(hex: "F7F8FA"))
+        .background(
+            GeometryReader { geo in
+                Color.clear.preference(key: ChatInputTotalHeightPreferenceKey.self, value: geo.size.height)
+            }
+        )
         .animation(.spring(response: 0.3, dampingFraction: 1.0), value: viewModel.showMenu)
         .animation(.spring(response: 0.3, dampingFraction: 1.0), value: viewModel.showSuggestions)
         .animation(.spring(response: 0.3, dampingFraction: 1.0), value: viewModel.selectedImage)

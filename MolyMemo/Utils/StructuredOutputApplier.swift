@@ -39,6 +39,39 @@ struct StructuredOutputApplier {
         var seenInvoiceIds: Set<String> = Set(existing.flatMap { ($0.invoices ?? []).map(ChatCardStableId.invoice) })
         var seenMeetingIds: Set<String> = Set(existing.flatMap { ($0.meetings ?? []).map(meetingStableId) })
 
+        func isBetterContact(_ incoming: ContactCard, than existing: ContactCard) -> Bool {
+            // 规则：优先“更完整/更可用”的那份
+            // - 有 remoteId > 没有 remoteId（决定能否 GET 详情/PUT 更新/DELETE）
+            // - 字段更丰富 > 字段更稀疏
+            func trimmed(_ s: String?) -> String { (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
+            let incRid = !trimmed(incoming.remoteId).isEmpty
+            let exRid = !trimmed(existing.remoteId).isEmpty
+            if incRid != exRid { return incRid }
+
+            func score(_ c: ContactCard) -> Int {
+                var n = 0
+                if !trimmed(c.company).isEmpty { n += 1 }
+                if !trimmed(c.title).isEmpty { n += 1 }
+                if !trimmed(c.phone).isEmpty { n += 1 }
+                if !trimmed(c.email).isEmpty { n += 1 }
+                if !trimmed(c.industry).isEmpty { n += 1 }
+                if !trimmed(c.location).isEmpty { n += 1 }
+                if !trimmed(c.birthday).isEmpty { n += 1 }
+                if !trimmed(c.gender).isEmpty { n += 1 }
+                if !trimmed(c.relationshipType).isEmpty { n += 1 }
+                if !trimmed(c.notes).isEmpty { n += 1 }
+                if !trimmed(c.impression).isEmpty { n += 1 }
+                if !trimmed(c.englishName).isEmpty { n += 1 }
+                if c.avatarData != nil { n += 1 }
+                return n
+            }
+            let incScore = score(incoming)
+            let exScore = score(existing)
+            if incScore != exScore { return incScore > exScore }
+            // 兜底：后到的覆盖（通常是“后端补齐字段”的那一份）
+            return true
+        }
+
         func isBetterSchedule(_ incoming: ScheduleEvent, than existing: ScheduleEvent) -> Bool {
             // 规则：优先“更明确”的那份
             // - 有 remoteId > 没有 remoteId
@@ -63,6 +96,21 @@ struct StructuredOutputApplier {
                     if isBetterSchedule(incoming, than: evs[eIdx]) {
                         evs[eIdx] = incoming
                         existing[sIdx].scheduleEvents = evs
+                    }
+                    return
+                }
+            }
+        }
+
+        func replaceExistingContactIfNeeded(key: String, incoming: ContactCard) {
+            // 在已有 segments 里找到同 key 的 contact 并替换（用于“后端后续补齐 remoteId/行业等字段”）
+            for sIdx in existing.indices {
+                guard existing[sIdx].kind == .contactCards else { continue }
+                guard var cs = existing[sIdx].contacts, !cs.isEmpty else { continue }
+                if let cIdx = cs.firstIndex(where: { contactStableId($0) == key }) {
+                    if isBetterContact(incoming, than: cs[cIdx]) {
+                        cs[cIdx] = incoming
+                        existing[sIdx].contacts = cs
                     }
                     return
                 }
@@ -99,7 +147,17 @@ struct StructuredOutputApplier {
 
                     case .contactCards:
                         let incoming = seg.contacts ?? []
-                        let filtered = incoming.filter { seenContactIds.insert(contactStableId($0)).inserted }
+                        var filtered: [ContactCard] = []
+                        filtered.reserveCapacity(incoming.count)
+                        for c in incoming {
+                            let key = contactStableId(c)
+                            if seenContactIds.contains(key) {
+                                replaceExistingContactIfNeeded(key: key, incoming: c)
+                                continue
+                            }
+                            seenContactIds.insert(key)
+                            filtered.append(c)
+                        }
                         guard !filtered.isEmpty else { continue }
                         var s = seg
                         s.contacts = filtered
@@ -149,7 +207,7 @@ struct StructuredOutputApplier {
             message.scheduleEvents = mergeSchedulesPreferIncoming(existing: message.scheduleEvents, incoming: output.scheduleEvents)
         }
         if !output.contacts.isEmpty {
-            message.contacts = mergeReplacingById(existing: message.contacts, incoming: output.contacts)
+            message.contacts = mergeContactsPreferIncoming(existing: message.contacts, incoming: output.contacts)
         }
         if !output.invoices.isEmpty {
             message.invoices = mergeReplacingById(existing: message.invoices, incoming: output.invoices)
@@ -162,6 +220,7 @@ struct StructuredOutputApplier {
         // 否则会出现：聚合 scheduleEvents 有 remoteId，但卡片里的 event.remoteId 为空，
         // 从卡片进入详情无法 PUT 更新后端，导致“卡片改了但工具箱列表/通知栏没改”。
         backfillScheduleRemoteIdsFromAggregate(into: &message)
+        backfillContactFieldsFromAggregate(into: &message)
 
         // taskId：保持最后一次为准
         if let taskId = output.taskId, !taskId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -197,6 +256,7 @@ struct StructuredOutputApplier {
         
         // 同上：final 输出也需要回填到 segments
         backfillScheduleRemoteIdsFromAggregate(into: &message)
+        backfillContactFieldsFromAggregate(into: &message)
     }
 
     // MARK: - Small helpers
@@ -211,6 +271,59 @@ struct StructuredOutputApplier {
             }
         }
         return result
+    }
+
+    private static func mergeContactsPreferIncoming(existing: [ContactCard]?, incoming: [ContactCard]) -> [ContactCard] {
+        var result: [String: ContactCard] = [:]
+        result.reserveCapacity((existing?.count ?? 0) + incoming.count)
+
+        func key(_ c: ContactCard) -> String { ChatCardStableId.contact(c) }
+        func trimmed(_ s: String?) -> String { (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
+        func isBetter(_ inc: ContactCard, than ex: ContactCard) -> Bool {
+            let incRid = !trimmed(inc.remoteId).isEmpty
+            let exRid = !trimmed(ex.remoteId).isEmpty
+            if incRid != exRid { return incRid }
+
+            func score(_ c: ContactCard) -> Int {
+                var n = 0
+                if !trimmed(c.company).isEmpty { n += 1 }
+                if !trimmed(c.title).isEmpty { n += 1 }
+                if !trimmed(c.phone).isEmpty { n += 1 }
+                if !trimmed(c.email).isEmpty { n += 1 }
+                if !trimmed(c.industry).isEmpty { n += 1 }
+                if !trimmed(c.location).isEmpty { n += 1 }
+                if !trimmed(c.birthday).isEmpty { n += 1 }
+                if !trimmed(c.gender).isEmpty { n += 1 }
+                if !trimmed(c.relationshipType).isEmpty { n += 1 }
+                if !trimmed(c.notes).isEmpty { n += 1 }
+                if !trimmed(c.impression).isEmpty { n += 1 }
+                if !trimmed(c.englishName).isEmpty { n += 1 }
+                if c.avatarData != nil { n += 1 }
+                return n
+            }
+            let incScore = score(inc)
+            let exScore = score(ex)
+            if incScore != exScore { return incScore > exScore }
+            return true
+        }
+
+        // 先放 existing
+        for c in (existing ?? []) {
+            let k = key(c)
+            result[k] = c
+        }
+        // incoming 覆盖/补齐
+        for c in incoming {
+            let k = key(c)
+            if let ex = result[k] {
+                if isBetter(c, than: ex) {
+                    result[k] = c
+                }
+            } else {
+                result[k] = c
+            }
+        }
+        return Array(result.values)
     }
 
     private static func mergeSchedulesPreferIncoming(existing: [ScheduleEvent]?, incoming: [ScheduleEvent]) -> [ScheduleEvent] {
@@ -259,6 +372,114 @@ struct StructuredOutputApplier {
             }
             if localChanged {
                 updated[i].scheduleEvents = events
+                changed = true
+            }
+        }
+        if changed {
+            message.segments = updated
+        }
+    }
+
+    /// 将 message.contacts 里的 remoteId/字段回填到 message.segments 的 contactCards 里（仅补齐缺失字段，不覆盖已有值）。
+    private static func backfillContactFieldsFromAggregate(into message: inout ChatMessage) {
+        guard let segs = message.segments, !segs.isEmpty else { return }
+        guard let agg = message.contacts, !agg.isEmpty else { return }
+
+        func trimmed(_ s: String?) -> String { (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
+        func key(_ c: ContactCard) -> String { ChatCardStableId.contact(c) }
+
+        // 以 stableId 做回填 key：联系人卡片不保证共享同一个 UUID id
+        var bestByKey: [String: ContactCard] = [:]
+        bestByKey.reserveCapacity(agg.count)
+        for c in agg {
+            let k = key(c)
+            if let ex = bestByKey[k] {
+                // 只要有 remoteId/字段更多，就认为更好
+                let incRid = !trimmed(c.remoteId).isEmpty
+                let exRid = !trimmed(ex.remoteId).isEmpty
+                if incRid && !exRid {
+                    bestByKey[k] = c
+                } else if (!incRid && exRid) {
+                    // keep
+                } else {
+                    // 兜底：后到覆盖（聚合通常是更完整的）
+                    bestByKey[k] = c
+                }
+            } else {
+                bestByKey[k] = c
+            }
+        }
+        guard !bestByKey.isEmpty else { return }
+
+        var updated = segs
+        var changed = false
+        for i in updated.indices {
+            guard updated[i].kind == .contactCards else { continue }
+            guard var cs = updated[i].contacts, !cs.isEmpty else { continue }
+            var localChanged = false
+            for j in cs.indices {
+                let k = key(cs[j])
+                guard let best = bestByKey[k] else { continue }
+                // 只补齐缺失字段
+                if trimmed(cs[j].remoteId).isEmpty, !trimmed(best.remoteId).isEmpty {
+                    cs[j].remoteId = best.remoteId
+                    localChanged = true
+                }
+                if trimmed(cs[j].industry).isEmpty, !trimmed(best.industry).isEmpty {
+                    cs[j].industry = best.industry
+                    localChanged = true
+                }
+                if trimmed(cs[j].company).isEmpty, !trimmed(best.company).isEmpty {
+                    cs[j].company = best.company
+                    localChanged = true
+                }
+                if trimmed(cs[j].title).isEmpty, !trimmed(best.title).isEmpty {
+                    cs[j].title = best.title
+                    localChanged = true
+                }
+                if trimmed(cs[j].phone).isEmpty, !trimmed(best.phone).isEmpty {
+                    cs[j].phone = best.phone
+                    localChanged = true
+                }
+                if trimmed(cs[j].email).isEmpty, !trimmed(best.email).isEmpty {
+                    cs[j].email = best.email
+                    localChanged = true
+                }
+                if trimmed(cs[j].location).isEmpty, !trimmed(best.location).isEmpty {
+                    cs[j].location = best.location
+                    localChanged = true
+                }
+                if trimmed(cs[j].birthday).isEmpty, !trimmed(best.birthday).isEmpty {
+                    cs[j].birthday = best.birthday
+                    localChanged = true
+                }
+                if trimmed(cs[j].gender).isEmpty, !trimmed(best.gender).isEmpty {
+                    cs[j].gender = best.gender
+                    localChanged = true
+                }
+                if trimmed(cs[j].relationshipType).isEmpty, !trimmed(best.relationshipType).isEmpty {
+                    cs[j].relationshipType = best.relationshipType
+                    localChanged = true
+                }
+                if trimmed(cs[j].notes).isEmpty, !trimmed(best.notes).isEmpty {
+                    cs[j].notes = best.notes
+                    localChanged = true
+                }
+                if trimmed(cs[j].impression).isEmpty, !trimmed(best.impression).isEmpty {
+                    cs[j].impression = best.impression
+                    localChanged = true
+                }
+                if trimmed(cs[j].englishName).isEmpty, !trimmed(best.englishName).isEmpty {
+                    cs[j].englishName = best.englishName
+                    localChanged = true
+                }
+                if cs[j].avatarData == nil, let a = best.avatarData {
+                    cs[j].avatarData = a
+                    localChanged = true
+                }
+            }
+            if localChanged {
+                updated[i].contacts = cs
                 changed = true
             }
         }

@@ -64,8 +64,8 @@ final class BackendChatService {
             request.httpBody = try JSONSerialization.data(withJSONObject: contentPayload)
 
 #if DEBUG
-            // 你要求的“实时后端聊天 print”：请求开始 + 基本信息（不输出 base64）
-            _ = lastUser
+            // ✅ 你要求的“/api/v1/chat 接口日志”：请求开始（脱敏 + 去除 base64），同时写入 AppGroupDebugLog
+            debugAlwaysLogChatRequest(requestId: requestId, request: request)
 #endif
 
             // ✅ 即时前端输出：边收边解析，每来一个 json chunk 就回调一次（追加 segments）
@@ -75,6 +75,7 @@ final class BackendChatService {
             }
 
 #if DEBUG
+            debugAlwaysLogChatResponseHeader(requestId: requestId, response: httpResponse)
 #endif
 
             // 非 200：读完整 body 作为错误信息
@@ -96,6 +97,9 @@ final class BackendChatService {
             var accumulatedTextParts: [String] = []
 
             func emitDeltaChunk(_ obj: [String: Any]) async {
+#if DEBUG
+                debugAlwaysLogChatChunk(requestId: requestId, chunk: obj, source: "delta")
+#endif
                 let delta = parseChunkDelta(obj)
                 if delta.segments.isEmpty,
                    delta.scheduleEvents.isEmpty,
@@ -121,8 +125,8 @@ final class BackendChatService {
                 guard !joined.isEmpty else { return }
                 if joined == "[DONE]" { return }
 #if DEBUG
-                if BackendChatConfig.debugLogChunkSummary {
-                }
+                // SSE 原始事件（可能跨行）：便于你对照后端推送顺序
+                debugAlwaysLogChatRawLine(requestId: requestId, line: "SSE_EVENT: " + joined)
 #endif
                 guard let d = joined.data(using: .utf8),
                       let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any]
@@ -136,6 +140,13 @@ final class BackendChatService {
 
                     let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
                     if !trimmedLine.isEmpty { rawFallbackLines.append(trimmedLine) }
+
+#if DEBUG
+                    // 原始流式行（SSE/NDJSON），默认按 chunkSummary 打印，避免“第一次点开没触发 GET”时无法复盘后端到底发了什么
+                    if BackendChatConfig.debugLogChunkSummary || BackendChatConfig.debugLogStreamEvents {
+                        debugAlwaysLogChatRawLine(requestId: requestId, line: trimmedLine)
+                    }
+#endif
 
                     // 自动探测：先看到 data: 按 SSE，否则按 NDJSON
                     if format == .unknown, trimmedLine.hasPrefix("data:") { format = .sse }
@@ -162,10 +173,6 @@ final class BackendChatService {
 
                     case .ndjson:
                         guard !trimmedLine.isEmpty else { continue }
-#if DEBUG
-                        if BackendChatConfig.debugLogChunkSummary {
-                        }
-#endif
                         guard let d = trimmedLine.data(using: .utf8),
                               let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any]
                         else { continue }
@@ -1192,7 +1199,108 @@ final class BackendChatService {
         var i = 0
         while i < chars.count {
             let end = min(i + chunkSize, chars.count)
+            print(String(chars[i..<end]))
             i = end
+        }
+    }
+
+    private static func maskedSessionId(_ s: String) -> String {
+        let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard t.count > 8 else { return "***" }
+        return "\(t.prefix(4))***\(t.suffix(4))"
+    }
+
+    private static func debugAlwaysLogChatRequest(requestId: String, request: URLRequest) {
+        let url = request.url?.absoluteString ?? "(nil)"
+        let method = request.httpMethod ?? "POST"
+        var lines: [String] = []
+        lines.append("[BackendChat][reqId=\(requestId)] REQUEST \(method) \(url)")
+        if let headers = request.allHTTPHeaderFields, !headers.isEmpty {
+            lines.append("[HEADERS]")
+            for (k, v) in headers.sorted(by: { $0.key < $1.key }) {
+                if k.lowercased() == "x-session-id" {
+                    lines.append("\(k): \(maskedSessionId(v))")
+                } else {
+                    lines.append("\(k): \(v)")
+                }
+            }
+        }
+        if let body = request.httpBody, !body.isEmpty {
+            let raw = String(data: body, encoding: .utf8) ?? "<non-utf8 body: \(body.count) bytes>"
+            let redacted = redactBase64(raw)
+            lines.append("[BODY_UTF8]")
+            lines.append(redacted)
+        } else {
+            lines.append("[BODY] <empty>")
+        }
+        let text = lines.joined(separator: "\n")
+        printLongString(text, chunkSize: 900)
+        AppGroupDebugLog.append(text)
+    }
+
+    private static func debugAlwaysLogChatResponseHeader(requestId: String, response: HTTPURLResponse) {
+        var lines: [String] = []
+        lines.append("[BackendChat][reqId=\(requestId)] RESPONSE status=\(response.statusCode)")
+        let pairs = response.allHeaderFields.compactMap { (k, v) -> (String, String)? in
+            let ks = String(describing: k)
+            let vs = String(describing: v)
+            return (ks, vs)
+        }.sorted(by: { $0.0 < $1.0 })
+        if !pairs.isEmpty {
+            lines.append("[RESPONSE_HEADERS]")
+            for (k, v) in pairs {
+                lines.append("\(k): \(v)")
+            }
+        }
+        let text = lines.joined(separator: "\n")
+        printLongString(text, chunkSize: 900)
+        AppGroupDebugLog.append(text)
+    }
+
+    private static func debugAlwaysLogChatRawLine(requestId: String, line: String) {
+        let t = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { return }
+        let redacted = redactBase64(truncate(t, limit: 6000))
+        let msg = "[BackendChat][reqId=\(requestId)] RAW \(redacted)"
+        printLongString(msg, chunkSize: 900)
+        AppGroupDebugLog.append(msg)
+    }
+
+    private static func debugAlwaysLogChatChunk(requestId: String, chunk: [String: Any], source: String) {
+        guard BackendChatConfig.debugLogChunkSummary || BackendChatConfig.debugLogStreamEvents else { return }
+        let type = (chunk["type"] as? String) ?? ""
+        var hintParts: [String] = []
+        if type == "tool", let tool = chunk["content"] as? [String: Any] {
+            let name = (tool["name"] as? String) ?? ""
+            let status = (tool["status"] as? String) ?? ""
+            if !name.isEmpty { hintParts.append("tool=\(name)") }
+            if !status.isEmpty { hintParts.append("status=\(status)") }
+        }
+        if type == "card", let content = chunk["content"] as? [String: Any] {
+            let cardType = (content["card_type"] as? String) ?? ""
+            if !cardType.isEmpty { hintParts.append("card_type=\(cardType)") }
+            // 如果是联系人卡片，额外把 data 里的行业字段打出来（定位你提的“行业第一次没有”的问题）
+            if cardType.lowercased() == "contact" || cardType.lowercased() == "contacts" || cardType.lowercased() == "person" || cardType.lowercased() == "people" {
+                if let data = content["data"] as? [String: Any] {
+                    if let industry = data["industry"] as? String, !industry.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        hintParts.append("industry=\(industry)")
+                    }
+                    if let rid = data["id"] ?? data["contact_id"] {
+                        hintParts.append("data.id=\(String(describing: rid))")
+                    }
+                }
+                if let outerId = content["id"] {
+                    hintParts.append("card.id=\(String(describing: outerId))")
+                }
+            }
+        }
+        let hint = hintParts.isEmpty ? "" : (" " + hintParts.joined(separator: " "))
+        if let data = try? JSONSerialization.data(withJSONObject: chunk, options: []),
+           let json = String(data: data, encoding: .utf8) {
+            let redacted = redactBase64(truncate(json, limit: 12000))
+            let msg = "[BackendChat][reqId=\(requestId)][\(source)] type=\(type)\(hint) \(redacted)"
+            printLongString(msg, chunkSize: 900)
+            AppGroupDebugLog.append(msg)
         }
     }
 

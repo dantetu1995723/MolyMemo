@@ -370,6 +370,7 @@ struct ContactEditView: View {
                         if let v = updated.title?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty { existingContact.identity = v }
                         if let v = updated.phone?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty { existingContact.phoneNumber = v }
                         if let v = updated.email?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty { existingContact.email = v }
+                        if let v = updated.relationshipType?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty { existingContact.relationship = v }
                         let imp = (updated.impression ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                         let n = (updated.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                         let candidate = !imp.isEmpty ? imp : (n.isEmpty ? nil : n)

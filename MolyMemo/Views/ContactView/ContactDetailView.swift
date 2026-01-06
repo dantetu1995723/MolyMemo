@@ -619,7 +619,8 @@ struct ContactDetailView: View {
             let industry = editedIndustry.trimmingCharacters(in: .whitespacesAndNewlines)
             if !industry.isEmpty { payload["industry"] = industry }
             let location = editedLocation.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !location.isEmpty { payload["location"] = location }
+            // 后端字段是 address（历史上也可能叫 location/region/city，但 update 以 address 为准）
+            if !location.isEmpty { payload["address"] = location }
             let birthday = editedBirthday.trimmingCharacters(in: .whitespacesAndNewlines)
             if !birthday.isEmpty { payload["birthday"] = birthday }
             let gender = normalizedGenderValue(editedGender)

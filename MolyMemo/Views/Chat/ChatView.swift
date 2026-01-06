@@ -40,6 +40,9 @@ struct ChatView: View {
     @State private var chatScrollProxy: ScrollViewProxy? = nil
     @State private var didAutoScrollOnFirstAppear: Bool = false
 
+    // 底部避让：输入区（含附件面板）真实高度
+    @State private var inputTotalHeight: CGFloat = bottomInputBaseHeight
+
     // AppIntent/快捷指令后台写入的 AI 回复：一次性打字机动画目标由 AppState.pendingAnimatedAgentMessageId 统一管理
 
     // 日程详情弹窗（点击卡片打开）
@@ -110,6 +113,7 @@ struct ChatView: View {
     
     var body: some View {
         GeometryReader { geometry in
+            let bottomAvoidHeight = max(bottomInputBaseHeight, inputTotalHeight)
             ZStack(alignment: .bottom) {
                 // 背景
                 backgroundView
@@ -148,7 +152,7 @@ struct ChatView: View {
                             Color.clear.frame(height: geometry.safeAreaInsets.top + 96)
                         }
                         .safeAreaInset(edge: .bottom) {
-                            Color.clear.frame(height: bottomInputBaseHeight)
+                            Color.clear.frame(height: bottomAvoidHeight)
                         }
                         .onTapGesture {
                             #if DEBUG
@@ -175,6 +179,10 @@ struct ChatView: View {
                                 pendingScrollToMessageId = nil
                             }
                         }
+                        .onChange(of: inputTotalHeight) { _, _ in
+                            // 附件面板/建议条等高度变化时，让最新消息保持可见
+                            scrollToLatestMessageOnOpen(proxy: proxy)
+                        }
                     }
                 }
                 .zIndex(0)
@@ -193,13 +201,20 @@ struct ChatView: View {
                             endPoint: .bottom
                         )
                         .frame(height: fadeHeight)
-                        Color.clear.frame(height: bottomInputBaseHeight)
+                        Color.clear.frame(height: bottomAvoidHeight)
                     }
                 )
                 
                 // 2. 底部输入区域
                 ChatInputView(viewModel: inputViewModel, namespace: inputNamespace)
                     .zIndex(101)
+                    .onPreferenceChange(ChatInputTotalHeightPreferenceKey.self) { h in
+                        // 避免 0/异常值导致抖动；最少保持 baseHeight
+                        let clamped = max(bottomInputBaseHeight, h)
+                        if abs(inputTotalHeight - clamped) > 0.5 {
+                            inputTotalHeight = clamped
+                        }
+                    }
                 
                 // 3. 首页通知栏展开时的全局蒙层
                 if isTodayScheduleExpanded {
@@ -447,6 +462,17 @@ struct ChatView: View {
             }
         }
         #endif
+        // 键盘弹起/收起：只触发滚动，不手动改变布局（避免与系统键盘避让“双重计算”导致顶飞）
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { _ in
+            if let proxy = chatScrollProxy {
+                scrollToLatestMessageOnOpen(proxy: proxy)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+            if let proxy = chatScrollProxy {
+                scrollToLatestMessageOnOpen(proxy: proxy)
+            }
+        }
         .onAppear {
             withAnimation(.easeOut(duration: 0.5)) {
                 showContent = true

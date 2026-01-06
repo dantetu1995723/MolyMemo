@@ -258,10 +258,55 @@ enum ContactService {
         }
     }
 
+    /// 只用于“创建接口”：无视 debug 开关，强制打印后端原始 JSON + 返回字段（便于你核对字段）。
+    private static func debugAlwaysPrintRawCreateJSON(data: Data, statusCode: Int?) {
+        guard !data.isEmpty else { return }
+        let body = String(data: data, encoding: .utf8) ?? "<non-utf8 body: \(data.count) bytes>"
+        let statusPart = statusCode.map { "[status=\($0)]" } ?? ""
+
+        var fieldSummary: [String] = []
+        if let obj = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]) {
+            func keysLine(_ dict: [String: Any], label: String) -> String {
+                let keys = dict.keys.sorted()
+                return "\(label) keys(\(keys.count)): " + keys.joined(separator: ", ")
+            }
+
+            if let dict = obj as? [String: Any] {
+                fieldSummary.append(keysLine(dict, label: "[root]"))
+                if let d = dict["data"] as? [String: Any] {
+                    fieldSummary.append(keysLine(d, label: "[root.data]"))
+                } else if let arr = dict["data"] as? [[String: Any]], let first = arr.first {
+                    fieldSummary.append("[root.data] array count=\(arr.count)")
+                    fieldSummary.append(keysLine(first, label: "[root.data[0]]"))
+                }
+            } else if let arr = obj as? [[String: Any]] {
+                fieldSummary.append("[root] array count=\(arr.count)")
+                if let first = arr.first {
+                    fieldSummary.append(keysLine(first, label: "[root[0]]"))
+                }
+            }
+        }
+
+        let header = "[ContactCreate]\(statusPart) backend return fields:"
+        let summary = fieldSummary.isEmpty ? "" : ("\n" + fieldSummary.joined(separator: "\n"))
+        debugPrintLongString(header + summary + "\n\n" + body, chunkSize: 900)
+        AppGroupDebugLog.append(header + summary + " " + body)
+    }
+
     /// 只用于“详情接口”：无视 debug 开关，强制打印后端原始 JSON（便于你核对字段）。
     private static func debugAlwaysPrintRawDetailJSON(data: Data, remoteId: String) {
         let body = String(data: data, encoding: .utf8) ?? "<non-utf8 body: \(data.count) bytes>"
         let header = "[ContactDetail][id=\(remoteId)] raw json:"
+        debugPrintLongString(header + "\n" + body, chunkSize: 900)
+        AppGroupDebugLog.append(header + " " + body)
+    }
+
+    /// 只用于“更新接口”：无视 debug 开关，强制打印后端原始 JSON（便于你核对字段）。
+    private static func debugAlwaysPrintRawUpdateJSON(data: Data, remoteId: String, statusCode: Int?) {
+        guard !data.isEmpty else { return }
+        let body = String(data: data, encoding: .utf8) ?? "<non-utf8 body: \(data.count) bytes>"
+        let statusPart = statusCode.map { "[status=\($0)]" } ?? ""
+        let header = "[ContactUpdate][id=\(remoteId)]\(statusPart) raw json:"
         debugPrintLongString(header + "\n" + body, chunkSize: 900)
         AppGroupDebugLog.append(header + " " + body)
     }
@@ -555,6 +600,11 @@ enum ContactService {
             let (data, response) = try await URLSession.shared.data(for: request)
             debugPrintResponse(data: data, response: response, error: nil, tag: "update")
             
+#if DEBUG
+            let statusCode = (response as? HTTPURLResponse)?.statusCode
+            debugAlwaysPrintRawUpdateJSON(data: data, remoteId: trimmed, statusCode: statusCode)
+#endif
+            
             guard let http = response as? HTTPURLResponse else { throw ContactServiceError.invalidResponse }
             if !(200...299).contains(http.statusCode) {
                 let body = String(data: data, encoding: .utf8) ?? ""
@@ -570,13 +620,15 @@ enum ContactService {
             let json = try decodeJSON(data)
             if let dict = json as? [String: Any] {
                 if let d = dict["data"] as? [String: Any], let c = parseContactCard(d, keepLocalId: keepLocalId) {
-                    await detailCache.set(trimmed, value: c, ttl: defaultDetailTTL)
+                    // ⚠️ update 接口的返回体可能是“部分字段”，不要把它当作“详情”写进 detailCache，
+                    // 否则详情页命中缓存时会把缺失字段清空（applyRemoteDetailCard 以详情为真相）。
+                    await detailCache.invalidate(trimmed)
                     await listCache.invalidateAll()
                     await allPagesCache.invalidateAll()
                     return c
                 }
                 if let c = parseContactCard(dict, keepLocalId: keepLocalId) {
-                    await detailCache.set(trimmed, value: c, ttl: defaultDetailTTL)
+                    await detailCache.invalidate(trimmed)
                     await listCache.invalidateAll()
                     await allPagesCache.invalidateAll()
                     return c
@@ -587,7 +639,7 @@ enum ContactService {
                 return nil
             }
             if let arr = json as? [[String: Any]], let first = arr.first, let c = parseContactCard(first, keepLocalId: keepLocalId) {
-                await detailCache.set(trimmed, value: c, ttl: defaultDetailTTL)
+                await detailCache.invalidate(trimmed)
                 await listCache.invalidateAll()
                 await allPagesCache.invalidateAll()
                 return c
@@ -618,6 +670,11 @@ enum ContactService {
             let (data, response) = try await URLSession.shared.data(for: request)
             debugPrintResponse(data: data, response: response, error: nil, tag: "create")
 
+#if DEBUG
+            let statusCode = (response as? HTTPURLResponse)?.statusCode
+            debugAlwaysPrintRawCreateJSON(data: data, statusCode: statusCode)
+#endif
+
             guard let http = response as? HTTPURLResponse else { throw ContactServiceError.invalidResponse }
             if !(200...299).contains(http.statusCode) {
                 let body = String(data: data, encoding: .utf8) ?? ""
@@ -634,8 +691,10 @@ enum ContactService {
             let json = try decodeJSON(data)
             if let dict = json as? [String: Any] {
                 if let d = dict["data"] as? [String: Any], let c = parseContactCard(d, keepLocalId: keepLocalId) {
+                    // ⚠️ create 接口返回体可能是“部分字段”，不要污染详情缓存；
+                    // 让详情页首次打开直接 GET /contacts/{id} 拿全量。
                     if let rid = c.remoteId?.trimmingCharacters(in: .whitespacesAndNewlines), !rid.isEmpty {
-                        await detailCache.set(rid, value: c, ttl: defaultDetailTTL)
+                        await detailCache.invalidate(rid)
                     }
                     await listCache.invalidateAll()
                     await allPagesCache.invalidateAll()
@@ -643,7 +702,7 @@ enum ContactService {
                 }
                 if let c = parseContactCard(dict, keepLocalId: keepLocalId) {
                     if let rid = c.remoteId?.trimmingCharacters(in: .whitespacesAndNewlines), !rid.isEmpty {
-                        await detailCache.set(rid, value: c, ttl: defaultDetailTTL)
+                        await detailCache.invalidate(rid)
                     }
                     await listCache.invalidateAll()
                     await allPagesCache.invalidateAll()
@@ -652,7 +711,7 @@ enum ContactService {
             }
             if let arr = json as? [[String: Any]], let first = arr.first, let c = parseContactCard(first, keepLocalId: keepLocalId) {
                 if let rid = c.remoteId?.trimmingCharacters(in: .whitespacesAndNewlines), !rid.isEmpty {
-                    await detailCache.set(rid, value: c, ttl: defaultDetailTTL)
+                    await detailCache.invalidate(rid)
                 }
                 await listCache.invalidateAll()
                 await allPagesCache.invalidateAll()

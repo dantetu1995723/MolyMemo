@@ -223,6 +223,15 @@ enum BackendChatConfig {
         }
         set { UserDefaults.standard.set(newValue, forKey: Keys.debugScheduleServiceDetailRawLog) }
     }
+#else
+    /// Release/Archive：调试开关统一关闭，避免刷爆控制台/落盘敏感信息。
+    static var debugLogFullResponse: Bool { false }
+    static var debugDumpResponseToFile: Bool { false }
+    static var debugLogStreamEvents: Bool { false }
+    static var debugLogChunkSummary: Bool { false }
+    static var debugScheduleServiceRawLog: Bool { false }
+    static var debugScheduleServiceParseLog: Bool { false }
+    static var debugScheduleServiceDetailRawLog: Bool { false }
 #endif
 }
 
