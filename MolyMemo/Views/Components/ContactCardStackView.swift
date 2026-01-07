@@ -67,6 +67,8 @@ struct ContactCardStackView: View {
                                     }
                                     guard CACurrentMediaTime() - lastMenuOpenedAt > 0.18 else { return }
                                     guard contacts.indices.contains(index) else { return }
+                                    // 🚫 废弃卡片不允许再打开详情，避免误编辑旧版本
+                                    guard !contacts[index].isObsolete else { return }
                                     onOpenDetail?(contacts[index])
                                 }
                                 // 长按：打开胶囊菜单（与日程一致）
@@ -74,6 +76,7 @@ struct ContactCardStackView: View {
                                     minimumDuration: 0.12,
                                     maximumDistance: 20,
                                     perform: {
+                                        guard !contacts[index].isObsolete else { return } // 🚫 废弃卡片不触发菜单
                                         guard index == currentIndex else { return }
                                         guard !showMenu else { return }
                                         lastMenuOpenedAt = CACurrentMediaTime()
@@ -83,6 +86,7 @@ struct ContactCardStackView: View {
                                         }
                                     },
                                     onPressingChanged: { pressing in
+                                        guard !contacts[index].isObsolete else { return }
                                         guard index == currentIndex else { return }
                                         if showMenu { return }
                                         isPressingCurrentCard = pressing
@@ -369,7 +373,8 @@ struct ContactCardView: View {
             HStack(alignment: .lastTextBaseline, spacing: 8) {
                 Text(contact.name)
                     .font(.custom("SourceHanSerifSC-Bold", size: 24))
-                    .foregroundColor(Color(red: 0.2, green: 0.2, blue: 0.2))
+                    .foregroundColor(contact.isObsolete ? Color(hex: "999999") : Color(red: 0.2, green: 0.2, blue: 0.2))
+                    .strikethrough(contact.isObsolete, color: Color(hex: "999999"))
                 
                 Spacer()
             }
@@ -379,7 +384,8 @@ struct ContactCardView: View {
             if let company = contact.company {
                 Text(company)
                     .font(.system(size: 16))
-                    .foregroundColor(.black)
+                    .foregroundColor(contact.isObsolete ? Color(hex: "AAAAAA") : .black)
+                    .strikethrough(contact.isObsolete, color: Color(hex: "AAAAAA"))
                     .padding(.bottom, 4)
             }
             
@@ -387,7 +393,8 @@ struct ContactCardView: View {
             if let title = contact.title {
                 Text(title)
                     .font(.system(size: 14))
-                    .foregroundColor(.gray)
+                    .foregroundColor(contact.isObsolete ? Color(hex: "BBBBBB") : .gray)
+                    .strikethrough(contact.isObsolete, color: Color(hex: "BBBBBB"))
                     .padding(.bottom, 20)
             } else {
                 Spacer().frame(height: 20)
@@ -410,6 +417,7 @@ struct ContactCardView: View {
             // Phone
             if let phone = contact.phone {
                 Button(action: {
+                    guard !contact.isObsolete else { return }
                     showPhoneSheet = true
                 }) {
                     HStack(spacing: 6) {
@@ -420,11 +428,13 @@ struct ContactCardView: View {
                         
                         Text(phone)
                             .font(.system(size: 15))
-                            .foregroundColor(.blue)
+                            .foregroundColor(contact.isObsolete ? Color(hex: "BBBBBB") : .blue)
+                            .strikethrough(contact.isObsolete, color: Color(hex: "BBBBBB"))
                     }
                 }
                 .buttonStyle(PlainButtonStyle())
                 .padding(.bottom, 10)
+                .disabled(contact.isObsolete)
             }
             
             // Email
@@ -437,19 +447,21 @@ struct ContactCardView: View {
                     
                     Text(email)
                         .font(.system(size: 15))
-                        .foregroundColor(.gray)
+                        .foregroundColor(Color(hex: "BBBBBB"))
+                        .strikethrough(contact.isObsolete, color: Color(hex: "BBBBBB"))
                 }
             }
             
             Spacer()
         }
         .padding(14)
-        .background(Color.white)
+        .background(contact.isObsolete ? Color(hex: "F9F9F9") : Color.white)
         .cornerRadius(12)
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.gray.opacity(0.1), lineWidth: 1)
+                .stroke(Color.black.opacity(contact.isObsolete ? 0.01 : 0.03), lineWidth: 1)
         )
+        .opacity(contact.isObsolete ? 0.8 : 1.0)
         .sheet(isPresented: $showPhoneSheet) {
             if let phone = contact.phone {
                 PhoneActionSheet(phoneNumber: phone)

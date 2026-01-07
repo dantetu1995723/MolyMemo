@@ -142,6 +142,8 @@ struct ScheduleCardStackView: View {
                 }
                 // 菜单刚关闭时不触发详情，避免误触
                 guard CACurrentMediaTime() - lastMenuOpenedAt > 0.18 else { return }
+                // 🚫 废弃卡片不允许再打开详情，避免误编辑旧版本
+                guard !events[index].isObsolete else { return }
                 onOpenDetail?(events[index])
             }
              // 长按：打开胶囊菜单（更快；适当放宽可移动距离，避免“手抖”导致长按反复失败体感变慢）
@@ -149,6 +151,7 @@ struct ScheduleCardStackView: View {
                 minimumDuration: 0.12,
                 maximumDistance: 20,
                 perform: {
+                    guard !events[index].isObsolete else { return } // 🚫 废弃卡片不触发菜单
                     guard index == currentIndex else { return }
                     guard !showMenu else { return }
                     lastMenuOpenedAt = CACurrentMediaTime()
@@ -158,6 +161,7 @@ struct ScheduleCardStackView: View {
                     }
                 },
                 onPressingChanged: { pressing in
+                    guard !events[index].isObsolete else { return }
                     guard index == currentIndex else { return }
                     if showMenu { return }
                     isPressingCurrentCard = pressing
@@ -607,9 +611,10 @@ struct ScheduleCardView: View {
             HStack(alignment: .center, spacing: 8) {
                 Text(event.fullDateString)
                     .font(.system(size: 15))
-                    .foregroundColor(Color(hex: "333333"))
+                    .foregroundColor(event.isObsolete ? Color(hex: "999999") : Color(hex: "333333"))
+                    .strikethrough(event.isObsolete, color: Color(hex: "999999"))
                 Spacer()
-                if event.hasConflict {
+                if event.hasConflict && !event.isObsolete {
                     Text("有日程冲突")
                         .font(.system(size: 13, weight: .regular))
                         .foregroundColor(Color(hex: "F5A623"))
@@ -639,7 +644,8 @@ struct ScheduleCardView: View {
                     // ✅ end_time=null 时，不展示“结束时间=开始时间”的假象
                     Text(timeString(event.startTime, isEnd: false))
                         .font(.system(size: 15, weight: .medium))
-                        .foregroundColor(Color(hex: "333333"))
+                        .foregroundColor(event.isObsolete ? Color(hex: "999999") : Color(hex: "333333"))
+                        .strikethrough(event.isObsolete, color: Color(hex: "999999"))
 
                     if event.endTimeProvided {
                         Text("~")
@@ -648,7 +654,8 @@ struct ScheduleCardView: View {
                             .padding(.leading, 2)
                         Text(timeString(event.endTime, isEnd: true))
                             .font(.system(size: 15, weight: .medium))
-                            .foregroundColor(Color(hex: "666666"))
+                            .foregroundColor(event.isObsolete ? Color(hex: "999999") : Color(hex: "666666"))
+                            .strikethrough(event.isObsolete, color: Color(hex: "999999"))
                     }
                 }
                 .fixedSize()
@@ -656,11 +663,13 @@ struct ScheduleCardView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(event.title)
                         .font(.system(size: 18, weight: .bold))
-                        .foregroundColor(Color(hex: "333333"))
+                        .foregroundColor(event.isObsolete ? Color(hex: "999999") : Color(hex: "333333"))
+                        .strikethrough(event.isObsolete, color: Color(hex: "999999"))
                         .lineLimit(1)
                     Text(event.description)
                         .font(.system(size: 14))
-                        .foregroundColor(Color(hex: "666666"))
+                        .foregroundColor(event.isObsolete ? Color(hex: "AAAAAA") : Color(hex: "666666"))
+                        .strikethrough(event.isObsolete, color: Color(hex: "AAAAAA"))
                         .lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -671,15 +680,17 @@ struct ScheduleCardView: View {
                 Text(t)
                     .font(.system(size: 16))
                     .foregroundColor(Color(hex: "999999"))
+                    .opacity(event.isObsolete ? 0.6 : 1.0)
             }
         }
         .padding(14)
-        .background(Color.white)
+        .background(event.isObsolete ? Color(hex: "F9F9F9") : Color.white)
         .cornerRadius(12)
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.black.opacity(0.03), lineWidth: 1)
+                .stroke(Color.black.opacity(event.isObsolete ? 0.01 : 0.03), lineWidth: 1)
         )
+        .opacity(event.isObsolete ? 0.8 : 1.0)
     }
     
     private func timeString(_ date: Date, isEnd: Bool) -> String {

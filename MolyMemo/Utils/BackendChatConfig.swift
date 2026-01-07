@@ -16,6 +16,9 @@ enum BackendChatConfig {
         static let debugDumpResponseToFile = "backend_chat_debug_dump_response_to_file"
         static let debugLogStreamEvents = "backend_chat_debug_log_stream_events"
         static let debugLogChunkSummary = "backend_chat_debug_log_chunk_summary"
+        // 聊天网络日志：默认全部关闭，避免刷屏/泄漏敏感信息
+        static let debugLogChatNetworkBasics = "backend_chat_debug_log_chat_network_basics"
+        static let debugLogChatNetworkVerbose = "backend_chat_debug_log_chat_network_verbose"
         // 仅用于调试工具箱「日程」列表：打印 /api/v1/schedules 的原始 JSON（避免被 fullResponse 开关影响）
         static let debugScheduleServiceRawLog = "backend_chat_debug_schedule_service_raw_log"
         // 仅用于调试：ScheduleService 解析时间字段的日志（很吵，默认关闭）
@@ -180,12 +183,37 @@ enum BackendChatConfig {
     static var debugLogChunkSummary: Bool {
         get {
             if UserDefaults.standard.object(forKey: Keys.debugLogChunkSummary) == nil {
-                UserDefaults.standard.set(true, forKey: Keys.debugLogChunkSummary)
-                return true
+                // 默认关闭：chunk JSON 依然可能很长，且包含用户输入/后端返回敏感字段
+                UserDefaults.standard.set(false, forKey: Keys.debugLogChunkSummary)
+                return false
             }
             return UserDefaults.standard.bool(forKey: Keys.debugLogChunkSummary)
         }
         set { UserDefaults.standard.set(newValue, forKey: Keys.debugLogChunkSummary) }
+    }
+
+    /// Debug：聊天网络基础日志（仅一行：REQUEST/RESPONSE + reqId），默认关闭。
+    static var debugLogChatNetworkBasics: Bool {
+        get {
+            if UserDefaults.standard.object(forKey: Keys.debugLogChatNetworkBasics) == nil {
+                UserDefaults.standard.set(false, forKey: Keys.debugLogChatNetworkBasics)
+                return false
+            }
+            return UserDefaults.standard.bool(forKey: Keys.debugLogChatNetworkBasics)
+        }
+        set { UserDefaults.standard.set(newValue, forKey: Keys.debugLogChatNetworkBasics) }
+    }
+
+    /// Debug：聊天网络详细日志（headers/body/raw stream），默认关闭。
+    static var debugLogChatNetworkVerbose: Bool {
+        get {
+            if UserDefaults.standard.object(forKey: Keys.debugLogChatNetworkVerbose) == nil {
+                UserDefaults.standard.set(false, forKey: Keys.debugLogChatNetworkVerbose)
+                return false
+            }
+            return UserDefaults.standard.bool(forKey: Keys.debugLogChatNetworkVerbose)
+        }
+        set { UserDefaults.standard.set(newValue, forKey: Keys.debugLogChatNetworkVerbose) }
     }
 
     /// Debug：是否打印 ScheduleService（/api/v1/schedules）原始响应 body（默认开启，便于排查“工具箱日程时间不对”）
@@ -229,6 +257,8 @@ enum BackendChatConfig {
     static var debugDumpResponseToFile: Bool { false }
     static var debugLogStreamEvents: Bool { false }
     static var debugLogChunkSummary: Bool { false }
+    static var debugLogChatNetworkBasics: Bool { false }
+    static var debugLogChatNetworkVerbose: Bool { false }
     static var debugScheduleServiceRawLog: Bool { false }
     static var debugScheduleServiceParseLog: Bool { false }
     static var debugScheduleServiceDetailRawLog: Bool { false }

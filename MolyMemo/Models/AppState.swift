@@ -129,6 +129,8 @@ struct ScheduleEvent: Identifiable, Equatable, Codable {
     var endTimeProvided: Bool = true
     var isSynced: Bool = false
     var hasConflict: Bool = false
+    /// 是否已废弃（由于更新而产生了新卡片）
+    var isObsolete: Bool = false
     
     // 用于显示的辅助属性
     var fullDateString: String {
@@ -168,7 +170,7 @@ struct ScheduleEvent: Identifiable, Equatable, Codable {
 
     // MARK: - Codable（向后兼容：旧数据没有 isFullDay 字段）
     private enum CodingKeys: String, CodingKey {
-        case id, remoteId, title, description, startTime, endTime, reminderTime, category, location, isFullDay, endTimeProvided, isSynced, hasConflict
+        case id, remoteId, title, description, startTime, endTime, reminderTime, category, location, isFullDay, endTimeProvided, isSynced, hasConflict, isObsolete
     }
 
     init(
@@ -184,7 +186,8 @@ struct ScheduleEvent: Identifiable, Equatable, Codable {
         isFullDay: Bool = false,
         endTimeProvided: Bool = true,
         isSynced: Bool = false,
-        hasConflict: Bool = false
+        hasConflict: Bool = false,
+        isObsolete: Bool = false
     ) {
         self.id = id
         self.remoteId = remoteId
@@ -199,6 +202,7 @@ struct ScheduleEvent: Identifiable, Equatable, Codable {
         self.endTimeProvided = endTimeProvided
         self.isSynced = isSynced
         self.hasConflict = hasConflict
+        self.isObsolete = isObsolete
     }
 
     init(from decoder: Decoder) throws {
@@ -216,6 +220,7 @@ struct ScheduleEvent: Identifiable, Equatable, Codable {
         endTimeProvided = try c.decodeIfPresent(Bool.self, forKey: .endTimeProvided) ?? true
         isSynced = try c.decodeIfPresent(Bool.self, forKey: .isSynced) ?? false
         hasConflict = try c.decodeIfPresent(Bool.self, forKey: .hasConflict) ?? false
+        isObsolete = try c.decodeIfPresent(Bool.self, forKey: .isObsolete) ?? false
     }
 }
 
@@ -246,6 +251,75 @@ struct ContactCard: Identifiable, Equatable, Codable {
     var impression: String? = nil
     var avatarData: Data? // 头像
     var rawImage: Data? // 原始截图
+    /// 是否已废弃
+    var isObsolete: Bool = false
+    
+    // MARK: - Codable（向后兼容：旧数据没有 isObsolete 字段）
+    private enum CodingKeys: String, CodingKey {
+        case id, remoteId, name, englishName, company, title, phone, email, birthday, gender, industry, location, relationshipType, notes, impression, avatarData, rawImage, isObsolete
+    }
+    
+    init(
+        id: UUID = UUID(),
+        remoteId: String? = nil,
+        name: String,
+        englishName: String? = nil,
+        company: String? = nil,
+        title: String? = nil,
+        phone: String? = nil,
+        email: String? = nil,
+        birthday: String? = nil,
+        gender: String? = nil,
+        industry: String? = nil,
+        location: String? = nil,
+        relationshipType: String? = nil,
+        notes: String? = nil,
+        impression: String? = nil,
+        avatarData: Data? = nil,
+        rawImage: Data? = nil,
+        isObsolete: Bool = false
+    ) {
+        self.id = id
+        self.remoteId = remoteId
+        self.name = name
+        self.englishName = englishName
+        self.company = company
+        self.title = title
+        self.phone = phone
+        self.email = email
+        self.birthday = birthday
+        self.gender = gender
+        self.industry = industry
+        self.location = location
+        self.relationshipType = relationshipType
+        self.notes = notes
+        self.impression = impression
+        self.avatarData = avatarData
+        self.rawImage = rawImage
+        self.isObsolete = isObsolete
+    }
+    
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        remoteId = try c.decodeIfPresent(String.self, forKey: .remoteId)
+        name = try c.decode(String.self, forKey: .name)
+        englishName = try c.decodeIfPresent(String.self, forKey: .englishName)
+        company = try c.decodeIfPresent(String.self, forKey: .company)
+        title = try c.decodeIfPresent(String.self, forKey: .title)
+        phone = try c.decodeIfPresent(String.self, forKey: .phone)
+        email = try c.decodeIfPresent(String.self, forKey: .email)
+        birthday = try c.decodeIfPresent(String.self, forKey: .birthday)
+        gender = try c.decodeIfPresent(String.self, forKey: .gender)
+        industry = try c.decodeIfPresent(String.self, forKey: .industry)
+        location = try c.decodeIfPresent(String.self, forKey: .location)
+        relationshipType = try c.decodeIfPresent(String.self, forKey: .relationshipType)
+        notes = try c.decodeIfPresent(String.self, forKey: .notes)
+        impression = try c.decodeIfPresent(String.self, forKey: .impression)
+        avatarData = try c.decodeIfPresent(Data.self, forKey: .avatarData)
+        rawImage = try c.decodeIfPresent(Data.self, forKey: .rawImage)
+        isObsolete = try c.decodeIfPresent(Bool.self, forKey: .isObsolete) ?? false
+    }
 }
 
 // 发票卡片数据
@@ -257,6 +331,45 @@ struct InvoiceCard: Identifiable, Equatable, Codable {
     var date: Date            // 开票日期
     var type: String          // 类型（餐饮、交通等）
     var notes: String?        // 备注
+    /// 是否已废弃
+    var isObsolete: Bool = false
+    
+    // MARK: - Codable（向后兼容：旧数据没有 isObsolete 字段）
+    private enum CodingKeys: String, CodingKey {
+        case id, invoiceNumber, merchantName, amount, date, type, notes, isObsolete
+    }
+    
+    init(
+        id: UUID = UUID(),
+        invoiceNumber: String,
+        merchantName: String,
+        amount: Double,
+        date: Date,
+        type: String,
+        notes: String? = nil,
+        isObsolete: Bool = false
+    ) {
+        self.id = id
+        self.invoiceNumber = invoiceNumber
+        self.merchantName = merchantName
+        self.amount = amount
+        self.date = date
+        self.type = type
+        self.notes = notes
+        self.isObsolete = isObsolete
+    }
+    
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        invoiceNumber = try c.decode(String.self, forKey: .invoiceNumber)
+        merchantName = try c.decode(String.self, forKey: .merchantName)
+        amount = try c.decode(Double.self, forKey: .amount)
+        date = try c.decode(Date.self, forKey: .date)
+        type = try c.decode(String.self, forKey: .type)
+        notes = try c.decodeIfPresent(String.self, forKey: .notes)
+        isObsolete = try c.decodeIfPresent(Bool.self, forKey: .isObsolete) ?? false
+    }
 }
 
 // 会议纪要卡片数据
@@ -273,6 +386,8 @@ struct MeetingCard: Identifiable, Equatable, Codable {
     var transcriptions: [MeetingTranscription]?
     /// 是否正在生成会议纪要（后端异步处理中）
     var isGenerating: Bool = false
+    /// 是否已废弃
+    var isObsolete: Bool = false
     
     var formattedDate: String {
         let formatter = DateFormatter()
@@ -288,6 +403,52 @@ struct MeetingCard: Identifiable, Equatable, Codable {
         let m = (total % 3600) / 60
         let s = total % 60
         return String(format: "%02d:%02d:%02d", h, m, s)
+    }
+    
+    // MARK: - Codable（向后兼容：旧数据没有 isObsolete 字段）
+    private enum CodingKeys: String, CodingKey {
+        case id, remoteId, title, date, summary, duration, audioPath, audioRemoteURL, transcriptions, isGenerating, isObsolete
+    }
+    
+    init(
+        id: UUID = UUID(),
+        remoteId: String? = nil,
+        title: String,
+        date: Date,
+        summary: String,
+        duration: TimeInterval? = nil,
+        audioPath: String? = nil,
+        audioRemoteURL: String? = nil,
+        transcriptions: [MeetingTranscription]? = nil,
+        isGenerating: Bool = false,
+        isObsolete: Bool = false
+    ) {
+        self.id = id
+        self.remoteId = remoteId
+        self.title = title
+        self.date = date
+        self.summary = summary
+        self.duration = duration
+        self.audioPath = audioPath
+        self.audioRemoteURL = audioRemoteURL
+        self.transcriptions = transcriptions
+        self.isGenerating = isGenerating
+        self.isObsolete = isObsolete
+    }
+    
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        remoteId = try c.decodeIfPresent(String.self, forKey: .remoteId)
+        title = try c.decode(String.self, forKey: .title)
+        date = try c.decode(Date.self, forKey: .date)
+        summary = try c.decode(String.self, forKey: .summary)
+        duration = try c.decodeIfPresent(TimeInterval.self, forKey: .duration)
+        audioPath = try c.decodeIfPresent(String.self, forKey: .audioPath)
+        audioRemoteURL = try c.decodeIfPresent(String.self, forKey: .audioRemoteURL)
+        transcriptions = try c.decodeIfPresent([MeetingTranscription].self, forKey: .transcriptions)
+        isGenerating = try c.decodeIfPresent(Bool.self, forKey: .isGenerating) ?? false
+        isObsolete = try c.decodeIfPresent(Bool.self, forKey: .isObsolete) ?? false
     }
 }
 
@@ -705,7 +866,7 @@ class AppState: ObservableObject {
     }
 
     /// 后端结构化输出回填：把 card 等结果写入当前 AI 消息的卡片字段
-    func applyStructuredOutput(_ output: BackendChatStructuredOutput, to messageId: UUID) {
+    func applyStructuredOutput(_ output: BackendChatStructuredOutput, to messageId: UUID, modelContext: ModelContext? = nil) {
         // 重要：@Published 的数组元素就地修改不会触发 UI 刷新，这里显式发送变更
         objectWillChange.send()
         guard let index = chatMessages.firstIndex(where: { $0.id == messageId }) else { return }
@@ -732,6 +893,10 @@ class AppState: ObservableObject {
         let beforeScheduleSignatures: Set<String> = Set((msg.scheduleEvents ?? []).map(scheduleSignature))
         let beforeScheduleToolRunning = msg.isScheduleToolRunning
 
+        // ✅ 在应用结构化输出前，如果 output 包含卡片，检查是否是更新操作
+        // 如果是更新（即 remoteId 已在之前的消息中存在），则将旧卡片标记为已废弃
+        let obsoleteChangedMessageIds = markPreviousCardsAsObsoleteIfNeeded(output: output)
+
         StructuredOutputApplier.apply(output, to: &msg)
 
         // ✅ 每次“聊天室创建或修改完日程”后立刻强刷：
@@ -747,6 +912,169 @@ class AppState: ObservableObject {
         }
 
         chatMessages[index] = msg
+
+        // ✅ 把“废弃旧卡”的变化也落库，确保下次打开仍能看到划杠变灰的历史卡片
+        if let modelContext, !obsoleteChangedMessageIds.isEmpty {
+            for mid in obsoleteChangedMessageIds {
+                if let idx = chatMessages.firstIndex(where: { $0.id == mid }) {
+                    saveMessageToStorage(chatMessages[idx], modelContext: modelContext)
+                }
+            }
+        }
+    }
+
+    /// 检查并标记旧卡片为废弃
+    private func markPreviousCardsAsObsoleteIfNeeded(output: BackendChatStructuredOutput) -> Set<UUID> {
+        func trimmed(_ s: String?) -> String { (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
+        
+        let incomingScheduleRids = Set(output.scheduleEvents.compactMap { trimmed($0.remoteId) }.filter { !$0.isEmpty })
+        let incomingContactRids = Set(output.contacts.compactMap { trimmed($0.remoteId) }.filter { !$0.isEmpty })
+        let incomingInvoiceIds = Set(output.invoices.map { $0.id })
+        let incomingMeetingRids = Set(output.meetings.compactMap { trimmed($0.remoteId) }.filter { !$0.isEmpty })
+        
+        if incomingScheduleRids.isEmpty && incomingContactRids.isEmpty && incomingInvoiceIds.isEmpty && incomingMeetingRids.isEmpty {
+            return []
+        }
+        
+        var changed = false
+        var changedMessageIds: Set<UUID> = []
+        for i in chatMessages.indices {
+            var msg = chatMessages[i]
+            var msgChanged = false
+            
+            // 1) 检查日程
+            if !incomingScheduleRids.isEmpty {
+                if var events = msg.scheduleEvents, !events.isEmpty {
+                    for j in events.indices {
+                        let rid = trimmed(events[j].remoteId)
+                        if !rid.isEmpty, incomingScheduleRids.contains(rid), !events[j].isObsolete {
+                            events[j].isObsolete = true
+                            msgChanged = true
+                        }
+                    }
+                    if msgChanged { msg.scheduleEvents = events }
+                }
+                if var segments = msg.segments, !segments.isEmpty {
+                    for j in segments.indices {
+                        if segments[j].kind == .scheduleCards, var events = segments[j].scheduleEvents, !events.isEmpty {
+                            var segChanged = false
+                            for k in events.indices {
+                                let rid = trimmed(events[k].remoteId)
+                                if !rid.isEmpty, incomingScheduleRids.contains(rid), !events[k].isObsolete {
+                                    events[k].isObsolete = true
+                                    segChanged = true
+                                    msgChanged = true
+                                }
+                            }
+                            if segChanged { segments[j].scheduleEvents = events }
+                        }
+                    }
+                    if msgChanged { msg.segments = segments }
+                }
+            }
+            
+            // 2) 检查人脉
+            if !incomingContactRids.isEmpty {
+                if var contacts = msg.contacts, !contacts.isEmpty {
+                    for j in contacts.indices {
+                        let rid = trimmed(contacts[j].remoteId)
+                        if !rid.isEmpty, incomingContactRids.contains(rid), !contacts[j].isObsolete {
+                            contacts[j].isObsolete = true
+                            msgChanged = true
+                        }
+                    }
+                    if msgChanged { msg.contacts = contacts }
+                }
+                if var segments = msg.segments, !segments.isEmpty {
+                    for j in segments.indices {
+                        if segments[j].kind == .contactCards, var cards = segments[j].contacts, !cards.isEmpty {
+                            var segChanged = false
+                            for k in cards.indices {
+                                let rid = trimmed(cards[k].remoteId)
+                                if !rid.isEmpty, incomingContactRids.contains(rid), !cards[k].isObsolete {
+                                    cards[k].isObsolete = true
+                                    segChanged = true
+                                    msgChanged = true
+                                }
+                            }
+                            if segChanged { segments[j].contacts = cards }
+                        }
+                    }
+                    if msgChanged { msg.segments = segments }
+                }
+            }
+
+            // 3) 检查发票 (通常按 id)
+            if !incomingInvoiceIds.isEmpty {
+                if var invoices = msg.invoices, !invoices.isEmpty {
+                    for j in invoices.indices {
+                        if incomingInvoiceIds.contains(invoices[j].id), !invoices[j].isObsolete {
+                            invoices[j].isObsolete = true
+                            msgChanged = true
+                        }
+                    }
+                    if msgChanged { msg.invoices = invoices }
+                }
+                if var segments = msg.segments, !segments.isEmpty {
+                    for j in segments.indices {
+                        if segments[j].kind == .invoiceCards, var cards = segments[j].invoices, !cards.isEmpty {
+                            var segChanged = false
+                            for k in cards.indices {
+                                if incomingInvoiceIds.contains(cards[k].id), !cards[k].isObsolete {
+                                    cards[k].isObsolete = true
+                                    segChanged = true
+                                    msgChanged = true
+                                }
+                            }
+                            if segChanged { segments[j].invoices = cards }
+                        }
+                    }
+                    if msgChanged { msg.segments = segments }
+                }
+            }
+
+            // 4) 检查会议
+            if !incomingMeetingRids.isEmpty {
+                if var meetings = msg.meetings, !meetings.isEmpty {
+                    for j in meetings.indices {
+                        let rid = trimmed(meetings[j].remoteId)
+                        if !rid.isEmpty, incomingMeetingRids.contains(rid), !meetings[j].isObsolete {
+                            meetings[j].isObsolete = true
+                            msgChanged = true
+                        }
+                    }
+                    if msgChanged { msg.meetings = meetings }
+                }
+                if var segments = msg.segments, !segments.isEmpty {
+                    for j in segments.indices {
+                        if segments[j].kind == .meetingCards, var cards = segments[j].meetings, !cards.isEmpty {
+                            var segChanged = false
+                            for k in cards.indices {
+                                let rid = trimmed(cards[k].remoteId)
+                                if !rid.isEmpty, incomingMeetingRids.contains(rid), !cards[k].isObsolete {
+                                    cards[k].isObsolete = true
+                                    segChanged = true
+                                    msgChanged = true
+                                }
+                            }
+                            if segChanged { segments[j].meetings = cards }
+                        }
+                    }
+                    if msgChanged { msg.segments = segments }
+                }
+            }
+
+            if msgChanged {
+                chatMessages[i] = msg
+                changed = true
+                changedMessageIds.insert(msg.id)
+            }
+        }
+        
+        if changed {
+            objectWillChange.send()
+        }
+        return changedMessageIds
     }
 
     private func mergeContactsPreservingImpression(existing: [ContactCard]?, incoming: [ContactCard]) -> [ContactCard] {
@@ -1083,7 +1411,8 @@ class AppState: ObservableObject {
                     msg.id == mid
                 }
             )
-            if let existing = try modelContext.fetch(descriptor).first {
+            let existingAll = try modelContext.fetch(descriptor)
+            if let existing = existingAll.first {
                 let updated = PersistentChatMessage.from(message)
                 existing.roleRawValue = updated.roleRawValue
                 existing.content = updated.content
@@ -1091,7 +1420,15 @@ class AppState: ObservableObject {
                 existing.isGreeting = updated.isGreeting
                 existing.messageTypeRawValue = updated.messageTypeRawValue
                 existing.encodedImageData = updated.encodedImageData
+                existing.encodedSegments = updated.encodedSegments
                 existing.isInterrupted = updated.isInterrupted
+
+                // ✅ 兼容旧版本：如果历史里同 id 有重复记录，保留第一条并删除其余，避免重启加载被旧记录覆盖
+                if existingAll.count > 1 {
+                    for extra in existingAll.dropFirst() {
+                        modelContext.delete(extra)
+                    }
+                }
             } else {
                 modelContext.insert(PersistentChatMessage.from(message))
             }
@@ -1136,6 +1473,180 @@ class AppState: ObservableObject {
 
             if changed {
                 chatMessages[i].contacts = cards
+            }
+        }
+    }
+
+    // MARK: - Chat 卡片修订（版本化：旧卡废弃 + 新卡生成）
+
+    /// 统一：提交一次“日程卡片修改”到聊天历史
+    /// - 行为：把历史中匹配同一实体的旧卡置为 isObsolete=true 并落库；然后追加一条新的 agent 消息（提示文字 + 新卡片）并落库。
+    @MainActor
+    func commitScheduleCardRevision(
+        updated: ScheduleEvent,
+        modelContext: ModelContext,
+        reasonText: String = "已更新日程"
+    ) {
+        markScheduleCardsAsObsoleteAndPersist(updated: updated, modelContext: modelContext)
+
+        var msg = ChatMessage(role: .agent, content: reasonText)
+        msg.segments = [
+            .text(reasonText),
+            .scheduleCards([updated])
+        ]
+        msg.scheduleEvents = [updated]
+
+        withAnimation {
+            chatMessages.append(msg)
+        }
+        saveMessageToStorage(msg, modelContext: modelContext)
+
+        // 确保工具箱/通知栏同步
+        Task { await ScheduleService.invalidateCachesAndNotifyRemoteScheduleDidChange() }
+    }
+
+    /// 统一：提交一次“联系人卡片修改”到聊天历史
+    /// - 行为：把历史中匹配同一实体的旧卡置为 isObsolete=true 并落库；然后追加一条新的 agent 消息（提示文字 + 新卡片）并落库。
+    @MainActor
+    func commitContactCardRevision(
+        updated: ContactCard,
+        modelContext: ModelContext,
+        reasonText: String = "已更新联系人"
+    ) {
+        markContactCardsAsObsoleteAndPersist(updated: updated, modelContext: modelContext)
+
+        // ✅ 同步到本地联系人库：让工具箱“联系人列表/详情”第一次打开就能读到更新后的字段
+        do {
+            let all = try modelContext.fetch(FetchDescriptor<Contact>())
+            _ = ContactCardLocalSync.findOrCreateContact(from: updated, allContacts: all, modelContext: modelContext)
+        } catch {
+        }
+
+        // ✅ 失效联系人网络缓存：避免工具箱进入时先用旧 cache 覆盖本地新值
+        Task { await ContactService.invalidateContactCaches() }
+
+        var msg = ChatMessage(role: .agent, content: reasonText)
+        msg.segments = [
+            .text(reasonText),
+            .contactCards([updated])
+        ]
+        msg.contacts = [updated]
+
+        withAnimation {
+            chatMessages.append(msg)
+        }
+        saveMessageToStorage(msg, modelContext: modelContext)
+    }
+
+    @MainActor
+    private func markScheduleCardsAsObsoleteAndPersist(updated: ScheduleEvent, modelContext: ModelContext) {
+        func trimmed(_ s: String?) -> String { (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
+        let rid = trimmed(updated.remoteId)
+
+        var changedMessageIds: Set<UUID> = []
+        for i in chatMessages.indices {
+            var msg = chatMessages[i]
+            var msgChanged = false
+
+            if var events = msg.scheduleEvents, !events.isEmpty {
+                for j in events.indices {
+                    let match: Bool = (!rid.isEmpty && trimmed(events[j].remoteId) == rid) || (events[j].id == updated.id)
+                    guard match, !events[j].isObsolete else { continue }
+                    events[j].isObsolete = true
+                    msgChanged = true
+                }
+                if msgChanged { msg.scheduleEvents = events }
+            }
+
+            if var segs = msg.segments, !segs.isEmpty {
+                var segsChanged = false
+                for si in segs.indices {
+                    guard segs[si].kind == .scheduleCards else { continue }
+                    guard var evs = segs[si].scheduleEvents, !evs.isEmpty else { continue }
+                    var localChanged = false
+                    for ei in evs.indices {
+                        let match: Bool = (!rid.isEmpty && trimmed(evs[ei].remoteId) == rid) || (evs[ei].id == updated.id)
+                        guard match, !evs[ei].isObsolete else { continue }
+                        evs[ei].isObsolete = true
+                        localChanged = true
+                    }
+                    if localChanged {
+                        segs[si].scheduleEvents = evs
+                        segsChanged = true
+                        msgChanged = true
+                    }
+                }
+                if segsChanged {
+                    msg.segments = segs
+                }
+            }
+
+            if msgChanged {
+                chatMessages[i] = msg
+                changedMessageIds.insert(msg.id)
+            }
+        }
+
+        // 逐条落库（保证下次打开仍能看到“划杠变灰”的旧卡）
+        for mid in changedMessageIds {
+            if let idx = chatMessages.firstIndex(where: { $0.id == mid }) {
+                saveMessageToStorage(chatMessages[idx], modelContext: modelContext)
+            }
+        }
+    }
+
+    @MainActor
+    private func markContactCardsAsObsoleteAndPersist(updated: ContactCard, modelContext: ModelContext) {
+        func trimmed(_ s: String?) -> String { (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
+        let rid = trimmed(updated.remoteId)
+
+        var changedMessageIds: Set<UUID> = []
+        for i in chatMessages.indices {
+            var msg = chatMessages[i]
+            var msgChanged = false
+
+            if var cards = msg.contacts, !cards.isEmpty {
+                for j in cards.indices {
+                    let match: Bool = (!rid.isEmpty && trimmed(cards[j].remoteId) == rid) || (cards[j].id == updated.id)
+                    guard match, !cards[j].isObsolete else { continue }
+                    cards[j].isObsolete = true
+                    msgChanged = true
+                }
+                if msgChanged { msg.contacts = cards }
+            }
+
+            if var segs = msg.segments, !segs.isEmpty {
+                var segsChanged = false
+                for si in segs.indices {
+                    guard segs[si].kind == .contactCards else { continue }
+                    guard var cs = segs[si].contacts, !cs.isEmpty else { continue }
+                    var localChanged = false
+                    for ci in cs.indices {
+                        let match: Bool = (!rid.isEmpty && trimmed(cs[ci].remoteId) == rid) || (cs[ci].id == updated.id)
+                        guard match, !cs[ci].isObsolete else { continue }
+                        cs[ci].isObsolete = true
+                        localChanged = true
+                    }
+                    if localChanged {
+                        segs[si].contacts = cs
+                        segsChanged = true
+                        msgChanged = true
+                    }
+                }
+                if segsChanged {
+                    msg.segments = segs
+                }
+            }
+
+            if msgChanged {
+                chatMessages[i] = msg
+                changedMessageIds.insert(msg.id)
+            }
+        }
+
+        for mid in changedMessageIds {
+            if let idx = chatMessages.firstIndex(where: { $0.id == mid }) {
+                saveMessageToStorage(chatMessages[idx], modelContext: modelContext)
             }
         }
     }

@@ -64,8 +64,10 @@ final class BackendChatService {
             request.httpBody = try JSONSerialization.data(withJSONObject: contentPayload)
 
 #if DEBUG
-            // ✅ 你要求的“/api/v1/chat 接口日志”：请求开始（脱敏 + 去除 base64），同时写入 AppGroupDebugLog
-            debugAlwaysLogChatRequest(requestId: requestId, request: request)
+            // Debug：聊天网络日志（默认关闭；需要时再打开）
+            if BackendChatConfig.debugLogChatNetworkBasics || BackendChatConfig.debugLogChatNetworkVerbose {
+                debugLogChatRequest(requestId: requestId, request: request)
+            }
 #endif
 
             // ✅ 即时前端输出：边收边解析，每来一个 json chunk 就回调一次（追加 segments）
@@ -75,7 +77,9 @@ final class BackendChatService {
             }
 
 #if DEBUG
-            debugAlwaysLogChatResponseHeader(requestId: requestId, response: httpResponse)
+            if BackendChatConfig.debugLogChatNetworkBasics || BackendChatConfig.debugLogChatNetworkVerbose {
+                debugLogChatResponseHeader(requestId: requestId, response: httpResponse)
+            }
 #endif
 
             // 非 200：读完整 body 作为错误信息
@@ -126,7 +130,9 @@ final class BackendChatService {
                 if joined == "[DONE]" { return }
 #if DEBUG
                 // SSE 原始事件（可能跨行）：便于你对照后端推送顺序
-                debugAlwaysLogChatRawLine(requestId: requestId, line: "SSE_EVENT: " + joined)
+                if BackendChatConfig.debugLogChatNetworkVerbose || BackendChatConfig.debugLogStreamEvents {
+                    debugLogChatRawLine(requestId: requestId, line: "SSE_EVENT: " + joined)
+                }
 #endif
                 guard let d = joined.data(using: .utf8),
                       let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any]
@@ -143,8 +149,8 @@ final class BackendChatService {
 
 #if DEBUG
                     // 原始流式行（SSE/NDJSON），默认按 chunkSummary 打印，避免“第一次点开没触发 GET”时无法复盘后端到底发了什么
-                    if BackendChatConfig.debugLogChunkSummary || BackendChatConfig.debugLogStreamEvents {
-                        debugAlwaysLogChatRawLine(requestId: requestId, line: trimmedLine)
+                    if BackendChatConfig.debugLogChatNetworkVerbose || BackendChatConfig.debugLogStreamEvents {
+                        debugLogChatRawLine(requestId: requestId, line: trimmedLine)
                     }
 #endif
 
@@ -1210,54 +1216,61 @@ final class BackendChatService {
         return "\(t.prefix(4))***\(t.suffix(4))"
     }
 
-    private static func debugAlwaysLogChatRequest(requestId: String, request: URLRequest) {
+    private static func debugLogChatRequest(requestId: String, request: URLRequest) {
+        guard BackendChatConfig.debugLogChatNetworkBasics || BackendChatConfig.debugLogChatNetworkVerbose else { return }
         let url = request.url?.absoluteString ?? "(nil)"
         let method = request.httpMethod ?? "POST"
         var lines: [String] = []
         lines.append("[BackendChat][reqId=\(requestId)] REQUEST \(method) \(url)")
-        if let headers = request.allHTTPHeaderFields, !headers.isEmpty {
-            lines.append("[HEADERS]")
-            for (k, v) in headers.sorted(by: { $0.key < $1.key }) {
-                if k.lowercased() == "x-session-id" {
-                    lines.append("\(k): \(maskedSessionId(v))")
-                } else {
+        if BackendChatConfig.debugLogChatNetworkVerbose {
+            if let headers = request.allHTTPHeaderFields, !headers.isEmpty {
+                lines.append("[HEADERS]")
+                for (k, v) in headers.sorted(by: { $0.key < $1.key }) {
+                    if k.lowercased() == "x-session-id" {
+                        lines.append("\(k): \(maskedSessionId(v))")
+                    } else {
+                        lines.append("\(k): \(v)")
+                    }
+                }
+            }
+            if let body = request.httpBody, !body.isEmpty {
+                let raw = String(data: body, encoding: .utf8) ?? "<non-utf8 body: \(body.count) bytes>"
+                let redacted = redactBase64(raw)
+                lines.append("[BODY_UTF8]")
+                lines.append(redacted)
+            } else {
+                lines.append("[BODY] <empty>")
+            }
+        }
+        let text = lines.joined(separator: "\n")
+        printLongString(text, chunkSize: 900)
+        AppGroupDebugLog.append(text)
+    }
+
+    private static func debugLogChatResponseHeader(requestId: String, response: HTTPURLResponse) {
+        guard BackendChatConfig.debugLogChatNetworkBasics || BackendChatConfig.debugLogChatNetworkVerbose else { return }
+        var lines: [String] = []
+        lines.append("[BackendChat][reqId=\(requestId)] RESPONSE status=\(response.statusCode)")
+        if BackendChatConfig.debugLogChatNetworkVerbose {
+            let pairs = response.allHeaderFields.compactMap { (k, v) -> (String, String)? in
+                let ks = String(describing: k)
+                let vs = String(describing: v)
+                return (ks, vs)
+            }.sorted(by: { $0.0 < $1.0 })
+            if !pairs.isEmpty {
+                lines.append("[RESPONSE_HEADERS]")
+                for (k, v) in pairs {
                     lines.append("\(k): \(v)")
                 }
             }
         }
-        if let body = request.httpBody, !body.isEmpty {
-            let raw = String(data: body, encoding: .utf8) ?? "<non-utf8 body: \(body.count) bytes>"
-            let redacted = redactBase64(raw)
-            lines.append("[BODY_UTF8]")
-            lines.append(redacted)
-        } else {
-            lines.append("[BODY] <empty>")
-        }
         let text = lines.joined(separator: "\n")
         printLongString(text, chunkSize: 900)
         AppGroupDebugLog.append(text)
     }
 
-    private static func debugAlwaysLogChatResponseHeader(requestId: String, response: HTTPURLResponse) {
-        var lines: [String] = []
-        lines.append("[BackendChat][reqId=\(requestId)] RESPONSE status=\(response.statusCode)")
-        let pairs = response.allHeaderFields.compactMap { (k, v) -> (String, String)? in
-            let ks = String(describing: k)
-            let vs = String(describing: v)
-            return (ks, vs)
-        }.sorted(by: { $0.0 < $1.0 })
-        if !pairs.isEmpty {
-            lines.append("[RESPONSE_HEADERS]")
-            for (k, v) in pairs {
-                lines.append("\(k): \(v)")
-            }
-        }
-        let text = lines.joined(separator: "\n")
-        printLongString(text, chunkSize: 900)
-        AppGroupDebugLog.append(text)
-    }
-
-    private static func debugAlwaysLogChatRawLine(requestId: String, line: String) {
+    private static func debugLogChatRawLine(requestId: String, line: String) {
+        guard BackendChatConfig.debugLogChatNetworkVerbose || BackendChatConfig.debugLogStreamEvents else { return }
         let t = line.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !t.isEmpty else { return }
         let redacted = redactBase64(truncate(t, limit: 6000))

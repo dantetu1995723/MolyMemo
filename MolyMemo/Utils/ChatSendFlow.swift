@@ -52,8 +52,8 @@ enum ChatSendFlow {
                 messages: messagesForModel,
                 mode: appState.currentMode,
                 onStructuredOutput: { output in
-                    DispatchQueue.main.async {
-                        appState.applyStructuredOutput(output, to: messageId)
+                    Task { @MainActor in
+                        appState.applyStructuredOutput(output, to: messageId, modelContext: modelContext)
                     }
                 },
                 onComplete: { finalText in
@@ -66,7 +66,7 @@ enum ChatSendFlow {
                     }
                 },
                 onError: { error in
-                    DispatchQueue.main.async {
+                    Task { @MainActor in
                         appState.handleStreamingError(error, for: messageId)
                         appState.isAgentTyping = false
                     }

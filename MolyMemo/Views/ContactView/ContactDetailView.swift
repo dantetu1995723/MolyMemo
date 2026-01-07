@@ -498,9 +498,11 @@ struct ContactDetailView: View {
         guard !rid.isEmpty else { return }
         guard !isLoadingDetail else { return }
 
-        // 1) 先用缓存填充（进入详情页不展示 loading 浮层，详情异步补齐即可）
+        // 1) 仅当缓存 fresh 才用来填充；过期缓存不直接应用，避免“第一次进来先看到旧值”
         if let cached = await ContactService.peekContactDetail(remoteId: rid) {
-            applyRemoteDetailCard(cached.value, rid: rid)
+            if cached.isFresh {
+                applyRemoteDetailCard(cached.value, rid: rid)
+            }
 #if DEBUG
             // ✅ Debug：即使命中缓存也强制静默刷新一次，方便你在控制台看到「后端原始日志」
             Task { await refreshRemoteDetailSilently(rid: rid) }
@@ -510,7 +512,6 @@ struct ContactDetailView: View {
             Task { await refreshRemoteDetailSilently(rid: rid) }
             return
 #else
-            if cached.isFresh { return }
             // 过期：后台静默刷新，不打断编辑体验
             Task { await refreshRemoteDetailSilently(rid: rid) }
             return
@@ -673,8 +674,8 @@ struct ContactDetailView: View {
             contact.lastModified = Date()
             try modelContext.save()
 
-            // 同步刷新聊天里的卡片展示（以 canonical 为准）
-            appState.applyUpdatedContactCardToChatMessages(canonical)
+            // 统一：旧卡废弃 + 生成新卡（保留历史版本）
+            appState.commitContactCardRevision(updated: canonical, modelContext: modelContext, reasonText: "已更新联系人")
             dismiss()
         } catch {
             alertMessage = "保存失败：\(error.localizedDescription)"

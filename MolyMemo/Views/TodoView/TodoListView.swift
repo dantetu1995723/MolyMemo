@@ -447,6 +447,7 @@ struct TodoListView: View {
                 event: $remoteDetailSelection,
                 onCommittedSave: { updated in
                     applyRemoteEventUpdate(updated)
+                    appState.commitScheduleCardRevision(updated: updated, modelContext: modelContext, reasonText: "已更新日程")
                 },
                 onCommittedDelete: { deleted in
                     applyRemoteEventDelete(deleted)

@@ -28,47 +28,49 @@ struct InvoiceCardStackView: View {
                         .cornerRadius(12)
             } else {
                 VStack(spacing: 12) {
-                    ForEach(0..<invoices.count, id: \.self) { index in
-                        let invoice = invoices[index]
-                        let scale: CGFloat = (menuInvoiceId == invoice.id
-                                              ? 1.03
-                                              : (pressingInvoiceId == invoice.id ? 0.985 : 1.0))
-                        InvoiceCardView(invoice: invoice)
-                            .frame(width: cardWidth, height: cardHeight)
-                            .scaleEffect(scale)
-                            .shadow(color: Color.black.opacity(menuInvoiceId == invoice.id ? 0.14 : 0.10),
-                                    radius: menuInvoiceId == invoice.id ? 14 : 10,
-                                    x: 0,
-                                    y: menuInvoiceId == invoice.id ? 8 : 5)
-                            .animation(.spring(response: 0.28, dampingFraction: 0.78), value: pressingInvoiceId)
-                            .animation(.spring(response: 0.35, dampingFraction: 0.72), value: menuInvoiceId)
-                            .contentShape(Rectangle())
-                            // 短按：未选中时打开详情；选中（菜单打开）时再次短按取消选中
-                            .onTapGesture {
-                                if menuInvoiceId == invoice.id {
-                                    withAnimation { menuInvoiceId = nil }
-                                    return
-                                }
-                                guard CACurrentMediaTime() - lastMenuOpenedAt > 0.18 else { return }
-                                onOpenDetail?(invoice)
+                ForEach(0..<invoices.count, id: \.self) { index in
+                    let invoice = invoices[index]
+                    let scale: CGFloat = (menuInvoiceId == invoice.id
+                                          ? 1.03
+                                          : (pressingInvoiceId == invoice.id ? 0.985 : 1.0))
+                    InvoiceCardView(invoice: invoice)
+                        .frame(width: cardWidth, height: cardHeight)
+                        .scaleEffect(scale)
+                        .shadow(color: Color.black.opacity(menuInvoiceId == invoice.id ? 0.14 : 0.10),
+                                radius: menuInvoiceId == invoice.id ? 14 : 10,
+                                x: 0,
+                                y: menuInvoiceId == invoice.id ? 8 : 5)
+                        .animation(.spring(response: 0.28, dampingFraction: 0.78), value: pressingInvoiceId)
+                        .animation(.spring(response: 0.35, dampingFraction: 0.72), value: menuInvoiceId)
+                        .contentShape(Rectangle())
+                        // 短按：未选中时打开详情；选中（菜单打开）时再次短按取消选中
+                        .onTapGesture {
+                            if menuInvoiceId == invoice.id {
+                                withAnimation { menuInvoiceId = nil }
+                                return
                             }
-                            // 长按：打开胶囊菜单（与日程一致）
-                            .onLongPressGesture(
-                                minimumDuration: 0.12,
-                                maximumDistance: 20,
-                                perform: {
-                                    guard menuInvoiceId == nil else { return }
-                                    lastMenuOpenedAt = CACurrentMediaTime()
-                                    HapticFeedback.selection()
-                                    withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
-                                        menuInvoiceId = invoice.id
-                                    }
-                                },
-                                onPressingChanged: { pressing in
-                                    if menuInvoiceId != nil { return }
-                                    pressingInvoiceId = pressing ? invoice.id : nil
+                            guard CACurrentMediaTime() - lastMenuOpenedAt > 0.18 else { return }
+                            onOpenDetail?(invoice)
+                        }
+                        // 长按：打开胶囊菜单（与日程一致）
+                        .onLongPressGesture(
+                            minimumDuration: 0.12,
+                            maximumDistance: 20,
+                            perform: {
+                                guard !invoice.isObsolete else { return } // 🚫 废弃卡片不触发菜单
+                                guard menuInvoiceId == nil else { return }
+                                lastMenuOpenedAt = CACurrentMediaTime()
+                                HapticFeedback.selection()
+                                withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                                    menuInvoiceId = invoice.id
                                 }
-                            )
+                            },
+                            onPressingChanged: { pressing in
+                                guard !invoice.isObsolete else { return }
+                                if menuInvoiceId != nil { return }
+                                pressingInvoiceId = pressing ? invoice.id : nil
+                            }
+                        )
                             // 胶囊菜单：左上角上方（不改变卡片 UI）
                             .overlay(alignment: .topLeading) {
                                 if menuInvoiceId == invoice.id {
@@ -134,19 +136,22 @@ struct InvoiceCardView: View {
             VStack(spacing: 8) {
                 Text("*发票记录*")
                     .font(.system(size: 17, weight: .bold))
-                    .foregroundColor(.black)
+                    .foregroundColor(invoice.isObsolete ? Color(hex: "999999") : .black)
+                    .strikethrough(invoice.isObsolete, color: Color(hex: "999999"))
                     .padding(.top, 14) // 与日程卡片顶部padding一致
                 
                 HStack {
                     Text(invoice.invoiceNumber)
                         .font(.system(size: 13))
-                        .foregroundColor(.gray)
+                        .foregroundColor(Color(hex: "AAAAAA"))
+                        .strikethrough(invoice.isObsolete, color: Color(hex: "AAAAAA"))
                     
                     Spacer()
                     
                     Text(formatDate(invoice.date))
                         .font(.system(size: 13))
-                        .foregroundColor(.gray)
+                        .foregroundColor(Color(hex: "AAAAAA"))
+                        .strikethrough(invoice.isObsolete, color: Color(hex: "AAAAAA"))
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 4)
@@ -162,7 +167,8 @@ struct InvoiceCardView: View {
                 // 商户名称
                 Text(invoice.merchantName)
                     .font(.system(size: 18, weight: .semibold))
-                    .foregroundColor(.black)
+                    .foregroundColor(invoice.isObsolete ? Color(hex: "999999") : .black)
+                    .strikethrough(invoice.isObsolete, color: Color(hex: "999999"))
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 20)
                     .lineLimit(2)
@@ -171,13 +177,15 @@ struct InvoiceCardView: View {
                 HStack {
                     Text(invoice.type)
                         .font(.system(size: 15))
-                        .foregroundColor(.gray)
+                        .foregroundColor(Color(hex: "BBBBBB"))
+                        .strikethrough(invoice.isObsolete, color: Color(hex: "BBBBBB"))
                     
                     Spacer()
                     
                     Text("¥ \(String(format: "%.0f", invoice.amount))")
                         .font(.system(size: 19, weight: .medium))
-                        .foregroundColor(.black)
+                        .foregroundColor(invoice.isObsolete ? Color(hex: "999999") : .black)
+                        .strikethrough(invoice.isObsolete, color: Color(hex: "999999"))
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 6)
@@ -194,7 +202,8 @@ struct InvoiceCardView: View {
                 if let notes = invoice.notes {
                     Text(notes)
                         .font(.system(size: 14))
-                        .foregroundColor(.gray)
+                        .foregroundColor(Color(hex: "BBBBBB"))
+                        .strikethrough(invoice.isObsolete, color: Color(hex: "BBBBBB"))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 20)
                         .lineLimit(2)
@@ -202,21 +211,22 @@ struct InvoiceCardView: View {
                 
                 Spacer()
             }
-            .background(Color.white)
+            .background(invoice.isObsolete ? Color(hex: "F9F9F9") : Color.white)
             
             // 2. 底部锯齿装饰
             SawtoothShape(toothWidth: 12, toothHeight: 6)
-                .fill(Color.white)
+                .fill(invoice.isObsolete ? Color(hex: "F9F9F9") : Color.white)
                 .frame(height: 6)
                 // 反转一下，让锯齿朝下（默认是矩形底部平的）
                 // 实际上我们可以让上面的 VStack 不要有圆角底部，直接接这个锯齿
                 // 为了简单，我们让上面的白色背景延伸下来，用 mask 裁剪出锯齿
         }
         // 整个卡片背景和形状
-        .background(Color.white)
+        .background(invoice.isObsolete ? Color(hex: "F9F9F9") : Color.white)
         .mask(
             TicketMaskShape(toothWidth: 24, toothHeight: 8, cornerRadius: 12)
         )
+        .opacity(invoice.isObsolete ? 0.8 : 1.0)
     }
     
     private func formatDate(_ date: Date) -> String {

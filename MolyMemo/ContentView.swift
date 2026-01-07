@@ -1038,8 +1038,8 @@ struct YuanyuanHomeView: View {
                 messages: appState.chatMessages,
                 mode: appState.currentMode,
                 onStructuredOutput: { output in
-                    DispatchQueue.main.async {
-                        self.appState.applyStructuredOutput(output, to: agentMessageId)
+                    Task { @MainActor in
+                        self.appState.applyStructuredOutput(output, to: agentMessageId, modelContext: modelContext)
                     }
                 },
                 onComplete: { finalText in
@@ -1051,7 +1051,7 @@ struct YuanyuanHomeView: View {
                     }
                 },
                 onError: { error in
-                    DispatchQueue.main.async {
+                    Task { @MainActor in
                         self.appState.handleStreamingError(error, for: agentMessageId)
                         self.appState.isAgentTyping = false
                     }
@@ -1074,8 +1074,8 @@ struct YuanyuanHomeView: View {
                 messages: appState.chatMessages,
                 mode: appState.currentMode,
                 onStructuredOutput: { output in
-                    DispatchQueue.main.async {
-                        self.appState.applyStructuredOutput(output, to: agentMessageId)
+                    Task { @MainActor in
+                        self.appState.applyStructuredOutput(output, to: agentMessageId, modelContext: modelContext)
                     }
                 },
                 onComplete: { finalText in
@@ -1087,7 +1087,7 @@ struct YuanyuanHomeView: View {
                     }
                 },
                 onError: { error in
-                    DispatchQueue.main.async {
+                    Task { @MainActor in
                         self.appState.handleStreamingError(error, for: agentMessageId)
                         self.appState.isAgentTyping = false
                     }
@@ -1387,7 +1387,7 @@ struct YuanyuanHomeView: View {
                 mode: appState.currentMode,
                 onStructuredOutput: { output in
                     DispatchQueue.main.async {
-                        appState.applyStructuredOutput(output, to: messageId)
+                        appState.applyStructuredOutput(output, to: messageId, modelContext: modelContext)
                     }
                 },
                 onComplete: { finalText in

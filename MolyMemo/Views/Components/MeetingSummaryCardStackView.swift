@@ -53,6 +53,7 @@ struct MeetingSummaryCardStackView: View {
                                 minimumDuration: 0.12,
                                 maximumDistance: 20,
                                 perform: {
+                                    guard !meeting.isObsolete else { return } // 🚫 废弃卡片不触发菜单
                                     guard menuMeetingId == nil else { return }
                                     lastMenuOpenedAt = CACurrentMediaTime()
                                     HapticFeedback.selection()
@@ -61,6 +62,7 @@ struct MeetingSummaryCardStackView: View {
                                     }
                                 },
                                 onPressingChanged: { pressing in
+                                    guard !meeting.isObsolete else { return }
                                     if menuMeetingId != nil { return }
                                     pressingMeetingId = pressing ? meeting.id : nil
                                 }
@@ -127,18 +129,21 @@ struct MeetingSummaryCardView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(meeting.title)
                             .font(.custom("SourceHanSerifSC-Bold", size: 19))
-                            .foregroundColor(Color(hex: "333333"))
+                            .foregroundColor(meeting.isObsolete ? Color(hex: "999999") : Color(hex: "333333"))
+                            .strikethrough(meeting.isObsolete, color: Color(hex: "999999"))
                             .lineLimit(1)
                         
                         Text(meeting.formattedDate)
                             .font(.system(size: 14))
-                            .foregroundColor(Color(hex: "999999"))
+                            .foregroundColor(meeting.isObsolete ? Color(hex: "AAAAAA") : Color(hex: "999999"))
+                            .strikethrough(meeting.isObsolete, color: Color(hex: "AAAAAA"))
                     }
                     
                     Spacer()
                     
                     // 播放按钮 (蓝色背景，白色播放图标)
                     Button(action: {
+                        guard !meeting.isObsolete else { return }
                         HapticFeedback.light()
                         guard canPlay else { return }
                         playback.togglePlay(meeting: meeting)
@@ -147,7 +152,7 @@ struct MeetingSummaryCardView: View {
                             Circle()
                                 .fill(Color(hex: "007AFF")) // 标准 iOS 蓝色
                                 .frame(width: 38, height: 38)
-                                .opacity(canPlay ? 1.0 : 0.35)
+                                .opacity(meeting.isObsolete ? 0.2 : (canPlay ? 1.0 : 0.35))
 
                             Image(systemName: isPlaying ? "pause.fill" : "play.fill")
                                 .font(.system(size: 16))
@@ -156,6 +161,7 @@ struct MeetingSummaryCardView: View {
                         }
                     }
                     .buttonStyle(.plain)
+                    .disabled(meeting.isObsolete)
                 }
                 .padding(.top, 24)
                 .padding(.horizontal, 24)
@@ -170,7 +176,8 @@ struct MeetingSummaryCardView: View {
                 // 总结内容
                 Text(meeting.summary)
                     .font(.system(size: 15))
-                    .foregroundColor(Color(hex: "333333").opacity(0.8))
+                    .foregroundColor(meeting.isObsolete ? Color(hex: "BBBBBB") : Color(hex: "333333").opacity(0.8))
+                    .strikethrough(meeting.isObsolete, color: Color(hex: "BBBBBB"))
                     .lineSpacing(5)
                     .lineLimit(4)
                     .padding(24)
@@ -179,8 +186,9 @@ struct MeetingSummaryCardView: View {
             
             Spacer(minLength: 0)
         }
-        .background(Color.white)
+        .background(meeting.isObsolete ? Color(hex: "F9F9F9") : Color.white)
         .cornerRadius(12)
+        .opacity(meeting.isObsolete ? 0.8 : 1.0)
     }
 }
 

@@ -167,12 +167,16 @@ struct ContactListView: View {
         // 1) 先用缓存秒开（不必每次进来都打网络）
         let base = ContactService.ListParams(page: nil, pageSize: nil, search: nil, relationshipType: nil)
         if let cached = await ContactService.peekAllContacts(maxPages: 5, pageSize: 100, baseParams: base) {
-            upsertRemoteContacts(cached.value)
-            // 即使缓存新鲜，也后台静默刷新，确保数据及时更新
+            // 仅在缓存仍 fresh 时才“写回本地联系人库”，避免旧缓存把刚更新的联系人覆盖回旧值
+            if cached.isFresh {
+                upsertRemoteContacts(cached.value)
+            }
+            // 无论是否 fresh，都后台静默刷新，确保数据及时更新
             Task {
                 await reloadRemoteContactsFromNetwork(base: base, showError: false)
             }
-            return
+            // fresh：直接返回（已秒开）；stale：继续走网络（可以展示错误提示）
+            if cached.isFresh { return }
         }
         
         // 2) 首次无缓存：走网络（可以显示错误提示）

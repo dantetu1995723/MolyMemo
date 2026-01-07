@@ -277,33 +277,7 @@ struct ChatView: View {
                 RemoteScheduleDetailLoaderSheet(
                     event: $scheduleDetailEvent,
                     onCommittedSave: { updated in
-                        guard let msgId = scheduleDetailMessageId,
-                              let evId = scheduleDetailEventId,
-                              let msgIndex = appState.chatMessages.firstIndex(where: { $0.id == msgId })
-                        else { return }
-                        
-                        var msg = appState.chatMessages[msgIndex]
-                        if var segs = msg.segments, !segs.isEmpty {
-                            var changed = false
-                            for si in segs.indices {
-                                guard var evs = segs[si].scheduleEvents, !evs.isEmpty else { continue }
-                                if let ei = evs.firstIndex(where: { $0.id == evId }) {
-                                    evs[ei] = updated
-                                    segs[si].scheduleEvents = evs
-                                    changed = true
-                                }
-                            }
-                            if changed {
-                                msg.segments = segs
-                                rebuildAggregatesFromSegments(segs, into: &msg)
-                            }
-                        }
-                        if var cards = msg.scheduleEvents, let ei = cards.firstIndex(where: { $0.id == evId }) {
-                            cards[ei] = updated
-                            msg.scheduleEvents = cards
-                        }
-                        appState.chatMessages[msgIndex] = msg
-                        appState.saveMessageToStorage(msg, modelContext: modelContext)
+                        appState.commitScheduleCardRevision(updated: updated, modelContext: modelContext, reasonText: "已更新日程")
                     },
                     onCommittedDelete: { deleted in
                         guard let msgId = scheduleDetailMessageId,
@@ -1350,8 +1324,8 @@ struct AIBubble: View {
                 messages: Array(appState.chatMessages.prefix(currentIndex)), // 只包含当前消息之前的消息
                 mode: appState.currentMode,
                 onStructuredOutput: { output in
-                    DispatchQueue.main.async {
-                        appState.applyStructuredOutput(output, to: messageId)
+                    Task { @MainActor in
+                        appState.applyStructuredOutput(output, to: messageId, modelContext: modelContext)
                     }
                 },
                 onComplete: { finalText in
@@ -1364,7 +1338,7 @@ struct AIBubble: View {
                     }
                 },
                 onError: { error in
-                    DispatchQueue.main.async {
+                    Task { @MainActor in
                         appState.handleStreamingError(error, for: messageId)
                         appState.isAgentTyping = false
                     }
@@ -1716,7 +1690,7 @@ struct MessageActionButtons: View {
                 mode: appState.currentMode,
                 onStructuredOutput: { output in
                     DispatchQueue.main.async {
-                        appState.applyStructuredOutput(output, to: messageId)
+                        appState.applyStructuredOutput(output, to: messageId, modelContext: modelContext)
                     }
                 },
                 onComplete: { finalText in
