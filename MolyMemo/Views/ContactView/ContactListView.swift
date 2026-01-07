@@ -244,6 +244,10 @@ struct ContactListView: View {
                 company: card.company,
                 identity: card.title,
                 email: card.email,
+                birthday: {
+                    let v = (card.birthday ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                    return v.isEmpty ? nil : v
+                }(),
                 notes: {
                     let n = (card.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                     return n.isEmpty ? nil : n
@@ -268,6 +272,7 @@ struct ContactListView: View {
         if let v = card.title?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty { contact.identity = v }
         if let v = card.phone?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty { contact.phoneNumber = v }
         if let v = card.email?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty { contact.email = v }
+        if let v = card.birthday?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty { contact.birthday = v }
         
         let n = (card.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         if !n.isEmpty {

@@ -310,6 +310,16 @@ enum ContactService {
         debugPrintLongString(header + "\n" + body, chunkSize: 900)
         AppGroupDebugLog.append(header + " " + body)
     }
+    
+    /// 更新请求：无视 debug 开关，强制打印「即将发送的 payload」（便于你核对 birthday 是否真的传到了后端）。
+    private static func debugAlwaysPrintUpdateRequestPayload(remoteId: String, url: URL, payload: [String: Any]) {
+        let birthday = (payload["birthday"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let header = "[ContactUpdateRequest][id=\(remoteId)] PUT \(url.absoluteString) birthday=\(birthday.isEmpty ? "<nil>" : birthday)"
+        let data = (try? JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys])) ?? Data()
+        let body = String(data: data, encoding: .utf8) ?? "<non-utf8 payload>"
+        debugPrintLongString(header + "\n" + body, chunkSize: 900)
+        AppGroupDebugLog.append(header + " " + body)
+    }
 #endif
     
     private static func makeURL(path: String, queryItems: [URLQueryItem]) throws -> URL {
@@ -413,6 +423,43 @@ enum ContactService {
         let name = (dict["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !name.isEmpty else { return nil }
         
+        func normalizeBirthday(_ s: String?) -> String? {
+            let raw = (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !raw.isEmpty else { return nil }
+            
+            // 直接 yyyy-MM-dd
+            let df = DateFormatter()
+            df.calendar = Calendar(identifier: .gregorian)
+            df.locale = Locale(identifier: "en_US_POSIX")
+            df.timeZone = TimeZone.current
+            df.dateFormat = "yyyy-MM-dd"
+            if let d = df.date(from: raw) { return df.string(from: d) }
+            
+            // ISO8601 / 带时间
+            if raw.contains("T") || raw.contains("Z") {
+                let iso = ISO8601DateFormatter()
+                iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                if let d = iso.date(from: raw) { return df.string(from: d) }
+                let iso2 = ISO8601DateFormatter()
+                iso2.formatOptions = [.withInternetDateTime]
+                if let d = iso2.date(from: raw) { return df.string(from: d) }
+            }
+            
+            func tryFormat(_ fmt: String) -> Date? {
+                let f = DateFormatter()
+                f.calendar = Calendar(identifier: .gregorian)
+                f.locale = Locale(identifier: "en_US_POSIX")
+                f.timeZone = TimeZone.current
+                f.dateFormat = fmt
+                return f.date(from: raw)
+            }
+            let fmts = ["yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd'T'HH:mm:ss", "yyyy-MM-dd'T'HH:mm", "yyyy/MM/dd", "yyyy/M/d", "yyyy年M月d日"]
+            for fmt in fmts {
+                if let d = tryFormat(fmt) { return df.string(from: d) }
+            }
+            return raw.isEmpty ? nil : raw
+        }
+        
         var card = ContactCard(
             name: name,
             englishName: string(dict, ["english_name", "englishName"]),
@@ -420,7 +467,7 @@ enum ContactService {
             title: string(dict, ["position", "title", "job_title"]),
             phone: string(dict, ["phone", "phone_number", "mobile"]),
             email: string(dict, ["email"]),
-            birthday: string(dict, ["birthday", "birth", "birthday_text", "birthdayText"]),
+            birthday: normalizeBirthday(string(dict, ["birthday", "birth", "birthday_text", "birthdayText"])),
             gender: string(dict, ["gender", "sex"]),
             industry: string(dict, ["industry"]),
             location: string(dict, ["location", "region", "city", "address"]),
@@ -595,6 +642,10 @@ enum ContactService {
         try applyCommonHeaders(to: &request)
         request.httpBody = try JSONSerialization.data(withJSONObject: payload, options: [])
         debugPrintRequest(request, tag: "update")
+        
+#if DEBUG
+        debugAlwaysPrintUpdateRequestPayload(remoteId: trimmed, url: url, payload: payload)
+#endif
         
         do {
             let (data, response) = try await URLSession.shared.data(for: request)

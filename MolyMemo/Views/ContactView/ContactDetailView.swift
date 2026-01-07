@@ -1,5 +1,8 @@
 import SwiftUI
 import SwiftData
+#if canImport(UIKit)
+import UIKit
+#endif
 
 struct ContactDetailView: View {
     @Environment(\.modelContext) private var modelContext
@@ -13,6 +16,8 @@ struct ContactDetailView: View {
     @State private var isSubmitting: Bool = false
     @State private var submittingAction: SubmittingAction? = nil
     @State private var alertMessage: String? = nil
+    /// 严格遵从：remoteId 存在时，必须等后端详情至少应用一次，避免 UI 以本地空值/默认值兜底。
+    @State private var didApplyRemoteDetailOnce: Bool = false
     
     // 与「日程详情」一致：用 edited 草稿承载编辑态，✅ 提交保存后再写回 contact
     @State private var editedName: String = ""
@@ -23,6 +28,9 @@ struct ContactDetailView: View {
     @State private var editedIndustry: String = ""
     @State private var editedLocation: String = ""
     @State private var editedBirthday: String = ""
+    @State private var editedBirthdayDate: Date? = nil
+    @State private var showBirthdayPickerSheet: Bool = false
+    @State private var birthdayPickerDate: Date = Date()
     /// 后端约定：male / female / other（空字符串表示未设置）
     @State private var editedGender: String = ""
     @State private var editedNotes: String = ""
@@ -59,9 +67,75 @@ struct ContactDetailView: View {
     private let secondaryTextColor = Color(hex: "999999")
     private let iconColor = Color(hex: "CCCCCC")
     
+    private static let birthdayFormatter: DateFormatter = {
+        let df = DateFormatter()
+        df.calendar = Calendar(identifier: .gregorian)
+        df.locale = Locale(identifier: "en_US_POSIX")
+        df.timeZone = TimeZone.current
+        df.dateFormat = "yyyy-MM-dd"
+        return df
+    }()
+    
+    private func parseBirthday(_ raw: String) -> Date? {
+        let s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !s.isEmpty else { return nil }
+        // 1) 最常见：yyyy-MM-dd
+        if let d = Self.birthdayFormatter.date(from: s) { return d }
+        
+        // 2) ISO8601 / 带时间（后端常见）
+        if s.contains("T") || s.contains("Z") {
+            let iso = ISO8601DateFormatter()
+            iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            if let d = iso.date(from: s) { return d }
+            let iso2 = ISO8601DateFormatter()
+            iso2.formatOptions = [.withInternetDateTime]
+            if let d = iso2.date(from: s) { return d }
+        }
+        
+        // 3) 其它常见：yyyy-MM-dd HH:mm:ss / yyyy-MM-dd'T'HH:mm:ss / yyyy/MM/dd / 中文年月日
+        func tryFormat(_ fmt: String) -> Date? {
+            let df = DateFormatter()
+            df.calendar = Calendar(identifier: .gregorian)
+            df.locale = Locale(identifier: "en_US_POSIX")
+            df.timeZone = TimeZone.current
+            df.dateFormat = fmt
+            return df.date(from: s)
+        }
+        if let d = tryFormat("yyyy-MM-dd HH:mm:ss") { return d }
+        if let d = tryFormat("yyyy-MM-dd'T'HH:mm:ss") { return d }
+        if let d = tryFormat("yyyy-MM-dd'T'HH:mm") { return d }
+        if let d = tryFormat("yyyy/MM/dd") { return d }
+        if let d = tryFormat("yyyy/M/d") { return d }
+        if let d = tryFormat("yyyy年M月d日") { return d }
+        
+        return nil
+    }
+    
+    private func formatBirthday(_ date: Date) -> String {
+        Self.birthdayFormatter.string(from: date)
+    }
+    
     private enum SubmittingAction {
         case save
         case delete
+    }
+    
+    /// 仅在用户真实输入时标记 hasUserEdited（避免程序性同步草稿触发 onChange 误判）。
+    private func userEditedBinding(_ binding: Binding<String>) -> Binding<String> {
+        Binding(
+            get: { binding.wrappedValue },
+            set: { newValue in
+                binding.wrappedValue = newValue
+                hasUserEdited = true
+            }
+        )
+    }
+    
+    private var isBirthdayPickerEnabled: Bool {
+        let rid = (contact.remoteId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if rid.isEmpty { return !isSubmitting }
+        // 有 remoteId：必须等后端详情至少应用一次才允许点开，避免第一次进来默认“今天”
+        return !isSubmitting && !isLoadingDetail && didApplyRemoteDetailOnce
     }
     
     // 语音输入相关
@@ -148,7 +222,7 @@ struct ContactDetailView: View {
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 24) {
                         // 姓名
-                        TextField("姓名", text: $editedName)
+                        TextField("姓名", text: userEditedBinding($editedName))
                             .font(.system(size: 34, weight: .bold))
                             .foregroundColor(primaryTextColor)
                             .multilineTextAlignment(.center)
@@ -179,9 +253,9 @@ struct ContactDetailView: View {
                                 EditableInfoRow(
                                     icon: "building.2",
                                     placeholder: "公司",
-                                    text: $editedCompany,
+                                    text: userEditedBinding($editedCompany),
                                     subPlaceholder: "职位",
-                                    subText: $editedIdentity,
+                                    subText: userEditedBinding($editedIdentity),
                                     isSubmitting: isSubmitting,
                                     primaryTextColor: primaryTextColor,
                                     secondaryTextColor: secondaryTextColor,
@@ -192,7 +266,7 @@ struct ContactDetailView: View {
                                 EditableSingleRow(
                                     icon: "bag",
                                     placeholder: "行业",
-                                    text: $editedIndustry,
+                                    text: userEditedBinding($editedIndustry),
                                     isSubmitting: isSubmitting,
                                     primaryTextColor: primaryTextColor,
                                     secondaryTextColor: secondaryTextColor,
@@ -203,7 +277,7 @@ struct ContactDetailView: View {
                                 EditableSingleRow(
                                     icon: "mappin.and.ellipse",
                                     placeholder: "地区",
-                                    text: $editedLocation,
+                                    text: userEditedBinding($editedLocation),
                                     isSubmitting: isSubmitting,
                                     primaryTextColor: primaryTextColor,
                                     secondaryTextColor: secondaryTextColor,
@@ -219,7 +293,7 @@ struct ContactDetailView: View {
                                     EditableSingleRow(
                                         icon: "phone",
                                         placeholder: "手机号",
-                                        text: $editedPhone,
+                                        text: userEditedBinding($editedPhone),
                                         keyboardType: .phonePad,
                                         isSubmitting: isSubmitting,
                                         primaryTextColor: primaryTextColor,
@@ -246,7 +320,7 @@ struct ContactDetailView: View {
                                 EditableSingleRow(
                                     icon: "envelope",
                                     placeholder: "邮箱",
-                                    text: $editedEmail,
+                                    text: userEditedBinding($editedEmail),
                                     keyboardType: .emailAddress,
                                     isSubmitting: isSubmitting,
                                     primaryTextColor: primaryTextColor,
@@ -259,16 +333,43 @@ struct ContactDetailView: View {
                                     .padding(.vertical, 8)
                                 
                                 // 生日
-                                EditableSingleRow(
-                                    icon: "calendar",
-                                    placeholder: "生日（YYYY-MM-DD）",
-                                    text: $editedBirthday,
-                                    keyboardType: .numbersAndPunctuation,
-                                    isSubmitting: isSubmitting,
-                                    primaryTextColor: primaryTextColor,
-                                    secondaryTextColor: secondaryTextColor,
-                                    iconColor: iconColor
-                                )
+                                Button(action: {
+                                    HapticFeedback.light()
+                                    // sheet 方式：点击即弹出系统弹窗；不依赖行内 frame，逻辑更简单稳定
+                                    showGenderMenu = false
+                                    showDeleteMenu = false
+
+                                    // 以“后端真相”为准：若草稿为空，优先用 contact.birthday 初始化
+                                    let rawEdited = editedBirthday.trimmingCharacters(in: .whitespacesAndNewlines)
+                                    let rawContact = (contact.birthday ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                                    let raw = rawEdited.isEmpty ? rawContact : rawEdited
+                                    
+                                    if raw.isEmpty {
+                                        birthdayPickerDate = Date()
+                                    } else if let d = editedBirthdayDate ?? parseBirthday(raw) {
+                                        birthdayPickerDate = d
+                                    } else {
+                                        birthdayPickerDate = Date()
+                                    }
+                                    showBirthdayPickerSheet = true
+                                }) {
+                                    HStack(spacing: 0) {
+                                        LabelWithIcon(icon: "calendar", title: "生日")
+                                        Spacer()
+                                        Text(editedBirthday.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "未设置" : editedBirthday)
+                                            .font(.system(size: 16))
+                                            .foregroundColor(secondaryTextColor)
+                                        Image(systemName: "chevron.right")
+                                            .font(.system(size: 12, weight: .semibold))
+                                            .foregroundColor(iconColor)
+                                            .padding(.leading, 6)
+                                            .padding(.trailing, 20)
+                                    }
+                                    .padding(.leading, 20)
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(!isBirthdayPickerEnabled)
                                 
                                 // 性别
                                 HStack(spacing: 0) {
@@ -308,7 +409,7 @@ struct ContactDetailView: View {
                                         .foregroundColor(iconColor)
                                         .frame(width: 24, alignment: .leading)
                                     
-                                    TextField("添加备注", text: $editedNotes, axis: .vertical)
+                                    TextField("添加备注", text: userEditedBinding($editedNotes), axis: .vertical)
                                         .font(.system(size: 16))
                                         .foregroundColor(primaryTextColor)
                                         .lineLimit(4...10)
@@ -456,17 +557,24 @@ struct ContactDetailView: View {
                 }
             }
         }
-        // 任何编辑即标记
-        .onChange(of: editedName) { _, _ in hasUserEdited = true }
-        .onChange(of: editedCompany) { _, _ in hasUserEdited = true }
-        .onChange(of: editedIdentity) { _, _ in hasUserEdited = true }
-        .onChange(of: editedPhone) { _, _ in hasUserEdited = true }
-        .onChange(of: editedEmail) { _, _ in hasUserEdited = true }
-        .onChange(of: editedIndustry) { _, _ in hasUserEdited = true }
-        .onChange(of: editedLocation) { _, _ in hasUserEdited = true }
-        .onChange(of: editedBirthday) { _, _ in hasUserEdited = true }
-        .onChange(of: editedGender) { _, _ in hasUserEdited = true }
-        .onChange(of: editedNotes) { _, _ in hasUserEdited = true }
+        // ✅ hasUserEdited 由 userEditedBinding / 显式交互（性别/生日）统一触发，避免程序性同步误判
+        .sheet(isPresented: $showBirthdayPickerSheet) {
+            BirthdayPickerSheet(
+                date: $birthdayPickerDate,
+                onDateChange: { d in
+                    var t = Transaction()
+                    t.disablesAnimations = true
+                    withTransaction(t) {
+                        hasUserEdited = true
+                        editedBirthdayDate = d
+                        editedBirthday = formatBirthday(d)
+                    }
+                }
+            )
+            .presentationDetents([.height(380)])
+            .presentationBackground(Color.white)
+            .presentationDragIndicator(.visible)
+        }
     }
     
     // Voice logic
@@ -495,7 +603,10 @@ struct ContactDetailView: View {
     @MainActor
     private func loadDetailIfNeeded() async {
         let rid = (contact.remoteId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !rid.isEmpty else { return }
+        guard !rid.isEmpty else {
+            didApplyRemoteDetailOnce = true
+            return
+        }
         guard !isLoadingDetail else { return }
 
         // 1) 仅当缓存 fresh 才用来填充；过期缓存不直接应用，避免“第一次进来先看到旧值”
@@ -563,6 +674,7 @@ struct ContactDetailView: View {
         contact.notes = norm(card.notes)
         contact.lastModified = Date()
         try? modelContext.save()
+        didApplyRemoteDetailOnce = true
         // 只有用户还没开始编辑时，才用后端返回覆盖草稿
         syncDraftFromContactIfNeeded(force: false)
     }
@@ -684,7 +796,7 @@ struct ContactDetailView: View {
     
     private func syncDraftFromContactIfNeeded(force: Bool) {
         if didInitDraft, !force, hasUserEdited { return }
-        
+
         editedName = contact.name
         editedCompany = contact.company ?? ""
         editedIdentity = contact.identity ?? ""
@@ -693,6 +805,7 @@ struct ContactDetailView: View {
         editedIndustry = contact.industry ?? ""
         editedLocation = contact.location ?? ""
         editedBirthday = contact.birthday ?? ""
+        editedBirthdayDate = parseBirthday(editedBirthday)
         editedGender = normalizedGenderValue(contact.gender ?? "")
         editedNotes = contact.notes ?? ""
         didInitDraft = true
@@ -727,6 +840,28 @@ struct ContactDetailView: View {
 }
 
 // MARK: - 辅助组件
+
+private struct BirthdayPickerSheet: View {
+    @Binding var date: Date
+    let onDateChange: (Date) -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            DatePicker(
+                "",
+                selection: $date,
+                displayedComponents: .date
+            )
+            .datePickerStyle(.graphical)
+            .environment(\.locale, Locale(identifier: "zh_CN"))
+            .padding(.horizontal)
+            .padding(.top, 10)
+            .onChange(of: date) { _, newValue in
+                onDateChange(newValue)
+            }
+        }
+    }
+}
 
 struct TabButton: View {
     let title: String

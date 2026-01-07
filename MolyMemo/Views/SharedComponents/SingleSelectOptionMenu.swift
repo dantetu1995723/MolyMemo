@@ -120,6 +120,15 @@ enum PopupMenuPositioning {
         y = min(y, rootFrame.height - menuHeight - bottomPadding)
         return CGSize(width: x, height: y)
     }
+    
+    /// 让菜单“底边”对齐到触发行的底边（菜单向上展开），用于日历这类需要“盖住触发内容”的浮层。
+    static func coveringRowFromBottomOffset(for globalFrame: CGRect, in rootFrame: CGRect, menuWidth: CGFloat, menuHeight: CGFloat, topPadding: CGFloat = 12, bottomPadding: CGFloat = 16) -> CGSize {
+        let x = max(16, min(globalFrame.maxX - rootFrame.minX - menuWidth, (rootFrame.width - menuWidth - 16)))
+        var y = (globalFrame.maxY - rootFrame.minY) - menuHeight
+        y = max(topPadding, y)
+        y = min(y, rootFrame.height - menuHeight - bottomPadding)
+        return CGSize(width: x, height: y)
+    }
 }
 
 
