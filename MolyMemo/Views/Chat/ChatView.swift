@@ -1034,26 +1034,11 @@ struct ChatView: View {
     
     // MARK: - Helper Methods
     
-    /// 自动滚动到“最新消息”（优先：最新 AI 气泡；否则：最新一条；再否则：底部锚点）
+    /// 自动滚动到“最新位置”（统一滚到底部锚点，确保最后一条是用户消息时也能到最底）
     private func scrollToLatestMessageOnOpen(proxy: ScrollViewProxy) {
-        // 选择滚动目标：
-        // - 通常对话最后一条是 AI；如果最后一条是用户且 AI 仍在输入/尚未追加气泡，则滚到最后一条更符合直觉
-        let targetId: UUID? = {
-            guard !appState.chatMessages.isEmpty else { return nil }
-            if let last = appState.chatMessages.last {
-                if last.role == .agent { return last.id }
-                if appState.isAgentTyping { return last.id }
-            }
-            return appState.chatMessages.last(where: { $0.role == .agent })?.id ?? appState.chatMessages.last?.id
-        }()
-
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
             withAnimation(.easeInOut(duration: 0.22)) {
-                if let id = targetId {
-                    proxy.scrollTo(id, anchor: .bottom)
-                } else {
-                    proxy.scrollTo("bottomID", anchor: .bottom)
-                }
+                proxy.scrollTo("bottomID", anchor: .bottom)
             }
         }
     }

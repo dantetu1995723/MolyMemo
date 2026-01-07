@@ -102,7 +102,8 @@ private struct RemoteScheduleRow: View {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(event.title)
                         .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(.black.opacity(0.88))
+                        .foregroundColor(event.isObsolete ? .black.opacity(0.35) : .black.opacity(0.88))
+                        .strikethrough(event.isObsolete, color: .black.opacity(0.25))
                         .lineLimit(1)
                     
                     Spacer(minLength: 0)
@@ -110,7 +111,7 @@ private struct RemoteScheduleRow: View {
                     if !event.endTimeProvided {
                         Text("未设置结束")
                             .font(.system(size: 11, weight: .semibold))
-                            .foregroundColor(.black.opacity(0.45))
+                            .foregroundColor(event.isObsolete ? .black.opacity(0.25) : .black.opacity(0.45))
                             .padding(.horizontal, 8)
                             .padding(.vertical, 4)
                             .background(Color.black.opacity(0.04))
@@ -121,7 +122,8 @@ private struct RemoteScheduleRow: View {
                 if !event.description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     Text(event.description)
                         .font(.system(size: 13))
-                        .foregroundColor(.black.opacity(0.55))
+                        .foregroundColor(event.isObsolete ? .black.opacity(0.28) : .black.opacity(0.55))
+                        .strikethrough(event.isObsolete, color: .black.opacity(0.18))
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -139,7 +141,16 @@ private struct RemoteScheduleRow: View {
     @ViewBuilder
     private var deleteButton: some View {
         ZStack {
-            if isDeleting {
+            if event.isObsolete {
+                Image(systemName: "trash")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(.black.opacity(0.18))
+                    .frame(width: 32, height: 32)
+                    .background(
+                        Circle()
+                            .fill(Color.black.opacity(0.03))
+                    )
+            } else if isDeleting {
                 ProgressView()
                     .tint(.red)
                     .scaleEffect(0.8)
@@ -168,16 +179,18 @@ private struct RemoteScheduleRow: View {
         VStack(spacing: 4) {
             Text(displayStartTime())
                 .font(.system(size: 14, weight: .bold, design: .rounded))
-                .foregroundColor(.black.opacity(0.88))
+                .foregroundColor(event.isObsolete ? .black.opacity(0.35) : .black.opacity(0.88))
+                .strikethrough(event.isObsolete, color: .black.opacity(0.22))
             
             if let end = displayEndTime() {
                 Text(end)
                     .font(.system(size: 12, weight: .semibold, design: .rounded))
-                    .foregroundColor(.black.opacity(0.5))
+                    .foregroundColor(event.isObsolete ? .black.opacity(0.25) : .black.opacity(0.5))
+                    .strikethrough(event.isObsolete, color: .black.opacity(0.18))
             } else {
                 Text("开始")
                     .font(.system(size: 11, weight: .semibold, design: .rounded))
-                    .foregroundColor(.black.opacity(0.45))
+                    .foregroundColor(event.isObsolete ? .black.opacity(0.25) : .black.opacity(0.45))
             }
         }
         .frame(width: 66)
@@ -186,7 +199,10 @@ private struct RemoteScheduleRow: View {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(
                     LinearGradient(
-                        colors: [Color.white.opacity(0.9), Color.black.opacity(0.02)],
+                        colors: [
+                            Color.white.opacity(event.isObsolete ? 0.75 : 0.9),
+                            Color.black.opacity(event.isObsolete ? 0.01 : 0.02)
+                        ],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
@@ -194,7 +210,7 @@ private struct RemoteScheduleRow: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color.black.opacity(0.06), lineWidth: 1)
+                .stroke(Color.black.opacity(event.isObsolete ? 0.04 : 0.06), lineWidth: 1)
         )
     }
     
@@ -203,7 +219,7 @@ private struct RemoteScheduleRow: View {
             .fill(.ultraThinMaterial)
             .overlay(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(Color.white.opacity(0.55))
+                    .fill(Color.white.opacity(event.isObsolete ? 0.40 : 0.55))
             )
             .shadow(color: Color.black.opacity(0.06), radius: 10, x: 0, y: 5)
     }
@@ -766,12 +782,8 @@ struct TodoListView: View {
             deletingRemoteIds.insert(rid)
             defer { deletingRemoteIds.remove(rid) }
             
-            do {
-                await appState.softDeleteSchedule(event, modelContext: modelContext)
-                applyRemoteEventSoftDelete(event)
-            } catch {
-                // 不做 UI 兜底提示，只打印，方便定位后端 404 的原因
-            }
+            await appState.softDeleteSchedule(event, modelContext: modelContext)
+            applyRemoteEventSoftDelete(event)
         }
     }
 

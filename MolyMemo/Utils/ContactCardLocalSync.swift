@@ -154,6 +154,12 @@ enum ContactCardLocalSync {
             contact.avatarData = avatar
             changed = true
         }
+        
+        // 软删除/废弃态同步：卡片被删除后，工具箱联系人列表也应置灰划杠
+        if card.isObsolete, !contact.isObsolete {
+            contact.isObsolete = true
+            changed = true
+        }
 
         if changed {
             contact.lastModified = Date()

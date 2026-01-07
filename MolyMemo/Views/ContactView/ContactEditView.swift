@@ -363,7 +363,8 @@ struct ContactEditView: View {
                         payload["notes"] = notes
                     }
                     
-                    if let updated = try await ContactService.updateContact(remoteId: rid, payload: payload, keepLocalId: existingContact.id) {
+                    let result = try await ContactService.updateContact(remoteId: rid, payload: payload, keepLocalId: existingContact.id)
+                    if let updated = result.card {
                         existingContact.remoteId = updated.remoteId ?? rid
                         existingContact.name = updated.name
                         if let v = updated.company?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty { existingContact.company = v }

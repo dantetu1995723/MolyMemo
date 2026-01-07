@@ -569,6 +569,10 @@ struct ContactDetailView: View {
                         editedBirthdayDate = d
                         editedBirthday = formatBirthday(d)
                     }
+                    // 选中日期后自动收起（日历 sheet 关闭）
+                    DispatchQueue.main.async {
+                        showBirthdayPickerSheet = false
+                    }
                 }
             )
             .presentationDetents([.height(380)])
@@ -686,12 +690,8 @@ struct ContactDetailView: View {
         submittingAction = .delete
         defer { isSubmitting = false }
         
-        do {
-            try await DeleteActions.deleteContact(contact, modelContext: modelContext)
-            dismiss()
-        } catch {
-            alertMessage = "删除失败：\(error.localizedDescription)"
-        }
+        await appState.softDeleteContactModel(contact, modelContext: modelContext)
+        dismiss()
         submittingAction = nil
     }
     
@@ -742,13 +742,14 @@ struct ContactDetailView: View {
             if !notes.isEmpty { payload["notes"] = notes }
 
             let currentRid = (contact.remoteId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            let remoteCard: ContactCard?
+            let opResult: ContactService.OperationResult
             if currentRid.isEmpty {
-                remoteCard = try await ContactService.createContact(payload: payload, keepLocalId: contact.id)
+                opResult = try await ContactService.createContact(payload: payload, keepLocalId: contact.id)
             } else {
-                remoteCard = try await ContactService.updateContact(remoteId: currentRid, payload: payload, keepLocalId: contact.id)
+                opResult = try await ContactService.updateContact(remoteId: currentRid, payload: payload, keepLocalId: contact.id)
             }
 
+            let remoteCard = opResult.card
             let effectiveRid = ((remoteCard?.remoteId ?? currentRid)).trimmingCharacters(in: .whitespacesAndNewlines)
             guard !effectiveRid.isEmpty else {
                 throw NSError(domain: "MolyMemo.Contact", code: -2, userInfo: [NSLocalizedDescriptionKey: "后端未返回联系人ID，无法确保已同步到后端"])
@@ -787,7 +788,9 @@ struct ContactDetailView: View {
             try modelContext.save()
 
             // 统一：旧卡废弃 + 生成新卡（保留历史版本）
-            appState.commitContactCardRevision(updated: canonical, modelContext: modelContext, reasonText: "已更新联系人")
+            // ✅ 仅展示后端给的文案；若后端没有给，则不再硬编码“已更新联系人”，只更新卡片本身。
+            let reasonText = (opResult.displayText ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            appState.commitContactCardRevision(updated: canonical, modelContext: modelContext, reasonText: reasonText)
             dismiss()
         } catch {
             alertMessage = "保存失败：\(error.localizedDescription)"

@@ -758,18 +758,14 @@ class AppState: ObservableObject {
         // 1) 聊天历史：同实体卡片置灰划杠并落库
         markContactCardsAsObsoleteAndPersist(updated: card, modelContext: modelContext)
         
-        // 2) 工具箱联系人库：标记本地 Contact 为 obsolete（不硬删）
+        // 2) 工具箱联系人库：确保本地 Contact 存在，并标记为 obsolete（不硬删）
         do {
-            let cid = card.id
-            let desc = FetchDescriptor<Contact>(predicate: #Predicate<Contact> { c in
-                c.id == cid
-            })
-            if let existing = try modelContext.fetch(desc).first {
-                if !existing.isObsolete {
-                    existing.isObsolete = true
-                    existing.lastModified = Date()
-                    try? modelContext.save()
-                }
+            let all = try modelContext.fetch(FetchDescriptor<Contact>())
+            let local = ContactCardLocalSync.findOrCreateContact(from: card, allContacts: all, modelContext: modelContext)
+            if !local.isObsolete {
+                local.isObsolete = true
+                local.lastModified = Date()
+                try? modelContext.save()
             }
         } catch {
         }
@@ -1716,11 +1712,19 @@ class AppState: ObservableObject {
         // ✅ 失效联系人网络缓存：避免工具箱进入时先用旧 cache 覆盖本地新值
         Task { await ContactService.invalidateContactCaches() }
 
-        var msg = ChatMessage(role: .agent, content: reasonText)
-        msg.segments = [
-            .text(reasonText),
-            .contactCards([updated])
-        ]
+        let t = reasonText.trimmingCharacters(in: .whitespacesAndNewlines)
+        var msg = ChatMessage(role: .agent, content: t)
+        // ✅ 若没有后端文案，则只追加卡片，不再硬塞默认提示词
+        if t.isEmpty {
+            msg.segments = [
+                .contactCards([updated])
+            ]
+        } else {
+            msg.segments = [
+                .text(t),
+                .contactCards([updated])
+            ]
+        }
         msg.contacts = [updated]
 
         withAnimation {

@@ -5,7 +5,10 @@ struct ContactListView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var appState: AppState
-    @Query(sort: \Contact.name) private var allContacts: [Contact]
+    /// 工具箱联系人列表：不展示已删除（isObsolete=true）的联系人
+    @Query(filter: #Predicate<Contact> { c in
+        c.isObsolete == false
+    }, sort: \Contact.name) private var allContacts: [Contact]
     @State private var selectedContact: Contact?
     @State private var scrollProxy: ScrollViewProxy?
     @State private var isLoading = true
@@ -205,18 +208,22 @@ struct ContactListView: View {
     @MainActor
     private func upsertRemoteContacts(_ cards: [ContactCard]) {
         guard !cards.isEmpty else { return }
+
+        // 注意：列表 Query 已过滤 isObsolete；同步时必须用“全量联系人（含已删除）”来做去重匹配，
+        // 否则会把已删除联系人当作新联系人再次 insert，导致“删了又回来/重复”。
+        let existingAll: [Contact] = (try? modelContext.fetch(FetchDescriptor<Contact>())) ?? []
         
         for card in cards {
             let rid = (card.remoteId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             
             // 1) 优先按 remoteId 命中
-            if !rid.isEmpty, let existing = allContacts.first(where: { ($0.remoteId ?? "") == rid }) {
+            if !rid.isEmpty, let existing = existingAll.first(where: { ($0.remoteId ?? "") == rid }) {
                 applyRemote(card: card, to: existing)
                 continue
             }
             
             // 2) 若 remoteId 是 UUID，且本地 id 命中，也算同一个
-            if let u = UUID(uuidString: rid), let existing = allContacts.first(where: { $0.id == u }) {
+            if let u = UUID(uuidString: rid), let existing = existingAll.first(where: { $0.id == u }) {
                 if (existing.remoteId ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     existing.remoteId = rid
                 }
@@ -227,7 +234,7 @@ struct ContactListView: View {
             // 3) 兜底：按 name + phone
             if let phone = card.phone?.trimmingCharacters(in: .whitespacesAndNewlines),
                !phone.isEmpty,
-               let existing = allContacts.first(where: { $0.name == card.name && ($0.phoneNumber ?? "") == phone })
+               let existing = existingAll.first(where: { $0.name == card.name && ($0.phoneNumber ?? "") == phone })
             {
                 if !rid.isEmpty, (existing.remoteId ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     existing.remoteId = rid
@@ -293,15 +300,11 @@ struct ContactListView: View {
             deletingContactIds.insert(contact.id)
             defer { deletingContactIds.remove(contact.id) }
             
-            do {
-                deleteErrorText = nil
-                if let current = selectedContact, current.id == contact.id {
-                    selectedContact = nil
-                }
-                try await DeleteActions.deleteContact(contact, modelContext: modelContext)
-            } catch {
-                deleteErrorText = "删除失败：\(error.localizedDescription)"
+            deleteErrorText = nil
+            if let current = selectedContact, current.id == contact.id {
+                selectedContact = nil
             }
+            await appState.softDeleteContactModel(contact, modelContext: modelContext)
         }
     }
 }
@@ -416,7 +419,8 @@ struct ContactRowView: View {
                 // 名字
                 Text(contact.name)
                     .font(.system(size: 17, weight: .medium))
-                    .foregroundColor(.primary)
+                    .foregroundColor(contact.isObsolete ? .primary.opacity(0.45) : .primary)
+                    .strikethrough(contact.isObsolete, color: .primary.opacity(0.25))
 
                 // 副内容
                 if hasSecondaryInfo {
@@ -441,7 +445,7 @@ struct ContactRowView: View {
                             } else {
                                 Text(item.text)
                                     .font(.system(size: 13))
-                                    .foregroundColor(.secondary)
+                                    .foregroundColor(contact.isObsolete ? .secondary.opacity(0.55) : .secondary)
                             }
                         }
                     }
@@ -453,7 +457,13 @@ struct ContactRowView: View {
             
             // 现代感删除按钮
             ZStack {
-                if isDeleting {
+                if contact.isObsolete {
+                    Image(systemName: "trash")
+                        .font(.system(size: 14))
+                        .foregroundColor(.black.opacity(0.18))
+                        .frame(width: 32, height: 32)
+                        .background(Circle().fill(Color.black.opacity(0.03)))
+                } else if isDeleting {
                     ProgressView()
                         .tint(.red)
                         .scaleEffect(0.8)
@@ -477,7 +487,7 @@ struct ContactRowView: View {
         .padding(.vertical, 12)
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.white)
+                .fill(contact.isObsolete ? Color(white: 0.97) : Color.white)
                 .shadow(color: Color.black.opacity(0.03), radius: 8, x: 0, y: 2)
         )
         .padding(.horizontal, 16)

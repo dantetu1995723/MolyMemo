@@ -9,7 +9,9 @@ enum DeleteActions {
         if !rid.isEmpty {
             try await ContactService.deleteContact(remoteId: rid)
         }
-        modelContext.delete(contact)
+        // 统一为软删除：不真正移除 SwiftData 记录，保持工具箱/聊天室可展示“变灰划杠”的删除态
+        contact.isObsolete = true
+        contact.lastModified = Date()
         try? modelContext.save()
     }
     

@@ -82,6 +82,34 @@ enum ContactService {
     
     private static let listPath = "/api/v1/contacts"
     private static func detailPath(_ id: String) -> String { "/api/v1/contacts/\(id)" }
+
+    /// 联系人 create/update 的结果：既包含解析出的卡片，也允许携带“给用户展示的文案”（若后端有返回）。
+    struct OperationResult: Equatable {
+        var card: ContactCard?
+        var displayText: String?
+    }
+
+    private static func extractDisplayText(from dict: [String: Any]) -> String? {
+        // 兼容常见字段：show_content / message / detail / msg
+        let candidates: [Any?] = [
+            dict["show_content"],
+            dict["showContent"],
+            dict["message"],
+            dict["msg"],
+            dict["detail"]
+        ]
+        for c in candidates {
+            if let s = c as? String {
+                let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !t.isEmpty { return t }
+            }
+        }
+        // 有些后端会包一层 data
+        if let data = dict["data"] as? [String: Any] {
+            return extractDisplayText(from: data)
+        }
+        return nil
+    }
     
     private static func resolvedBaseURL() throws -> String {
         let candidate = BackendChatConfig.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -631,7 +659,8 @@ enum ContactService {
     }
     
     /// 更新人脉：PUT /api/v1/contacts/{id}
-    static func updateContact(remoteId: String, payload: [String: Any], keepLocalId: UUID? = nil) async throws -> ContactCard? {
+    /// - Returns: `card` 可能为空（例如后端 204/200 empty body）；`displayText` 为后端可选展示文案（若有）。
+    static func updateContact(remoteId: String, payload: [String: Any], keepLocalId: UUID? = nil) async throws -> OperationResult {
         let trimmed = remoteId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw ContactServiceError.parseFailed("remoteId empty") }
         
@@ -666,39 +695,40 @@ enum ContactService {
                 await detailCache.invalidate(trimmed)
                 await listCache.invalidateAll()
                 await allPagesCache.invalidateAll()
-                return nil
+                return .init(card: nil, displayText: nil)
             }
             let json = try decodeJSON(data)
             if let dict = json as? [String: Any] {
+                let displayText = extractDisplayText(from: dict)
                 if let d = dict["data"] as? [String: Any], let c = parseContactCard(d, keepLocalId: keepLocalId) {
                     // ⚠️ update 接口的返回体可能是“部分字段”，不要把它当作“详情”写进 detailCache，
                     // 否则详情页命中缓存时会把缺失字段清空（applyRemoteDetailCard 以详情为真相）。
                     await detailCache.invalidate(trimmed)
                     await listCache.invalidateAll()
                     await allPagesCache.invalidateAll()
-                    return c
+                    return .init(card: c, displayText: displayText)
                 }
                 if let c = parseContactCard(dict, keepLocalId: keepLocalId) {
                     await detailCache.invalidate(trimmed)
                     await listCache.invalidateAll()
                     await allPagesCache.invalidateAll()
-                    return c
+                    return .init(card: c, displayText: displayText)
                 }
                 await detailCache.invalidate(trimmed)
                 await listCache.invalidateAll()
                 await allPagesCache.invalidateAll()
-                return nil
+                return .init(card: nil, displayText: displayText)
             }
             if let arr = json as? [[String: Any]], let first = arr.first, let c = parseContactCard(first, keepLocalId: keepLocalId) {
                 await detailCache.invalidate(trimmed)
                 await listCache.invalidateAll()
                 await allPagesCache.invalidateAll()
-                return c
+                return .init(card: c, displayText: nil)
             }
             await detailCache.invalidate(trimmed)
             await listCache.invalidateAll()
             await allPagesCache.invalidateAll()
-            return nil
+            return .init(card: nil, displayText: nil)
         } catch {
             if debugLogsEnabled {
             }
@@ -707,8 +737,8 @@ enum ContactService {
     }
 
     /// 创建人脉：POST /api/v1/contacts
-    /// - Returns: 若后端返回 body，则解析为 ContactCard；若 body 为空则返回 nil（但会视为创建成功）。
-    static func createContact(payload: [String: Any], keepLocalId: UUID? = nil) async throws -> ContactCard? {
+    /// - Returns: `card` 可能为空（例如后端 204/200 empty body）；`displayText` 为后端可选展示文案（若有）。
+    static func createContact(payload: [String: Any], keepLocalId: UUID? = nil) async throws -> OperationResult {
         let url = try makeURL(path: listPath, queryItems: [])
         var request = URLRequest(url: url, timeoutInterval: 30)
         request.httpMethod = "POST"
@@ -736,11 +766,12 @@ enum ContactService {
             guard !data.isEmpty else {
                 await listCache.invalidateAll()
                 await allPagesCache.invalidateAll()
-                return nil
+                return .init(card: nil, displayText: nil)
             }
 
             let json = try decodeJSON(data)
             if let dict = json as? [String: Any] {
+                let displayText = extractDisplayText(from: dict)
                 if let d = dict["data"] as? [String: Any], let c = parseContactCard(d, keepLocalId: keepLocalId) {
                     // ⚠️ create 接口返回体可能是“部分字段”，不要污染详情缓存；
                     // 让详情页首次打开直接 GET /contacts/{id} 拿全量。
@@ -749,7 +780,7 @@ enum ContactService {
                     }
                     await listCache.invalidateAll()
                     await allPagesCache.invalidateAll()
-                    return c
+                    return .init(card: c, displayText: displayText)
                 }
                 if let c = parseContactCard(dict, keepLocalId: keepLocalId) {
                     if let rid = c.remoteId?.trimmingCharacters(in: .whitespacesAndNewlines), !rid.isEmpty {
@@ -757,7 +788,7 @@ enum ContactService {
                     }
                     await listCache.invalidateAll()
                     await allPagesCache.invalidateAll()
-                    return c
+                    return .init(card: c, displayText: displayText)
                 }
             }
             if let arr = json as? [[String: Any]], let first = arr.first, let c = parseContactCard(first, keepLocalId: keepLocalId) {
@@ -766,12 +797,12 @@ enum ContactService {
                 }
                 await listCache.invalidateAll()
                 await allPagesCache.invalidateAll()
-                return c
+                return .init(card: c, displayText: nil)
             }
 
             await listCache.invalidateAll()
             await allPagesCache.invalidateAll()
-            return nil
+            return .init(card: nil, displayText: nil)
         } catch {
             if debugLogsEnabled {
             }
