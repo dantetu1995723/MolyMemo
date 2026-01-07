@@ -639,6 +639,197 @@ struct StreamingMessageManager {
 // 应用状态管理 - 管理主页和聊天室状态
 @MainActor
 class AppState: ObservableObject {
+    // MARK: - 软删除（统一：聊天室卡片 & 工具箱同步）
+    
+    /// 统一实体键：优先使用 remoteId（若它可解析成 UUID 则用 UUID 形态稳定映射），否则退回本地 UUID。
+    private enum EntityKey {
+        static func trimmedLower(_ s: String?) -> String {
+            (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        }
+        
+        static func schedule(_ e: ScheduleEvent) -> String {
+            let rid = trimmedLower(e.remoteId)
+            if let u = UUID(uuidString: rid) { return "uuid:\(u.uuidString.lowercased())" }
+            if !rid.isEmpty { return "rid:\(rid)" }
+            return "id:\(e.id.uuidString.lowercased())"
+        }
+        
+        static func contactCard(_ c: ContactCard) -> String {
+            let rid = trimmedLower(c.remoteId)
+            if let u = UUID(uuidString: rid) { return "uuid:\(u.uuidString.lowercased())" }
+            if !rid.isEmpty { return "rid:\(rid)" }
+            return "id:\(c.id.uuidString.lowercased())"
+        }
+        
+        static func contactModel(_ c: Contact) -> String {
+            let rid = trimmedLower(c.remoteId)
+            if let u = UUID(uuidString: rid) { return "uuid:\(u.uuidString.lowercased())" }
+            if !rid.isEmpty { return "rid:\(rid)" }
+            return "id:\(c.id.uuidString.lowercased())"
+        }
+    }
+    
+    private enum SoftDeleteStoreKeys {
+        static let deletedScheduleSnapshots = "yuanyuan_deleted_schedule_snapshots_v1"
+    }
+    
+    /// 被删除（软删）的日程快照：用于“后端删了列表不再返回，但工具箱仍要显示置灰划杠”
+    @Published private(set) var deletedScheduleSnapshotByKey: [String: ScheduleEvent] = [:]
+    
+    init() {
+        // 日程软删快照（从 UserDefaults 恢复）
+        if let data = UserDefaults.standard.data(forKey: SoftDeleteStoreKeys.deletedScheduleSnapshots),
+           let arr = try? JSONDecoder().decode([ScheduleEvent].self, from: data)
+        {
+            var map: [String: ScheduleEvent] = [:]
+            for e in arr {
+                var v = e
+                v.isObsolete = true
+                map[EntityKey.schedule(v)] = v
+            }
+            self.deletedScheduleSnapshotByKey = map
+        }
+    }
+    
+    /// 将“删除日程”的状态应用到任意列表：把命中的 event 标记 obsolete，并把本地快照补回列表中（用于后端已删除的情况）。
+    func applyScheduleSoftDeleteOverlay(to events: [ScheduleEvent]) -> [ScheduleEvent] {
+        var result: [ScheduleEvent] = []
+        result.reserveCapacity(events.count + deletedScheduleSnapshotByKey.count)
+        
+        var seen: Set<String> = []
+        seen.reserveCapacity(events.count)
+        
+        for e in events {
+            var v = e
+            let k = EntityKey.schedule(v)
+            if deletedScheduleSnapshotByKey[k] != nil {
+                v.isObsolete = true
+            }
+            result.append(v)
+            seen.insert(k)
+        }
+        
+        // 补回后端不再返回的“已删除日程”
+        for (k, snap) in deletedScheduleSnapshotByKey where !seen.contains(k) {
+            var v = snap
+            v.isObsolete = true
+            result.append(v)
+        }
+        
+        result.sort(by: { $0.startTime < $1.startTime })
+        return result
+    }
+    
+    private func persistDeletedScheduleSnapshots() {
+        // 控制体积：只保留最近 200 条（按 startTime 倒序取前 200）
+        let arr = deletedScheduleSnapshotByKey.values
+            .sorted(by: { $0.startTime > $1.startTime })
+        let capped = Array(arr.prefix(200))
+        if let data = try? JSONEncoder().encode(capped) {
+            UserDefaults.standard.set(data, forKey: SoftDeleteStoreKeys.deletedScheduleSnapshots)
+        }
+    }
+    
+    /// 统一：软删除一个日程（聊天室卡片 + 工具箱列表同步，按 id/remoteId 统一）
+    func softDeleteSchedule(_ event: ScheduleEvent, modelContext: ModelContext) async {
+        // 1) 聊天历史：把所有同实体的卡片置灰划杠并落库
+        markScheduleCardsAsObsoleteAndPersist(updated: event, modelContext: modelContext)
+        
+        // 2) 工具箱：保留一份快照（后端删了也能显示“已删除”）
+        var snap = event
+        snap.isObsolete = true
+        deletedScheduleSnapshotByKey[EntityKey.schedule(snap)] = snap
+        persistDeletedScheduleSnapshots()
+        
+        // 3) 后端：若有 remoteId 则真实删除（维持数据正确），同时通知工具箱/通知栏刷新
+        let rid = (event.remoteId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !rid.isEmpty {
+            do {
+                try await DeleteActions.deleteRemoteSchedule(event)
+            } catch {
+                // 删除失败也保留“已删除”视觉态，避免 UI 回跳；错误由调用方自行决定是否提示
+            }
+        }
+        Task { await ScheduleService.invalidateCachesAndNotifyRemoteScheduleDidChange() }
+    }
+    
+    /// 统一：软删除一个联系人（聊天室卡片 + 工具箱联系人列表同步，按 id/remoteId 统一）
+    func softDeleteContactCard(_ card: ContactCard, modelContext: ModelContext) async {
+        // 1) 聊天历史：同实体卡片置灰划杠并落库
+        markContactCardsAsObsoleteAndPersist(updated: card, modelContext: modelContext)
+        
+        // 2) 工具箱联系人库：标记本地 Contact 为 obsolete（不硬删）
+        do {
+            let cid = card.id
+            let desc = FetchDescriptor<Contact>(predicate: #Predicate<Contact> { c in
+                c.id == cid
+            })
+            if let existing = try modelContext.fetch(desc).first {
+                if !existing.isObsolete {
+                    existing.isObsolete = true
+                    existing.lastModified = Date()
+                    try? modelContext.save()
+                }
+            }
+        } catch {
+        }
+        
+        // 3) 后端删除（若有 remoteId）
+        let rid = (card.remoteId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !rid.isEmpty {
+            do {
+                try await ContactService.deleteContact(remoteId: rid)
+            } catch {
+            }
+        }
+        Task { await ContactService.invalidateContactCaches() }
+    }
+    
+    /// 从工具箱联系人（SwiftData Contact）发起的删除：转换为统一卡片删除逻辑，确保聊天室同步。
+    func softDeleteContactModel(_ contact: Contact, modelContext: ModelContext) async {
+        let stub = ContactCard(
+            id: contact.id,
+            remoteId: {
+                let rid = (contact.remoteId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                return rid.isEmpty ? nil : rid
+            }(),
+            name: contact.name,
+            company: contact.company,
+            title: contact.identity,
+            phone: contact.phoneNumber,
+            email: contact.email,
+            birthday: {
+                let v = (contact.birthday ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                return v.isEmpty ? nil : v
+            }(),
+            gender: {
+                let v = (contact.gender ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                return v.isEmpty ? nil : v
+            }(),
+            industry: {
+                let v = (contact.industry ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                return v.isEmpty ? nil : v
+            }(),
+            location: {
+                let v = (contact.location ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                return v.isEmpty ? nil : v
+            }(),
+            relationshipType: {
+                let v = (contact.relationship ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                return v.isEmpty ? nil : v
+            }(),
+            notes: {
+                let v = (contact.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                return v.isEmpty ? nil : v
+            }(),
+            impression: nil,
+            avatarData: contact.avatarData,
+            rawImage: nil,
+            isObsolete: true
+        )
+        await softDeleteContactCard(stub, modelContext: modelContext)
+    }
+    
     // 界面状态
     @Published var isMenuExpanded: Bool = false
     @Published var showChatRoom: Bool = false  // 控制是否显示聊天室

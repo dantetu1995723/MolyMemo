@@ -450,7 +450,10 @@ struct TodoListView: View {
                     appState.commitScheduleCardRevision(updated: updated, modelContext: modelContext, reasonText: "已更新日程")
                 },
                 onCommittedDelete: { deleted in
-                    applyRemoteEventDelete(deleted)
+                    Task { @MainActor in
+                        await appState.softDeleteSchedule(deleted, modelContext: modelContext)
+                        applyRemoteEventSoftDelete(deleted)
+                    }
                 }
             )
                 .presentationDetents([.large])
@@ -519,10 +522,19 @@ struct TodoListView: View {
     }
     
     @MainActor
-    private func applyRemoteEventDelete(_ deleted: ScheduleEvent) {
-        remoteEvents.removeAll(where: { isSameRemote($0, deleted) })
+    private func applyRemoteEventSoftDelete(_ deleted: ScheduleEvent) {
+        if let idx = remoteEvents.firstIndex(where: { isSameRemote($0, deleted) }) {
+            remoteEvents[idx].isObsolete = true
+        } else {
+            var v = deleted
+            v.isObsolete = true
+            remoteEvents.append(v)
+        }
+        remoteEvents.sort(by: { $0.startTime < $1.startTime })
         if let current = remoteDetailSelection, isSameRemote(current, deleted) {
-            remoteDetailSelection = nil
+            var v = current
+            v.isObsolete = true
+            remoteDetailSelection = v
         }
     }
     
@@ -703,9 +715,10 @@ struct TodoListView: View {
         // 注意：peekAllSchedules 的 maxPages 参数只用于缓存 key，实际获取时会循环直到没有更多数据
         if let cached = await ScheduleService.peekAllSchedules(maxPages: 10000, pageSize: 100, baseParams: base) {
             let cal = Calendar.current
-            remoteEvents = cached.value
+            let list = cached.value
                 .filter { cal.isDate($0.startTime, inSameDayAs: selectedDate) }
                 .sorted(by: { $0.startTime < $1.startTime })
+            remoteEvents = appState.applyScheduleSoftDeleteOverlay(to: list)
             
             // 即使缓存新鲜，也后台静默刷新，确保数据及时更新
             Task { @MainActor in
@@ -732,9 +745,10 @@ struct TodoListView: View {
                 forceRefresh: forceRefresh
             )
             let cal = Calendar.current
-            remoteEvents = all
+            let list = all
                 .filter { cal.isDate($0.startTime, inSameDayAs: selectedDate) }
                 .sorted(by: { $0.startTime < $1.startTime })
+            remoteEvents = appState.applyScheduleSoftDeleteOverlay(to: list)
         } catch {
             remoteEvents = []
             if showError {
@@ -753,8 +767,8 @@ struct TodoListView: View {
             defer { deletingRemoteIds.remove(rid) }
             
             do {
-                try await DeleteActions.deleteRemoteSchedule(event)
-                applyRemoteEventDelete(event)
+                await appState.softDeleteSchedule(event, modelContext: modelContext)
+                applyRemoteEventSoftDelete(event)
             } catch {
                 // 不做 UI 兜底提示，只打印，方便定位后端 404 的原因
             }

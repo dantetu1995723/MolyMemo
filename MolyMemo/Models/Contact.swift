@@ -29,6 +29,9 @@ final class Contact {
     var createdAt: Date
     var lastModified: Date
     
+    /// 软删除/废弃标记：用于“删除=变灰划杠”而不真正移除（保持与聊天室卡片一致）
+    var isObsolete: Bool = false
+    
     init(
         name: String,
         remoteId: String? = nil,
@@ -66,6 +69,7 @@ final class Contact {
         self.textAttachments = textAttachments
         self.createdAt = Date()
         self.lastModified = Date()
+        self.isObsolete = false
     }
     
     // 获取名字的首字母（用于分组）

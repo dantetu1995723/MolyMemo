@@ -280,30 +280,9 @@ struct ChatView: View {
                         appState.commitScheduleCardRevision(updated: updated, modelContext: modelContext, reasonText: "已更新日程")
                     },
                     onCommittedDelete: { deleted in
-                        guard let msgId = scheduleDetailMessageId,
-                              let evId = scheduleDetailEventId,
-                              let msgIndex = appState.chatMessages.firstIndex(where: { $0.id == msgId })
-                        else { return }
-                        
-                        var msg = appState.chatMessages[msgIndex]
-                        if var segs = msg.segments, !segs.isEmpty {
-                            for si in segs.indices {
-                                if var evs = segs[si].scheduleEvents {
-                                    evs.removeAll(where: { $0.id == evId })
-                                    segs[si].scheduleEvents = evs
-                                }
-                            }
-                            msg.segments = segs
-                            rebuildAggregatesFromSegments(segs, into: &msg)
+                        Task { @MainActor in
+                            await appState.softDeleteSchedule(deleted, modelContext: modelContext)
                         }
-                        if var cards = msg.scheduleEvents {
-                            cards.removeAll(where: { $0.id == evId })
-                            msg.scheduleEvents = cards
-                        }
-                        appState.chatMessages[msgIndex] = msg
-                        appState.saveMessageToStorage(msg, modelContext: modelContext)
-                        
-                        _ = deleted // keep signature stable
                     }
                 )
                 .presentationDetents([.large])
@@ -395,13 +374,9 @@ struct ChatView: View {
                         }
                     },
                     onConfirm: {
-                        if let messageId = messageIdToDeleteFrom, let eventId = eventToDelete?.id {
-                            // 执行删除逻辑
-                            if let index = appState.chatMessages.firstIndex(where: { $0.id == messageId }) {
-                                withAnimation {
-                                    appState.chatMessages[index].scheduleEvents?.removeAll(where: { $0.id == eventId })
-                                    appState.saveMessageToStorage(appState.chatMessages[index], modelContext: modelContext)
-                                }
+                        if let event = eventToDelete {
+                            Task { @MainActor in
+                                await appState.softDeleteSchedule(event, modelContext: modelContext)
                             }
                         }
                         
@@ -537,7 +512,7 @@ struct ChatView: View {
                     .sorted(by: { $0.startTime < $1.startTime })
                 
                 await MainActor.run {
-                    todayScheduleEvents = sorted
+                    todayScheduleEvents = appState.applyScheduleSoftDeleteOverlay(to: sorted)
                     todayScheduleIsLoading = false
                     todayScheduleErrorText = nil
                 }
@@ -572,9 +547,10 @@ struct ChatView: View {
                 forceRefresh: forceRefresh
             )
             let cal = Calendar.current
-            todayScheduleEvents = all
+            let list = all
                 .filter { cal.isDate($0.startTime, inSameDayAs: Date()) }
                 .sorted(by: { $0.startTime < $1.startTime })
+            todayScheduleEvents = appState.applyScheduleSoftDeleteOverlay(to: list)
         } catch {
             todayScheduleEvents = []
             if showError {
@@ -778,17 +754,8 @@ struct ChatView: View {
                                     onOpenDetail: { card in
                                         selectedContact = findOrCreateContact(from: card)
                                     }, onDeleteRequest: { card in
-                                        guard let mIndex = appState.chatMessages.firstIndex(where: { $0.id == message.id }) else { return }
-                                        withAnimation {
-                                            var m = appState.chatMessages[mIndex]
-                                            guard var segs = m.segments,
-                                                  let sIndex = segs.firstIndex(where: { $0.id == seg.id })
-                                            else { return }
-                                            segs[sIndex].contacts?.removeAll(where: { $0.id == card.id })
-                                            m.segments = segs
-                                            rebuildAggregatesFromSegments(segs, into: &m)
-                                            appState.chatMessages[mIndex] = m
-                                            appState.saveMessageToStorage(m, modelContext: modelContext)
+                                        Task { @MainActor in
+                                            await appState.softDeleteContactCard(card, modelContext: modelContext)
                                         }
                                     })
                                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -975,11 +942,8 @@ struct ChatView: View {
                                     onOpenDetail: { card in
                                         selectedContact = findOrCreateContact(from: card)
                                     }, onDeleteRequest: { card in
-                                        guard let idx = appState.chatMessages.firstIndex(where: { $0.id == message.id }) else { return }
-                                        withAnimation {
-                                            appState.chatMessages[idx].contacts?.removeAll(where: { $0.id == card.id })
-                                            if (appState.chatMessages[idx].contacts ?? []).isEmpty { appState.chatMessages[idx].contacts = nil }
-                                            appState.saveMessageToStorage(appState.chatMessages[idx], modelContext: modelContext)
+                                        Task { @MainActor in
+                                            await appState.softDeleteContactCard(card, modelContext: modelContext)
                                         }
                                     })
                                     .frame(maxWidth: .infinity, alignment: .leading)
