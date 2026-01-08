@@ -309,15 +309,13 @@ struct ChatInputView: View {
                                     if !isPressing {
                                         // 开始 tracking
                                         handleHoldToTalkPressingChanged(true)
-                                        // 立刻开始预收音/预转写：用户可以按下就说，不等长按阈值
-                                        viewModel.beginHoldToTalkPreCaptureIfNeeded()
 
                                         // 取消旧任务，启动新的“长按才触发录音”的任务
                                         pendingHoldToTalkTask?.cancel()
                                         pendingHoldToTalkTask = Task { @MainActor in
-                                            // 关键：不要太短。否则“正常轻点”也会被误判为按住说话而进入录音。
-                                            // 这里用 0.25s 作为长按阈值：轻点聚焦，长按录音。
-                                            try? await Task.sleep(nanoseconds: 250_000_000) // 0.25s
+                                            // 更丝滑：把长按阈值略微缩短，但仍保留“轻点聚焦”的容错空间
+                                            // 0.20s：体感更快，且仍不容易误触
+                                            try? await Task.sleep(nanoseconds: 200_000_000) // 0.20s
                                             guard !Task.isCancelled else { return }
                                             // 如果这时仍在按住且没有明显移动，且仍满足“按住说话”条件，则开始收音并展示 overlay
                                             guard isPressing, !didMoveDuringPress else { return }
@@ -327,7 +325,7 @@ struct ChatInputView: View {
                                             guard viewModel.inputText.isEmpty, viewModel.selectedImage == nil else { return }
 
                                             DebugProbe.log("HoldToTalk long-press -> start recording")
-                                            viewModel.revealHoldToTalkOverlayIfPossible()
+                                            viewModel.startHoldToTalkRecordingFromLongPress()
                                         }
                                     }
                                     
@@ -412,8 +410,11 @@ struct ChatInputView: View {
             isPressing = true
             pressBeganAt = Date()
             didMoveDuringPress = false
-            // 统一触感：只在“按下瞬间”给一次更明确的确认感
-            HapticFeedback.impact(style: .heavy, intensity: 1.0)
+            // 触感：按下给一个很轻的确认，不阻塞 UI（真正进入录音态会再给一次更明显的确认）
+            HapticFeedback.selection()
+            // 关键：按下瞬间立刻开始“预收音/预转写”，避免长按阈值导致漏掉前半句
+            // overlay 仍由长按判定后再展示（避免轻点聚焦时 UI 闪一下）
+            viewModel.beginHoldToTalkPreCaptureIfNeeded()
             return
         }
         

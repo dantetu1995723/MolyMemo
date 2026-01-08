@@ -17,15 +17,16 @@ enum ChatSendFlow {
         isGreeting: Bool = false,
         includeHistory: Bool = true
     ) {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty || !images.isEmpty else { return }
+        // 只用 trim 判空；写入/发送内容保持“原始文本”
+        let isEffectivelyEmpty = text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard !isEffectivelyEmpty || !images.isEmpty else { return }
 
         // 1) 用户消息（支持：纯文字 / 纯图片 / 图文混合）
         let userMsg: ChatMessage = {
             if images.isEmpty {
-                return ChatMessage(role: .user, content: trimmed, isGreeting: isGreeting)
+                return ChatMessage(role: .user, content: text, isGreeting: isGreeting)
             } else {
-                return ChatMessage(role: .user, images: images, content: trimmed)
+                return ChatMessage(role: .user, images: images, content: text)
             }
         }()
 
@@ -129,8 +130,9 @@ enum ChatSendFlow {
         text: String,
         includeHistory: Bool = true
     ) {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
+        // 只用 trim 判空；写入/发送内容保持“原始文本”
+        let isEffectivelyEmpty = text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard !isEffectivelyEmpty else {
             // 如果内容为空，删除占位消息
             removePlaceholder(appState: appState, modelContext: modelContext, messageId: messageId)
             return
@@ -139,12 +141,12 @@ enum ChatSendFlow {
         // 更新用户消息内容
         guard let index = appState.chatMessages.firstIndex(where: { $0.id == messageId }) else {
             // 如果找不到消息，直接发送新消息
-            send(appState: appState, modelContext: modelContext, text: trimmed, includeHistory: includeHistory)
+            send(appState: appState, modelContext: modelContext, text: text, includeHistory: includeHistory)
             return
         }
         
         var updatedMessage = appState.chatMessages[index]
-        updatedMessage.content = trimmed
+        updatedMessage.content = text
         appState.chatMessages[index] = updatedMessage
         appState.saveMessageToStorage(updatedMessage, modelContext: modelContext)
         

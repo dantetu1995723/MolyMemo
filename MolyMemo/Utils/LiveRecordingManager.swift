@@ -44,10 +44,12 @@ class LiveRecordingManager: ObservableObject {
     /// - Parameter publishTranscriptionToUI: 是否在 Live Activity / 灵动岛显示实时转写文本（默认 true）。
     func startRecording(publishTranscriptionToUI: Bool = true) {
         self.publishTranscriptionToUI = publishTranscriptionToUI
+        print("[RecordingFlow] 🎙️ startRecording publishToUI=\(publishTranscriptionToUI)")
         
         // 请求权限
         requestPermissions { [weak self] granted in
             guard granted else {
+                print("[RecordingFlow] ❌ startRecording permission denied")
                 return
             }
             
@@ -96,6 +98,7 @@ class LiveRecordingManager: ObservableObject {
             try audioSession.setCategory(.playAndRecord, mode: .default, options: options)
             try audioSession.setActive(true)
         } catch {
+            print("[RecordingFlow] ❌ setupRecording audioSession failed -> \(error.localizedDescription)")
             return
         }
         
@@ -104,6 +107,7 @@ class LiveRecordingManager: ObservableObject {
         audioURL = recordingsFolder.appendingPathComponent("meeting_\(Int(Date().timeIntervalSince1970)).m4a")
         
         guard let audioURL = audioURL else { return }
+        print("[RecordingFlow] 📁 recording file = \(audioURL.path)")
         
         // 配置录音设置（m4a AAC 格式，高质量压缩）
         let settings: [String: Any] = [
@@ -118,6 +122,7 @@ class LiveRecordingManager: ObservableObject {
             // 创建录音器
             audioRecorder = try AVAudioRecorder(url: audioURL, settings: settings)
             audioRecorder?.record()
+            print("[RecordingFlow] ✅ AVAudioRecorder started (m4a/AAC 44.1k 1ch)")
             
             // 重置状态
             isRecording = true
@@ -139,6 +144,7 @@ class LiveRecordingManager: ObservableObject {
             startLiveActivity()
             
         } catch {
+            print("[RecordingFlow] ❌ AVAudioRecorder create/start failed -> \(error.localizedDescription)")
         }
     }
     
@@ -200,6 +206,7 @@ class LiveRecordingManager: ObservableObject {
         guard isRecording && !isPaused else { return }
         
         isPaused = true
+        print("[RecordingFlow] ⏸️ pauseRecording")
         
         // 暂停录音器
         audioRecorder?.pause()
@@ -218,6 +225,7 @@ class LiveRecordingManager: ObservableObject {
         guard isRecording && isPaused else { return }
         
         isPaused = false
+        print("[RecordingFlow] ▶️ resumeRecording")
         
         // 继续录音器
         audioRecorder?.record()
@@ -247,6 +255,7 @@ class LiveRecordingManager: ObservableObject {
         guard isRecording else { 
             return 
         }
+        print("[RecordingFlow] 🛑 stopRecording duration=\(recordingDuration)s recognizedTextLen=\(recognizedText.count)")
         
         isRecording = false
         isPaused = false
@@ -274,6 +283,7 @@ class LiveRecordingManager: ObservableObject {
         } catch {
             #if DEBUG
             #endif
+            print("[RecordingFlow] ⚠️ audioSession deactivate failed -> \(error.localizedDescription)")
         }
         
         
@@ -292,6 +302,7 @@ class LiveRecordingManager: ObservableObject {
         guard let audioURL = audioURL else {
             return
         }
+        print("[RecordingFlow] ☁️ notify backend upload audioPath=\(audioURL.path)")
         
         let title = "Moly录音 - \(formatDate(Date()))"
         let date = Date()

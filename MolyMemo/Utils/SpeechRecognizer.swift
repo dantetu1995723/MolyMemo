@@ -19,7 +19,7 @@ class SpeechRecognizer: ObservableObject {
     
     private let speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "zh-CN"))
     // 独立音频队列，避免主线程被音频会话/引擎阻塞
-    private let audioQueue = DispatchQueue(label: "com.molymemo.speech.audio")
+    private let audioQueue = DispatchQueue(label: "com.molymemo.speech.audio", qos: .userInitiated)
     // 会话配置/激活状态，避免每次重复配置导致卡顿
     private var isSessionConfigured = false
     private var isSessionActive = false
@@ -77,8 +77,8 @@ class SpeechRecognizer: ObservableObject {
             let audioSession = AVAudioSession.sharedInstance()
             do {
                 if !self.isSessionConfigured {
-                    // 使用 playAndRecord，并优先选择更适合“语音”的模式来提升识别灵敏度/稳定性；
-                    // 若系统/路由不支持则回退 measurement。
+                    // 优先用 spokenAudio：系统更偏向“语音输入”链路，通常对小声/快语速更友好（更容易抬起电平）。
+                    // 若当前路由/设备不支持再回退 measurement。
                     do {
                         try audioSession.setCategory(
                             .playAndRecord,
@@ -95,7 +95,8 @@ class SpeechRecognizer: ObservableObject {
                     // 尽量让输入格式稳定（不强依赖，但能减少 route/format 抖动）
                     try? audioSession.setPreferredSampleRate(48_000)
                     try? audioSession.setPreferredInputNumberOfChannels(1)
-                    try? audioSession.setPreferredIOBufferDuration(0.005)
+                    // 更短的 I/O buffer 让“静音→开口”更跟手（更低延迟），代价是 CPU 稍高
+                    try? audioSession.setPreferredIOBufferDuration(0.002)
                     self.isSessionConfigured = true
                 }
                 if !self.isSessionActive {
@@ -114,6 +115,16 @@ class SpeechRecognizer: ObservableObject {
                     let isBluetoothHFP = audioSession.currentRoute.inputs.contains { $0.portType == .bluetoothHFP }
                     if !isBluetoothHFP, let builtInMic = audioSession.availableInputs?.first(where: { $0.portType == .builtInMic }) {
                         try? audioSession.setPreferredInput(builtInMic)
+                        // 尽量选“底部”麦克风（更贴近手持口述场景）；找不到就保持系统默认
+                        if let sources = builtInMic.dataSources, !sources.isEmpty {
+                            let preferred = sources.first(where: { s in
+                                let n = s.dataSourceName.lowercased()
+                                return n.contains("bottom") || n.contains("下") || n.contains("底")
+                            }) ?? sources.first
+                            if let preferred {
+                                try? builtInMic.setPreferredDataSource(preferred)
+                            }
+                        }
                     }
                 }
             } catch {
@@ -141,7 +152,8 @@ class SpeechRecognizer: ObservableObject {
             // 更偏“口述/语音输入”的任务提示：通常能更积极地产出可用转写
             recognitionRequest.taskHint = .dictation
             if #available(iOS 13.0, *) {
-                recognitionRequest.requiresOnDeviceRecognition = false
+                // 优先使用设备端识别（“本地方案”）；如果设备不支持则回退到系统默认（可能会用到网络）
+                recognitionRequest.requiresOnDeviceRecognition = speechRecognizer.supportsOnDeviceRecognition
             }
             
             let inputNode = self.audioEngine.inputNode
@@ -159,8 +171,8 @@ class SpeechRecognizer: ObservableObject {
             let isValidFormat = inputFormat.sampleRate > 0 && inputFormat.channelCount > 0
             let tapFormat: AVAudioFormat? = isValidFormat ? inputFormat : nil
             
-            // 更高刷新率：更跟手（512 在 48kHz 下约 10ms）
-            inputNode.installTap(onBus: bus, bufferSize: 512, format: tapFormat) { [weak self] buffer, _ in
+            // 更高刷新率：更跟手（128 在 48kHz 下约 2.7ms）
+            inputNode.installTap(onBus: bus, bufferSize: 128, format: tapFormat) { [weak self] buffer, _ in
                 recognitionRequest.append(buffer)
                 
                 guard let self = self else { return }
@@ -236,9 +248,11 @@ class SpeechRecognizer: ObservableObject {
         // - 更低噪声底（soft gate），而不是直接归零
         // - 非线性增强低电平（让 UI “更跟手”）
         // - 上升更快、下降略快，兼顾响应与抖动
-        let noiseFloor: Float = 0.012
+        // 放宽噪声底：小声也能起波形
+        let noiseFloor: Float = 0.008
         let normalized = max(0, rawLevel - noiseFloor) / max(0.0001, 1 - noiseFloor)
-        let gained = min(normalized * 5.5, 1.0)
+        // 提升低电平增益：让小声更“敏感”
+        let gained = min(normalized * 7.2, 1.0)
         let shaped = pow(gained, 0.55) // 提升小声段的可见度
         
         let attack: Float = 0.75   // 上升更快
@@ -309,6 +323,39 @@ class SpeechRecognizer: ObservableObject {
                 #endif
             }
         }
+    }
+
+    /// 停止录音并等待最终转写（final）尽量到达，避免“松手瞬间漏字”
+    /// - Note: 这是在 stopRecording 的“允许 final 回调窗口”之上做的轻量等待封装。
+    func stopRecordingAndWaitForFinalText(timeoutSeconds: Double = 1.2) async -> String {
+        // 即便当前不在录音，也返回当前已识别的文本
+        stopRecording()
+
+        let deadline = Date().addingTimeInterval(timeoutSeconds)
+        var lastText = ""
+        var stableCount = 0
+
+        while Date() < deadline {
+            let (text, stopping) = await MainActor.run { (self.recognizedText, self.isStopping) }
+            if !stopping {
+                return text
+            }
+
+            if !text.isEmpty, text == lastText {
+                stableCount += 1
+                // 文本在短时间内稳定，通常已经是最终结果
+                if stableCount >= 3 { // ~240ms（配合 80ms sleep）
+                    return text
+                }
+            } else {
+                stableCount = 0
+                lastText = text
+            }
+
+            try? await Task.sleep(nanoseconds: 80_000_000)
+        }
+
+        return await MainActor.run { self.recognizedText }
     }
     
     // 识别录音文件（使用苹果原始框架，整段）

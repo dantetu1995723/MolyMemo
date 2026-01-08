@@ -37,9 +37,12 @@ class ChatInputViewModel: ObservableObject {
     var onStopGenerator: (() -> Void)?
     
     // MARK: - Internal
-    private let holdToTalkRecorder = HoldToTalkPCMRecorder()
+    private let holdToTalkSpeechRecognizer = SpeechRecognizer()
     private var holdToTalkGeneration: Int = 0
     private var holdToTalkASRTask: Task<Void, Never>?
+    private var holdToTalkRecognizingWaveTask: Task<Void, Never>?
+    /// 松手后进入“识别中”阶段：忽略 recorder stop() 导致的音量归零，避免音浪瞬间静止产生卡顿感
+    private var isHoldToTalkRecognizing: Bool = false
     private var cancellables = Set<AnyCancellable>()
     /// 按住说话：按下瞬间就开始“预收音/预转写”，但不立刻展示 overlay（避免轻点聚焦时闪一下 UI）
     private var isPreCapturingHoldToTalk: Bool = false
@@ -47,6 +50,8 @@ class ChatInputViewModel: ObservableObject {
     private var pendingDictationTextForInput: String?
     /// 停止录音后等待 final 结果：在 overlay 退场完成时再决定是否回填（避免 stop 当下读取到 partial 导致漏字）
     private var shouldBackfillTranscriptOnOverlayDismiss: Bool = false
+    /// hold-to-talk 过程中持续更新的“最近一次识别文本”（用于 stop 后发送）
+    private var holdToTalkLatestText: String = ""
     
     // MARK: - Computed Properties
     
@@ -58,11 +63,16 @@ class ChatInputViewModel: ObservableObject {
     // MARK: - Methods
     
     init() {
-        // 用真实收音 level 驱动 UI（来自 m4a recorder meter）
-        holdToTalkRecorder.$audioLevel
+        holdToTalkSpeechRecognizer.requestAuthorization()
+
+        // 用真实收音 level 驱动 UI（来自 SFSpeechRecognizer 的输入 buffer）
+        holdToTalkSpeechRecognizer.$audioLevel
             .receive(on: DispatchQueue.main)
             .sink { [weak self] level in
-                self?.audioPower = CGFloat(level)
+                guard let self else { return }
+                // 识别中阶段：不让 stop() 的 0 覆盖当前波动，避免 UI “一下子停住”
+                guard !self.isHoldToTalkRecognizing else { return }
+                self.audioPower = CGFloat(level)
             }
             .store(in: &cancellables)
     }
@@ -71,9 +81,10 @@ class ChatInputViewModel: ObservableObject {
         // AI 输入过程中：输入区除“中止”外全部禁用
         guard !isAgentTyping else { return }
         guard hasContent else { return }
-        
-        let textToSend = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
-        onSend?(textToSend, selectedImage)
+
+        // 只用 hasContent(=trim 判空) 决定能否发送；真正发送内容保持“原始文本”，不做 trim/替换。
+        let rawTextToSend = inputText
+        onSend?(rawTextToSend, selectedImage)
         
         // Reset State
         // 注意：发送动作通常会触发键盘退场（失焦）以及外层布局变化。
@@ -175,90 +186,120 @@ class ChatInputViewModel: ObservableObject {
         let genAtStop = holdToTalkGeneration
         holdToTalkASRTask?.cancel()
         holdToTalkASRTask = nil
+        holdToTalkRecognizingWaveTask?.cancel()
+        holdToTalkRecognizingWaveTask = nil
 
-        // 停止录音：取消则丢弃数据，不取消则取 PCM bytes 用于识别
-        let pcm = holdToTalkRecorder.stop(discard: !shouldSend)
-        print("[HoldToTalk] stopRecording isCanceling=\(isCanceling) shouldSend=\(shouldSend) pcmBytes=\(pcm.count)")
-        
-        // 先走“球 -> 输入框”的逆向动画，结束后再真正收起 overlay
-        withAnimation(.easeInOut(duration: 0.16)) {
-            isAnimatingRecordingExit = true
-            audioPower = 0
+        // 取消：立即 stop + 退场（不进入识别态）
+        guard shouldSend else {
+            holdToTalkSpeechRecognizer.stopRecording()
+            holdToTalkLatestText = ""
+            recordingTranscript = ""
+            isHoldToTalkRecognizing = false
+            beginHoldToTalkExit()
+            return
         }
 
-        guard shouldSend, !pcm.isEmpty else { return }
+        // 关键：先把 UI 立刻切到“识别中”，并开始波动；录音 stop / 编码 / 上传放到下一帧去做
+        isHoldToTalkRecognizing = true
         recordingTranscript = "识别中..."
-        
-        // 立即发送占位消息
-        let placeholderMessageId = onSendImmediate?()
-        print("[HoldToTalk] 🚀 immediate send placeholder messageId=\(placeholderMessageId?.uuidString ?? "nil")")
+        startHoldToTalkRecognizingWave()
 
         holdToTalkASRTask = Task { [weak self] in
             guard let self else { return }
-            do {
-                print("[HoldToTalk] 🚀 SAUC WS request start -> pcmBytes=\(pcm.count)")
-                let service = try SAUCWebSocketASRService()
-                let text = try await service.transcribePCMBytes(pcm)
-                guard !Task.isCancelled else {
-                    // 如果任务被取消，删除占位消息
-                    if let messageId = placeholderMessageId {
-                        await MainActor.run {
-                            self.onRemovePlaceholder?(messageId)
-                        }
-                    }
-                    return
+            // 让 SwiftUI 先把“识别中…”渲染出来，再做 stop（AudioSession 归还/识别收尾可能会卡顿）
+            await Task.yield()
+            // 停止本地语音识别并等待 final，尽量避免漏字
+            let text = await self.holdToTalkSpeechRecognizer.stopRecordingAndWaitForFinalText(timeoutSeconds: 1.2)
+            guard !Task.isCancelled else { return }
+
+            // 如果期间又开始了新一轮按住说话，就不要把旧结果发出去
+            guard self.holdToTalkGeneration == genAtStop else {
+                // 新一轮录音会接管 UI；这里仅清理本轮识别锁
+                self.isHoldToTalkRecognizing = false
+                self.stopHoldToTalkRecognizingWave()
+                return
+            }
+
+            // 只用 trim 判空；发送内容保持“原始文本”
+            let rawText = text
+            let isEffectivelyEmpty = rawText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            if !isEffectivelyEmpty {
+                self.recordingTranscript = ""
+                self.stopHoldToTalkRecognizingWave()
+                self.isHoldToTalkRecognizing = false
+                self.beginHoldToTalkExit()
+                // 让 UI 先完成一帧退场/布局，再发消息，避免“卡顿一下”
+                Task { @MainActor in
+                    await Task.yield()
+                    self.onSend?(rawText, nil)
                 }
-                // 如果期间又开始了新一轮按住说话，就不要把旧结果发出去
-                guard self.holdToTalkGeneration == genAtStop else {
-                    print("[HoldToTalk] ⚠️ drop transcript due to generation changed (genAtStop=\(genAtStop), current=\(self.holdToTalkGeneration))")
-                    // 删除占位消息
-                    if let messageId = placeholderMessageId {
-                        await MainActor.run {
-                            self.onRemovePlaceholder?(messageId)
-                        }
-                    }
-                    return
-                }
-                let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-                print("[HoldToTalk] ✅ SAUC transcript -> \(trimmed)")
-                if !trimmed.isEmpty {
-                    await MainActor.run {
-                        self.recordingTranscript = trimmed
-                        // 如果有占位消息ID，更新消息内容并触发AI对话；否则使用原来的方式
-                        if let messageId = placeholderMessageId {
-                            self.onUpdateAndSend?(messageId, trimmed)
-                        } else {
-                            self.onSend?(trimmed, nil)
-                        }
-                    }
-                } else {
-                    await MainActor.run {
-                        self.recordingTranscript = ""
-                        // 如果转录结果为空，删除占位消息
-                        if let messageId = placeholderMessageId {
-                            self.onRemovePlaceholder?(messageId)
-                        }
-                    }
-                }
-            } catch {
-                guard !Task.isCancelled else { return }
-                let ns = error as NSError
-                print("[HoldToTalk] ❌ SAUC WS error -> \(ns.domain)(\(ns.code)) \(ns.localizedDescription)")
-                await MainActor.run {
-                    self.recordingTranscript = ""
-                    // 如果转录失败，删除占位消息
-                    if let messageId = placeholderMessageId {
-                        self.onRemovePlaceholder?(messageId)
-                    }
-                }
+            } else {
+                self.recordingTranscript = ""
+                self.stopHoldToTalkRecognizingWave()
+                self.isHoldToTalkRecognizing = false
+                self.beginHoldToTalkExit()
             }
         }
+    }
+
+    /// 新的判定逻辑：长按成立后才进入录音（先展示 overlay，再启动录音引擎，避免“进去前卡顿”）
+    func startHoldToTalkRecordingFromLongPress() {
+        guard !isAgentTyping else { return }
+        guard !isRecording else { return }
+
+        // 接管上一轮识别中状态（如果存在）
+        isHoldToTalkRecognizing = false
+        stopHoldToTalkRecognizingWave()
+
+        // 兼容：某些手势链路可能“长按成立”才触发，而没有先走 press-down 预收音；
+        // 这里确保本地语音识别已启动，否则会出现“进入录音 UI 但收不到音/没转写”的问题。
+        beginHoldToTalkPreCaptureIfNeeded()
+        revealHoldToTalkOverlayIfPossible()
+    }
+
+    /// 开始“识别中”的假音浪（松手后保持波动更丝滑）
+    private func startHoldToTalkRecognizingWave() {
+        holdToTalkRecognizingWaveTask?.cancel()
+        // 立即抬到阈值之上，避免 VoiceWaveformView 切到静态条导致的“顿一下”
+        audioPower = max(audioPower, 0.22)
+        holdToTalkRecognizingWaveTask = Task { @MainActor in
+            var t: Double = 0
+            while !Task.isCancelled {
+                // 保持 > 0.01，确保 VoiceWaveformView 走 TimelineView 动画分支
+                let base: CGFloat = 0.22
+                let a1: CGFloat = 0.10
+                let a2: CGFloat = 0.06
+                let v = base + a1 * CGFloat(sin(t * 2.2)) + a2 * CGFloat(sin(t * 5.7 + 1.3))
+                self.audioPower = max(0.08, min(v, 0.55))
+                t += 0.06
+                try? await Task.sleep(nanoseconds: 33_000_000) // ~30fps
+            }
+        }
+    }
+
+    private func stopHoldToTalkRecognizingWave() {
+        holdToTalkRecognizingWaveTask?.cancel()
+        holdToTalkRecognizingWaveTask = nil
+    }
+
+    /// 快速退场：输入框立即恢复，overlay 自己淡出并回调 finish
+    private func beginHoldToTalkExit() {
+        // 关键：先把“退场标记”置起来，避免出现 isRecording=false & isAnimatingRecordingExit=false 的短暂窗口
+        // 否则 SwiftUI 可能把 overlay 从树里移除再插回，导致 overlay 的 onChange(isExiting) 不触发，从而卡住。
+        isPreCapturingHoldToTalk = false
+        withAnimation(.easeInOut(duration: 0.12)) {
+            isAnimatingRecordingExit = true
+        }
+        // 让输入框立刻回来（更丝滑）
+        isRecording = false
+        // 兜底：任何退出都结束“识别中锁定”
+        isHoldToTalkRecognizing = false
     }
     
     /// 由 overlay 的逆向动画结束回调触发：真正收起 overlay 并恢复输入框
     func finishRecordingOverlayDismissal() {
         withAnimation(.easeInOut(duration: 0.1)) {
-            isRecording = false
+            // isRecording 已在 beginHoldToTalkExit 里提前置 false，用于“输入框立即回归”
             isAnimatingRecordingEntry = false
             isAnimatingRecordingExit = false
             isCanceling = false
@@ -287,10 +328,15 @@ class ChatInputViewModel: ObservableObject {
         guard !isRecording else { return } // 已在录音 overlay 中，无需重复
         guard !isPreCapturingHoldToTalk else { return }
 
+        // 如果上一轮还处于“识别中”，这里需要接管 UI：恢复真实音量驱动并停掉假音浪
+        isHoldToTalkRecognizing = false
+        stopHoldToTalkRecognizingWave()
+
         isPreCapturingHoldToTalk = true
         isCanceling = false
         recordingTranscript = "" // overlay 当前不展示 transcript，但留着调试
         audioPower = 0.0
+        holdToTalkLatestText = ""
 
         holdToTalkGeneration &+= 1
         let gen = holdToTalkGeneration
@@ -298,17 +344,12 @@ class ChatInputViewModel: ObservableObject {
         holdToTalkASRTask = nil
 
         print("[HoldToTalk] press down -> start pre-capture (gen=\(gen))")
-        Task { [weak self] in
+        // 直接启动 iOS 本地语音识别（内部已用独立队列处理 AudioSession/Engine）
+        holdToTalkSpeechRecognizer.startRecording { [weak self] text in
             guard let self else { return }
-            do {
-                try await self.holdToTalkRecorder.start()
-                print("[HoldToTalk] recording started ok (gen=\(gen))")
-            } catch {
-                print("[HoldToTalk] ❌ start recording failed -> \(error.localizedDescription)")
-                self.isPreCapturingHoldToTalk = false
-                self.isCanceling = false
-                self.audioPower = 0
-            }
+            // 若这一轮已被新一轮替代，丢弃回调
+            guard self.holdToTalkGeneration == gen else { return }
+            self.holdToTalkLatestText = text
         }
     }
 
@@ -325,6 +366,9 @@ class ChatInputViewModel: ObservableObject {
         isRecording = true
         isCanceling = false
         // recordingTranscript 维持当前值（可能已经有部分转写）
+
+        // 触感：仅在“真正进入录音态”时给一次确认（按下瞬间已有一次触感，这里更轻一点）
+        HapticFeedback.impact(style: .medium, intensity: 0.7)
     }
 
     /// 轻点/滑动打断时调用：停止预收音且不展示 overlay、不发送任何文字。
@@ -333,7 +377,8 @@ class ChatInputViewModel: ObservableObject {
         isPreCapturingHoldToTalk = false
         holdToTalkASRTask?.cancel()
         holdToTalkASRTask = nil
-        _ = holdToTalkRecorder.stop(discard: true)
+        holdToTalkSpeechRecognizer.stopRecording()
+        holdToTalkLatestText = ""
         recordingTranscript = ""
         audioPower = 0.0
         isCanceling = false
@@ -357,19 +402,18 @@ class ChatInputViewModel: ObservableObject {
     // MARK: - Dictation backfill
 
     /// 把录音转写结果写回输入框：
-    /// - 若输入框已有文字：追加（用空格分隔，避免覆盖用户已输入内容）
+    /// - 若输入框已有文字：追加（不做手动拼空格/trim，保持原始文本）
     /// - 若输入框为空：直接写入
     private func applyPendingDictationTextToInputIfNeeded() {
-        guard let text = pendingDictationTextForInput?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !text.isEmpty
+        guard let text = pendingDictationTextForInput,
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else { return }
         pendingDictationTextForInput = nil
 
-        let existing = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
-        if existing.isEmpty {
+        if inputText.isEmpty {
             inputText = text
         } else {
-            inputText = existing + " " + text
+            inputText = inputText + text
         }
     }
 }

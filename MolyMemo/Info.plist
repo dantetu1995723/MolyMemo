@@ -18,14 +18,6 @@
 	<string>需要访问语音识别功能以将您的语音转换为文字</string>
 	<key>NSContactsUsageDescription</key>
 	<string>需要访问您的通讯录以导入联系人到人脉管理</string>
-	<key>SAUC_APP_KEY</key>
-	<string>5999887727</string>
-	<key>SAUC_ACCESS_KEY</key>
-	<string>onE3k_sRcb_bS-V6lKbhmXW9AYYcNm6A</string>
-	<key>SAUC_RESOURCE_ID</key>
-	<string>volc.bigasr.sauc.duration</string>
-	<key>SAUC_WS_URL</key>
-	<string>wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>UIBackgroundModes</key>

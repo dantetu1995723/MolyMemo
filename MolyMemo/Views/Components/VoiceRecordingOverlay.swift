@@ -5,38 +5,23 @@ private struct VoiceWaveformView: View {
     var isCanceling: Bool = false
     
     private let barCount: Int = 40
-    private let activeThreshold: CGFloat = 0.01
+    // 更小声也进入“动态音浪”，视觉更灵敏
     private let barWidth: CGFloat = 3.0
     private let barSpacing: CGFloat = 3.0
     private let minHeight: CGFloat = 5
-    private let maxContainerHeight: CGFloat = 54
-    private let activeAmplitude: CGFloat = 45
+    private let maxContainerHeight: CGFloat = 80
+    private let activeAmplitude: CGFloat = 75
     
     private var barColor: Color {
         isCanceling ? Color(hex: "FF453A") : Color(hex: "007AFF")
     }
     
     var body: some View {
-        if audioPower > activeThreshold {
-            TimelineView(.animation) { context in
-                let time = context.date.timeIntervalSinceReferenceDate
-                activeBars(time: time)
-            }
-            .frame(height: maxContainerHeight)
-        } else {
-            idleBars()
-                .frame(height: maxContainerHeight)
+        TimelineView(.animation) { context in
+            let time = context.date.timeIntervalSinceReferenceDate
+            activeBars(time: time)
         }
-    }
-    
-    private func idleBars() -> some View {
-        return HStack(alignment: .center, spacing: barSpacing) {
-            ForEach(0..<barCount, id: \.self) { _ in
-                RoundedRectangle(cornerRadius: 1.5)
-                    .fill(barColor.opacity(0.6))
-                    .frame(width: barWidth, height: minHeight)
-            }
-        }
+        .frame(height: maxContainerHeight)
     }
     
     private func activeBars(time: TimeInterval) -> some View {
@@ -59,7 +44,11 @@ private struct VoiceWaveformView: View {
         let n2 = sin(time * 15.0 + Double(i) * 1.3)
         let mixed = (n1 * 0.5 + n2 * 0.5 + 1.0) / 2.0
         
-        let dynamic = CGFloat(mixed) * power * (activeAmplitude * CGFloat(centerWeight))
+        // 叠加基础呼吸电平，确保静音时也有持续的动态感
+        let breathingBase = 0.05 + 0.03 * CGFloat(sin(time * 2.5))
+        let effectivePower = max(power, breathingBase)
+        
+        let dynamic = CGFloat(mixed) * effectivePower * (activeAmplitude * CGFloat(centerWeight))
         return minHeight + dynamic
     }
 }
@@ -69,31 +58,35 @@ private struct BlueArcView: View {
     let isCanceling: Bool
     let isExiting: Bool
     
-    @State private var breathingAmount: CGFloat = 0
-    
     var body: some View {
         GeometryReader { geo in
             let width = geo.size.width
             let height = geo.size.height
             
-            ZStack {
-                // 大圆弧：增加直径到 2.2 倍宽度，使其弧度更平缓
-                Circle()
-                    .fill(isCanceling ? Color(hex: "FF453A") : Color(hex: "007AFF"))
-                    .frame(width: width * 2.2, height: width * 2.2)
-                    // 将初始位置下移，增加 offset 使其初始高度降低
-                    .offset(y: height * 0.8) 
-                    .offset(y: -power * 70 - breathingAmount * 15) // 随音量和呼吸移动
-                    .animation(.interactiveSpring(response: 0.35, dampingFraction: 0.7), value: power)
+            TimelineView(.animation) { context in
+                let time = context.date.timeIntervalSinceReferenceDate
+                
+                // 基础呼吸量：正弦波驱动，范围在 0 ~ 1 之间
+                // 提高频率（2.0 -> 3.5）以跟上音浪的节奏
+                let breathingBase = (sin(time * 3.5) + 1.0) / 2.0
+                // 减小幅度（25 -> 12），使静态起伏更细腻
+                let breathingOffset = breathingBase * 12
+                // 音量反馈高度：随音量跳动（降低系数，避免说话时抬得过高）
+                let powerOffset = power * 90
+                
+                ZStack {
+                    Circle()
+                        .fill(isCanceling ? Color(hex: "FF453A") : Color(hex: "007AFF"))
+                        .frame(width: width * 2.2, height: width * 2.2)
+                        // 抬高初始高度（0.82 -> 0.76）
+                        .offset(y: height * 0.76) 
+                        .offset(y: -powerOffset - breathingOffset)
+                }
+                .frame(width: width, height: height)
+                .animation(.interactiveSpring(response: 0.35, dampingFraction: 0.7), value: power)
             }
-            .frame(width: width, height: height)
             .opacity(isExiting ? 0 : 1)
             .offset(y: isExiting ? height * 0.4 : 0)
-        }
-        .onAppear {
-            withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
-                breathingAmount = 1.0
-            }
         }
     }
 }
@@ -111,6 +104,7 @@ struct VoiceRecordingOverlay: View {
     @State private var showMainUI = false
     @State private var smoothedPower: CGFloat = 0
     @State private var backgroundOpacity: Double = 0
+    @State private var didTriggerExit = false
     
     var body: some View {
         ZStack(alignment: .center) {
@@ -129,7 +123,7 @@ struct VoiceRecordingOverlay: View {
                         VoiceWaveformView(audioPower: smoothedPower, isCanceling: isCanceling)
                         
                         // 提示文字
-                        Text(isCanceling ? "松手发送，上滑取消" : "松手发送，上滑取消")
+                        Text(isCanceling ? "松手发送，上滑取消" : (transcript.isEmpty ? "松手发送，上滑取消" : transcript))
                             .font(.system(size: 16, weight: .regular))
                             .foregroundColor(isCanceling ? Color(hex: "FF453A") : Color(hex: "333333").opacity(0.6))
                     }
@@ -153,6 +147,10 @@ struct VoiceRecordingOverlay: View {
                 backgroundOpacity = 0.35
                 showMainUI = true
             }
+            // 兜底：如果 overlay 被“重新插入”时已经处于退出态，onChange 可能不会触发
+            if isExiting {
+                triggerExitIfNeeded()
+            }
         }
         .onChange(of: audioPower) { _, newValue in
             // 进一步平滑音频输入，避免视觉抖动
@@ -160,16 +158,21 @@ struct VoiceRecordingOverlay: View {
         }
         .onChange(of: isExiting) { _, exiting in
             guard exiting else { return }
-            // 提速：缩短退场动画时长，增强敏捷感
-            withAnimation(.easeInOut(duration: 0.15)) {
-                showMainUI = false
-                backgroundOpacity = 0
-            }
-            
-            // 延迟触发完成回调，匹配动画时长
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.16) {
-                onExitComplete?()
-            }
+            triggerExitIfNeeded()
+        }
+    }
+
+    private func triggerExitIfNeeded() {
+        guard !didTriggerExit else { return }
+        didTriggerExit = true
+        // 提速：缩短退场动画时长，增强敏捷感
+        withAnimation(.easeInOut(duration: 0.15)) {
+            showMainUI = false
+            backgroundOpacity = 0
+        }
+        // 延迟触发完成回调，匹配动画时长
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.16) {
+            onExitComplete?()
         }
     }
 }

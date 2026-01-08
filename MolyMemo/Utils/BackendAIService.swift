@@ -17,9 +17,11 @@ final class BackendAIService {
         return try await withCheckedThrowingContinuation { continuation in
             let userMsg: ChatMessage = {
                 if images.isEmpty {
-                    return ChatMessage(role: .user, content: trimmed)
+                    // 只用 trim 判空；发送内容保持“原始文本”
+                    return ChatMessage(role: .user, content: prompt)
                 } else {
-                    return ChatMessage(role: .user, images: images, content: trimmed)
+                    // 只用 trim 判空；发送内容保持“原始文本”
+                    return ChatMessage(role: .user, images: images, content: prompt)
                 }
             }()
             

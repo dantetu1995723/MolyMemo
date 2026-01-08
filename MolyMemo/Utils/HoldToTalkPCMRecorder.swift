@@ -158,14 +158,16 @@ final class HoldToTalkPCMRecorder: ObservableObject {
             do {
                 try audioSession.setCategory(
                     .playAndRecord,
-                    mode: .spokenAudio,
-                    options: [.duckOthers, .allowBluetoothHFP, .defaultToSpeaker]
+                    // 优先启用语音处理（AEC/NS）：能明显减少“余音/回声”导致的叠词
+                    mode: .voiceChat,
+                    // 按住说话场景不需要强制扬声器输出；避免外放回灌到麦克风造成重复
+                    options: [.duckOthers, .allowBluetoothHFP]
                 )
             } catch {
                 try audioSession.setCategory(
                     .playAndRecord,
-                    mode: .measurement,
-                    options: [.duckOthers, .allowBluetoothHFP, .defaultToSpeaker]
+                    mode: .spokenAudio,
+                    options: [.duckOthers, .allowBluetoothHFP]
                 )
             }
             try? audioSession.setPreferredSampleRate(48_000)
@@ -191,9 +193,11 @@ final class HoldToTalkPCMRecorder: ObservableObject {
             }
             let rms = sqrt(sum / Float(frames))
             let raw = rms * 0.6 + peak * 0.4
-            let noiseFloor: Float = 0.012
+            // 放宽小声门限：让更小声也能驱动 UI（不影响实际 PCM 数据）
+            let noiseFloor: Float = 0.008
             let normalized = max(0, raw - noiseFloor) / max(0.0001, 1 - noiseFloor)
-            let gained = min(normalized * 5.5, 1.0)
+            // 增加增益：小声更容易“起波形”，大声仍会被 clamp 到 1.0
+            let gained = min(normalized * 6.8, 1.0)
             return pow(gained, 0.55)
         }
         return 0
