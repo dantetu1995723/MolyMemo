@@ -338,6 +338,10 @@ struct ContactRowView: View {
     // 主题色 - 统一灰色
     private let themeColor = Color(white: 0.55)
 
+    private var contactNameColor: Color {
+        Color(uiColor: UIColor(red: 0.63, green: 0.4, blue: 0.01, alpha: 1))
+    }
+
     // 副内容项结构
     struct SecondaryInfoItem {
         let text: String
@@ -419,8 +423,8 @@ struct ContactRowView: View {
                 // 名字
                 Text(contact.name)
                     .font(.system(size: 17, weight: .medium))
-                    .foregroundColor(contact.isObsolete ? .primary.opacity(0.45) : .primary)
-                    .strikethrough(contact.isObsolete, color: .primary.opacity(0.25))
+                    .foregroundColor(contact.isObsolete ? contactNameColor.opacity(0.45) : contactNameColor)
+                    .strikethrough(contact.isObsolete, color: contactNameColor.opacity(0.25))
 
                 // 副内容
                 if hasSecondaryInfo {

@@ -54,13 +54,7 @@ struct ChatView: View {
     // 人脉详情（从 ContactCard 转换/创建 SwiftData Contact 后打开 ContactDetailView）
     @State private var selectedContact: Contact? = nil
 
-    // 发票/报销详情（点击卡片打开）
-    private struct InvoiceDetailSelection: Identifiable, Equatable {
-        let messageId: UUID
-        let invoiceId: UUID
-        var id: String { "\(messageId.uuidString)-\(invoiceId.uuidString)" }
-    }
-    @State private var invoiceDetailSelection: InvoiceDetailSelection? = nil
+    // 发票/报销：已移除详情界面（仅保留卡片展示）
     
     // 会议纪要详情（点击卡片打开）
     private struct MeetingDetailSelection: Identifiable, Equatable {
@@ -288,38 +282,6 @@ struct ChatView: View {
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
             }
-            .sheet(item: $invoiceDetailSelection, onDismiss: {
-                invoiceDetailSelection = nil
-            }) { selection in
-                if
-                    let msgIndex = appState.chatMessages.firstIndex(where: { $0.id == selection.messageId }),
-                    let invoiceIndex = appState.chatMessages[msgIndex].invoices?.firstIndex(where: { $0.id == selection.invoiceId })
-                {
-                    InvoiceDetailSheet(
-                        invoice: Binding(
-                            get: {
-                                appState.chatMessages[msgIndex].invoices?[invoiceIndex]
-                                ?? InvoiceCard(invoiceNumber: "", merchantName: "", amount: 0, date: Date(), type: "", notes: nil)
-                            },
-                            set: { appState.chatMessages[msgIndex].invoices?[invoiceIndex] = $0 }
-                        ),
-                        onDelete: {
-                            withAnimation {
-                                appState.chatMessages[msgIndex].invoices?.removeAll(where: { $0.id == selection.invoiceId })
-                            }
-                            appState.saveMessageToStorage(appState.chatMessages[msgIndex], modelContext: modelContext)
-                        }
-                    )
-                } else {
-                    VStack {
-                        Text("记录不存在或已删除")
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundColor(Color(hex: "666666"))
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Color.white)
-                }
-            }
             .sheet(item: $meetingDetailSelection, onDismiss: {
                 meetingDetailSelection = nil
             }) { selection in
@@ -540,7 +502,8 @@ struct ChatView: View {
                     .sorted(by: { $0.startTime < $1.startTime })
                 
                 await MainActor.run {
-                    todayScheduleEvents = appState.applyScheduleSoftDeleteOverlay(to: sorted)
+                    // ✅ 今日日程通知栏以后端为准：不补回“已删快照”，也不做前端置灰覆盖
+                    todayScheduleEvents = sorted
                     todayScheduleIsLoading = false
                     todayScheduleErrorText = nil
                 }
@@ -578,7 +541,8 @@ struct ChatView: View {
             let list = all
                 .filter { cal.isDate($0.startTime, inSameDayAs: Date()) }
                 .sorted(by: { $0.startTime < $1.startTime })
-            todayScheduleEvents = appState.applyScheduleSoftDeleteOverlay(to: list)
+            // ✅ 今日日程通知栏以后端为准：不补回“已删快照”，也不做前端置灰覆盖
+            todayScheduleEvents = list
         } catch {
             todayScheduleEvents = []
             if showError {
@@ -790,42 +754,7 @@ struct ChatView: View {
                                     .offset(x: -chatCardVisualLeadingCompensation)
                                     
                                 case .invoiceCards:
-                                    InvoiceCardStackView(invoices: Binding(
-                                        get: {
-                                            guard let mIndex = appState.chatMessages.firstIndex(where: { $0.id == message.id }),
-                                                  let sIndex = appState.chatMessages[mIndex].segments?.firstIndex(where: { $0.id == seg.id })
-                                            else { return [] }
-                                            return appState.chatMessages[mIndex].segments?[sIndex].invoices ?? []
-                                        },
-                                        set: { newValue in
-                                            guard let mIndex = appState.chatMessages.firstIndex(where: { $0.id == message.id }) else { return }
-                                            var m = appState.chatMessages[mIndex]
-                                            guard var segs = m.segments,
-                                                  let sIndex = segs.firstIndex(where: { $0.id == seg.id })
-                                            else { return }
-                                            segs[sIndex].invoices = newValue
-                                            m.segments = segs
-                                            rebuildAggregatesFromSegments(segs, into: &m)
-                                            appState.chatMessages[mIndex] = m
-                                        }
-                                    ), onOpenDetail: { invoice in
-                                        invoiceDetailSelection = InvoiceDetailSelection(messageId: message.id, invoiceId: invoice.id)
-                                    }, onDeleteRequest: { invoice in
-                                        guard let mIndex = appState.chatMessages.firstIndex(where: { $0.id == message.id }) else { return }
-                                        withAnimation {
-                                            var m = appState.chatMessages[mIndex]
-                                            guard var segs = m.segments,
-                                                  let sIndex = segs.firstIndex(where: { $0.id == seg.id })
-                                            else { return }
-                                            segs[sIndex].invoices?.removeAll(where: { $0.id == invoice.id })
-                                            m.segments = segs
-                                            rebuildAggregatesFromSegments(segs, into: &m)
-                                            appState.chatMessages[mIndex] = m
-                                            appState.saveMessageToStorage(m, modelContext: modelContext)
-                                        }
-                                    })
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .offset(x: -chatCardVisualLeadingCompensation)
+                                    EmptyView()
                                     
                                 case .meetingCards:
                                     MeetingSummaryCardStackView(meetings: Binding(
@@ -972,31 +901,6 @@ struct ChatView: View {
                                     }, onDeleteRequest: { card in
                                         Task { @MainActor in
                                             await appState.softDeleteContactCard(card, modelContext: modelContext)
-                                        }
-                                    })
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .offset(x: -chatCardVisualLeadingCompensation)
-                                }
-
-                                if let invoices = message.invoices, !invoices.isEmpty {
-                                    InvoiceCardStackView(invoices: Binding(
-                                        get: {
-                                            guard let idx = appState.chatMessages.firstIndex(where: { $0.id == message.id }) else { return [] }
-                                            return appState.chatMessages[idx].invoices ?? []
-                                        },
-                                        set: { newValue in
-                                            guard let idx = appState.chatMessages.firstIndex(where: { $0.id == message.id }) else { return }
-                                            appState.chatMessages[idx].invoices = newValue.isEmpty ? nil : newValue
-                                            appState.saveMessageToStorage(appState.chatMessages[idx], modelContext: modelContext)
-                                        }
-                                    ), onOpenDetail: { invoice in
-                                        invoiceDetailSelection = InvoiceDetailSelection(messageId: message.id, invoiceId: invoice.id)
-                                    }, onDeleteRequest: { invoice in
-                                        guard let idx = appState.chatMessages.firstIndex(where: { $0.id == message.id }) else { return }
-                                        withAnimation {
-                                            appState.chatMessages[idx].invoices?.removeAll(where: { $0.id == invoice.id })
-                                            if (appState.chatMessages[idx].invoices ?? []).isEmpty { appState.chatMessages[idx].invoices = nil }
-                                            appState.saveMessageToStorage(appState.chatMessages[idx], modelContext: modelContext)
                                         }
                                     })
                                     .frame(maxWidth: .infinity, alignment: .leading)

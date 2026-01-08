@@ -12,6 +12,10 @@ struct BackendChatStructuredOutput: Equatable {
     var segments: [ChatSegment] = []
 
     var scheduleEvents: [ScheduleEvent] = []
+    /// 从工具调用（例如 schedules_delete）解析出的“被删除日程 remoteId”列表。
+    /// - 用途：让前端把历史消息里的对应日程卡片置灰（isObsolete=true）
+    /// - 注意：该字段不会自动生成卡片 UI，仅用于状态回写与列表刷新触发
+    var deletedScheduleRemoteIds: [String] = []
     var contacts: [ContactCard] = []
     var invoices: [InvoiceCard] = []
     var meetings: [MeetingCard] = []
@@ -26,6 +30,7 @@ struct BackendChatStructuredOutput: Equatable {
         (taskId?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) &&
         segments.isEmpty &&
         scheduleEvents.isEmpty &&
+        deletedScheduleRemoteIds.isEmpty &&
         contacts.isEmpty &&
         invoices.isEmpty &&
         meetings.isEmpty &&

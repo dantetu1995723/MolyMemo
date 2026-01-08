@@ -539,18 +539,10 @@ struct TodoListView: View {
     
     @MainActor
     private func applyRemoteEventSoftDelete(_ deleted: ScheduleEvent) {
-        if let idx = remoteEvents.firstIndex(where: { isSameRemote($0, deleted) }) {
-            remoteEvents[idx].isObsolete = true
-        } else {
-            var v = deleted
-            v.isObsolete = true
-            remoteEvents.append(v)
-        }
-        remoteEvents.sort(by: { $0.startTime < $1.startTime })
+        // ✅ 日程列表以后端为准：删除后直接从列表消失（不展示划杠/置灰）
+        remoteEvents.removeAll(where: { isSameRemote($0, deleted) })
         if let current = remoteDetailSelection, isSameRemote(current, deleted) {
-            var v = current
-            v.isObsolete = true
-            remoteDetailSelection = v
+            remoteDetailSelection = nil
         }
     }
     
@@ -734,7 +726,8 @@ struct TodoListView: View {
             let list = cached.value
                 .filter { cal.isDate($0.startTime, inSameDayAs: selectedDate) }
                 .sorted(by: { $0.startTime < $1.startTime })
-            remoteEvents = appState.applyScheduleSoftDeleteOverlay(to: list)
+            // ✅ 日程列表以后端为准：不补回“已删快照”，也不做前端置灰覆盖
+            remoteEvents = list
             
             // 即使缓存新鲜，也后台静默刷新，确保数据及时更新
             Task { @MainActor in
@@ -764,7 +757,8 @@ struct TodoListView: View {
             let list = all
                 .filter { cal.isDate($0.startTime, inSameDayAs: selectedDate) }
                 .sorted(by: { $0.startTime < $1.startTime })
-            remoteEvents = appState.applyScheduleSoftDeleteOverlay(to: list)
+            // ✅ 日程列表以后端为准：不补回“已删快照”，也不做前端置灰覆盖
+            remoteEvents = list
         } catch {
             remoteEvents = []
             if showError {

@@ -107,6 +107,7 @@ final class BackendChatService {
                 let delta = parseChunkDelta(obj)
                 if delta.segments.isEmpty,
                    delta.scheduleEvents.isEmpty,
+                   delta.deletedScheduleRemoteIds.isEmpty,
                    delta.contacts.isEmpty,
                    delta.invoices.isEmpty,
                    delta.meetings.isEmpty,
@@ -633,11 +634,137 @@ final class BackendChatService {
             _ = (tool["observation"] as? String)?.count ?? 0
         }
 #endif
-        // ✅ 统一以“后端 card chunk”为准：
-        // 现在后端在聊天室创建的日程/联系人卡片都会在 card.data 里带 id；
-        // remoteId 一律以 card.data.id 为准，这里不再解析 tool.observation，避免链路分叉与误补齐。
-        _ = name
-        _ = status
+        // ✅ 默认：统一以“后端 card chunk”为准（创建/更新的卡片信息不要从 tool 里猜，避免链路分叉）
+        //
+        // 例外：删除（schedules_delete）通常不会再下发 card chunk，但我们需要把历史卡片置灰。
+        // 因此这里仅对“删除”做最小解析：提取被删除日程的 remoteId。
+        if isScheduleDeleteTool(name: name), isToolSuccess(status: status) {
+            let ids = extractScheduleRemoteIdsFromTool(tool)
+            if !ids.isEmpty {
+                // 去重追加（保持稳定顺序）
+                var existing = Set(output.deletedScheduleRemoteIds.map { $0.lowercased() })
+                for rid in ids {
+                    let t = rid.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !t.isEmpty else { continue }
+                    let k = t.lowercased()
+                    if existing.insert(k).inserted {
+                        output.deletedScheduleRemoteIds.append(t)
+                    }
+                }
+            }
+        }
+    }
+
+    private static func isToolSuccess(status: String) -> Bool {
+        // 兼容少数后端状态命名
+        switch status {
+        case "success", "succeeded", "ok", "done", "completed", "complete":
+            return true
+        default:
+            return false
+        }
+    }
+
+    private static func isScheduleDeleteTool(name: String) -> Bool {
+        // 常见：schedules_delete；也兼容 schedules_cancel / schedules_remove
+        if name == "schedules_delete" || name == "schedules_cancel" || name == "schedules_remove" {
+            return true
+        }
+        // 兜底：包含 schedules + delete/cancel/remove
+        if name.contains("schedule") && (name.contains("delete") || name.contains("cancel") || name.contains("remove")) {
+            return true
+        }
+        return false
+    }
+
+    private static func extractScheduleRemoteIdsFromTool(_ tool: [String: Any]) -> [String] {
+        // 优先从结构化字段取（args/result/data），再兜底从 observation 文本正则抓取
+        let candidates: [Any?] = [
+            tool["args"],
+            tool["arguments"],
+            tool["input"],
+            tool["parameters"],
+            tool["result"],
+            tool["data"]
+        ]
+        var out: [String] = []
+        for c in candidates {
+            out.append(contentsOf: extractIdsFromAny(c))
+        }
+        if let obs = tool["observation"] as? String, !obs.isEmpty {
+            out.append(contentsOf: extractIdsFromObservationString(obs))
+        }
+        // 去重（保持顺序）
+        var seen: Set<String> = []
+        var unique: [String] = []
+        for s in out {
+            let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !t.isEmpty else { continue }
+            let k = t.lowercased()
+            if seen.insert(k).inserted {
+                unique.append(t)
+            }
+        }
+        return unique
+    }
+
+    private static func extractIdsFromAny(_ any: Any?) -> [String] {
+        guard let any else { return [] }
+        if let s = any as? String {
+            let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+            // 如果就是纯 id，直接收；否则不在这里猜
+            return t.isEmpty ? [] : [t]
+        }
+        if let i = any as? Int { return [String(i)] }
+        if let d = any as? Double { return [String(Int(d))] }
+        if let arr = any as? [Any] {
+            return arr.flatMap { extractIdsFromAny($0) }
+        }
+        if let dict = any as? [String: Any] {
+            // 重点 key：id / schedule_id / remote_id
+            let keyOrder = ["schedule_id", "scheduleId", "remote_id", "remoteId", "id"]
+            var result: [String] = []
+            for k in keyOrder {
+                if let v = dict[k] {
+                    result.append(contentsOf: extractIdsFromAny(v))
+                }
+            }
+            // 兼容：嵌套 data/id
+            if let data = dict["data"] {
+                result.append(contentsOf: extractIdsFromAny(data))
+            }
+            return result
+        }
+        return []
+    }
+
+    private static func extractIdsFromObservationString(_ raw: String) -> [String] {
+        // observation 可能不是合法 JSON（可能拼接了日志），用正则抓取：
+        // - "schedule_id": "xxx" / 123
+        // - "id": "xxx" / 123
+        let patterns: [String] = [
+            "\"schedule_id\"\\s*:\\s*\"([^\"]+)\"",
+            "\"schedule_id\"\\s*:\\s*(\\d+)",
+            "\"remote_id\"\\s*:\\s*\"([^\"]+)\"",
+            "\"remote_id\"\\s*:\\s*(\\d+)",
+            "\"id\"\\s*:\\s*\"([^\"]+)\"",
+            "\"id\"\\s*:\\s*(\\d+)"
+        ]
+        let ns = raw as NSString
+        let full = NSRange(location: 0, length: ns.length)
+        var result: [String] = []
+        for p in patterns {
+            guard let regex = try? NSRegularExpression(pattern: p, options: []) else { continue }
+            let matches = regex.matches(in: raw, options: [], range: full)
+            for m in matches {
+                guard m.numberOfRanges >= 2 else { continue }
+                let captured = ns.substring(with: m.range(at: 1))
+                let t = captured.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !t.isEmpty { result.append(t) }
+            }
+            if !result.isEmpty { break } // 优先命中更强语义的 key（例如 schedule_id）
+        }
+        return result
     }
     
     /// scheduleEvents 去重合并：以 remoteId 优先，其次 id。可指定是否用 incoming 覆盖 existing。

@@ -153,6 +153,7 @@ struct ContactDetailView: View {
     
     // 键盘状态：用于避免“语音编辑”按钮被键盘顶上来（与日程详情一致）
     @State private var isKeyboardVisible: Bool = false
+    @FocusState private var isNotesFocused: Bool
     
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -409,12 +410,39 @@ struct ContactDetailView: View {
                                         .foregroundColor(iconColor)
                                         .frame(width: 24, alignment: .leading)
                                     
-                                    TextField("添加备注", text: userEditedBinding($editedNotes), axis: .vertical)
-                                        .font(.system(size: 16))
-                                        .foregroundColor(primaryTextColor)
-                                        .lineLimit(4...10)
-                                        .lineSpacing(6)
-                                        .disabled(isSubmitting)
+                                    Group {
+                                        if isNotesFocused {
+                                            TextField("添加备注", text: userEditedBinding($editedNotes), axis: .vertical)
+                                                .font(.system(size: 16))
+                                                .foregroundColor(primaryTextColor)
+                                                .lineLimit(4...10)
+                                                .lineSpacing(6)
+                                                .disabled(isSubmitting)
+                                                .focused($isNotesFocused)
+                                        } else {
+                                            let trimmed = editedNotes.trimmingCharacters(in: .whitespacesAndNewlines)
+                                            if trimmed.isEmpty {
+                                                Text("添加备注")
+                                                    .font(.system(size: 16))
+                                                    .foregroundColor(secondaryTextColor)
+                                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                                    .contentShape(Rectangle())
+                                                    .onTapGesture { isNotesFocused = true }
+                                            } else {
+                                                LinkifiedText(
+                                                    text: editedNotes,
+                                                    font: .system(size: 16),
+                                                    textColor: primaryTextColor,
+                                                    linkColor: .blue,
+                                                    lineSpacing: 6,
+                                                    lineLimit: 10
+                                                )
+                                                .frame(maxWidth: .infinity, alignment: .leading)
+                                                .contentShape(Rectangle())
+                                                .onTapGesture { isNotesFocused = true }
+                                            }
+                                        }
+                                    }
                                     
                                     Spacer()
                                 }

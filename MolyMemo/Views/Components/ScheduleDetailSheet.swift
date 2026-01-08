@@ -422,23 +422,49 @@ struct ScheduleDetailSheet: View {
                                     .foregroundColor(iconColor)
                                     .frame(width: 24)
                                 
-                                TextField("添加备注", text: $editedEvent.description, axis: .vertical)
-                                    .font(.system(size: 16))
-                                    .foregroundColor(primaryTextColor)
-                                    .lineLimit(4...10)
-                                    .lineSpacing(6)
-                                    .focused($focusedField, equals: .description)
-                                    // 多行 TextField 默认回车是“换行”，这里改成“完成并收起键盘”
-                                    .onChange(of: editedEvent.description) { _, newValue in
-                                        guard newValue.contains("\n") else { return }
-                                        let sanitized = newValue
-                                            .replacingOccurrences(of: "\n", with: " ")
-                                            .trimmingCharacters(in: .whitespacesAndNewlines)
-                                        if editedEvent.description != sanitized {
-                                            editedEvent.description = sanitized
+                                Group {
+                                    if focusedField == .description {
+                                        TextField("添加备注", text: $editedEvent.description, axis: .vertical)
+                                            .font(.system(size: 16))
+                                            .foregroundColor(primaryTextColor)
+                                            .lineLimit(4...10)
+                                            .lineSpacing(6)
+                                            .focused($focusedField, equals: .description)
+                                            // 多行 TextField 默认回车是“换行”，这里改成“完成并收起键盘”
+                                            .onChange(of: editedEvent.description) { _, newValue in
+                                                guard newValue.contains("\n") else { return }
+                                                let sanitized = newValue
+                                                    .replacingOccurrences(of: "\n", with: " ")
+                                                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                                                if editedEvent.description != sanitized {
+                                                    editedEvent.description = sanitized
+                                                }
+                                                dismissKeyboard()
+                                            }
+                                    } else {
+                                        let trimmed = editedEvent.description.trimmingCharacters(in: .whitespacesAndNewlines)
+                                        if trimmed.isEmpty {
+                                            Text("添加备注")
+                                                .font(.system(size: 16))
+                                                .foregroundColor(secondaryTextColor)
+                                                .frame(maxWidth: .infinity, alignment: .leading)
+                                                .contentShape(Rectangle())
+                                                .onTapGesture { focusedField = .description }
+                                        } else {
+                                            LinkifiedText(
+                                                text: editedEvent.description,
+                                                font: .system(size: 16),
+                                                textColor: primaryTextColor,
+                                                linkColor: .blue,
+                                                lineSpacing: 6,
+                                                lineLimit: 10
+                                            )
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .contentShape(Rectangle())
+                                            .onTapGesture { focusedField = .description }
                                         }
-                                        dismissKeyboard()
                                     }
+                                }
                             }
                             .padding(.horizontal, 20)
                             

@@ -3,7 +3,6 @@ import SwiftUI
 // 模块类型枚举
 enum ModuleType: String, CaseIterable {
     case todo = "日程"
-    case expense = "报销发票"
     case contact = "联系人"
     case meeting = "会议纪要"
     
@@ -11,7 +10,6 @@ enum ModuleType: String, CaseIterable {
         switch self {
         // 工具箱底栏图标统一采用“线框/非填充”风格，和「日程」一致
         case .todo: return "calendar"
-        case .expense: return "doc.text"
         case .contact: return "person.2"
         case .meeting: return "mic"
         }
@@ -24,7 +22,6 @@ struct ModuleContainerView: View {
     @Environment(\.modelContext) private var modelContext
     @State private var selectedModule: ModuleType = .todo
     @State private var showAddSheet = false
-    @State private var showContactAddSheet = false
     @Namespace private var tabNamespace
     
     // 主题色 - 统一灰色
@@ -48,8 +45,6 @@ struct ModuleContainerView: View {
                     case .contact:
                         // 联系人模块：与「日程」一致，进入即从后端拉取列表；失败则展示本地缓存
                         ContactListView()
-                    case .expense:
-                        InvoiceCardLibraryView(showAddSheet: $showAddSheet)
                     case .meeting:
                         MeetingRecordView(showAddSheet: $showAddSheet)
                     }
@@ -60,11 +55,6 @@ struct ModuleContainerView: View {
                 liquidGlassTabBar()
             }
         }
-        .sheet(isPresented: $showContactAddSheet) {
-            ContactEditView(contact: nil)
-                .environmentObject(appState)
-                .presentationDragIndicator(.visible)
-        }
     }
     
     // MARK: - Liquid Glass 底部导航栏
@@ -73,9 +63,6 @@ struct ModuleContainerView: View {
             ForEach(ModuleType.allCases, id: \.self) { module in
                 tabItem(for: module)
             }
-            
-            // 添加按钮
-            addButton()
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 4)
@@ -85,56 +72,6 @@ struct ModuleContainerView: View {
         .padding(.bottom, 8)
         .shadow(color: Color.black.opacity(0.06), radius: 16, x: 0, y: 6)
         .shadow(color: Color.black.opacity(0.03), radius: 4, x: 0, y: 2)
-    }
-    
-    // 添加按钮
-    private func addButton() -> some View {
-        Button(action: {
-            HapticFeedback.light()
-            if selectedModule == .contact {
-                showContactAddSheet = true
-            } else {
-                showAddSheet = true
-            }
-        }) {
-            ZStack {
-                // 背景圆形 - 主题色
-                Circle()
-                    .fill(
-                        LinearGradient(
-                            gradient: Gradient(stops: [
-                                .init(color: themeColor.opacity(0.9), location: 0.0),
-                                .init(color: themeColor.opacity(0.7), location: 1.0)
-                            ]),
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .overlay(
-                        Circle()
-                            .strokeBorder(
-                                LinearGradient(
-                                    gradient: Gradient(stops: [
-                                        .init(color: Color.white.opacity(0.6), location: 0.0),
-                                        .init(color: Color.white.opacity(0.2), location: 0.5),
-                                        .init(color: Color.white.opacity(0.4), location: 1.0)
-                                    ]),
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                ),
-                                lineWidth: 1
-                            )
-                    )
-                    .shadow(color: themeColor.opacity(0.3), radius: 4, x: 0, y: 2)
-                
-                Image(systemName: "plus")
-                    .font(.system(size: 24, weight: .semibold))
-                    .foregroundColor(.white)
-            }
-            .frame(width: 48, height: 48)
-        }
-        .buttonStyle(TabItemButtonStyle())
-        .padding(.horizontal, 4)
     }
     
     // 单个标签项

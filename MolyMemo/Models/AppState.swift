@@ -733,7 +733,7 @@ class AppState: ObservableObject {
     /// 统一：软删除一个日程（聊天室卡片 + 工具箱列表同步，按 id/remoteId 统一）
     func softDeleteSchedule(_ event: ScheduleEvent, modelContext: ModelContext) async {
         // 1) 聊天历史：把所有同实体的卡片置灰划杠并落库
-        markScheduleCardsAsObsoleteAndPersist(updated: event, modelContext: modelContext)
+        _ = markScheduleCardsAsObsoleteAndPersist(updated: event, modelContext: modelContext)
         
         // 2) 工具箱：保留一份快照（后端删了也能显示“已删除”）
         var snap = event
@@ -1100,9 +1100,21 @@ class AppState: ObservableObject {
 
         chatMessages[index] = msg
 
+        // ✅ 工具删除：schedules_delete 通常不会产生 card chunk，但需要把历史卡片置灰
+        // 基于 output.deletedScheduleRemoteIds，回写历史消息里的同 remoteId 日程为 isObsolete=true，并落库/写软删快照。
+        var allObsoleteChangedMessageIds = obsoleteChangedMessageIds
+        if let modelContext, !output.deletedScheduleRemoteIds.isEmpty {
+            let extra = applyDeletedSchedulesFromTool(remoteIds: output.deletedScheduleRemoteIds, modelContext: modelContext)
+            if !extra.isEmpty {
+                allObsoleteChangedMessageIds.formUnion(extra)
+            }
+            // 删除也应刷新工具箱/通知栏列表（后端已删除，列表会少一条；同时用于通知栏更新）
+            Task { await ScheduleService.invalidateCachesAndNotifyRemoteScheduleDidChange() }
+        }
+
         // ✅ 把“废弃旧卡”的变化也落库，确保下次打开仍能看到划杠变灰的历史卡片
-        if let modelContext, !obsoleteChangedMessageIds.isEmpty {
-            for mid in obsoleteChangedMessageIds {
+        if let modelContext, !allObsoleteChangedMessageIds.isEmpty {
+            for mid in allObsoleteChangedMessageIds {
                 if let idx = chatMessages.firstIndex(where: { $0.id == mid }) {
                     saveMessageToStorage(chatMessages[idx], modelContext: modelContext)
                 }
@@ -1674,7 +1686,7 @@ class AppState: ObservableObject {
         modelContext: ModelContext,
         reasonText: String = "已更新日程"
     ) {
-        markScheduleCardsAsObsoleteAndPersist(updated: updated, modelContext: modelContext)
+        _ = markScheduleCardsAsObsoleteAndPersist(updated: updated, modelContext: modelContext)
 
         var msg = ChatMessage(role: .agent, content: reasonText)
         msg.segments = [
@@ -1734,7 +1746,7 @@ class AppState: ObservableObject {
     }
 
     @MainActor
-    private func markScheduleCardsAsObsoleteAndPersist(updated: ScheduleEvent, modelContext: ModelContext) {
+    private func markScheduleCardsAsObsoleteAndPersist(updated: ScheduleEvent, modelContext: ModelContext) -> Set<UUID> {
         func trimmed(_ s: String?) -> String { (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
         let rid = trimmed(updated.remoteId)
 
@@ -1788,6 +1800,81 @@ class AppState: ObservableObject {
                 saveMessageToStorage(chatMessages[idx], modelContext: modelContext)
             }
         }
+        return changedMessageIds
+    }
+
+    /// schedules_delete 工具回写：按 remoteId 找到历史里的日程卡片并置灰，同时写入软删快照（用于工具箱展示“已删除”）。
+    @MainActor
+    private func applyDeletedSchedulesFromTool(remoteIds: [String], modelContext: ModelContext) -> Set<UUID> {
+        func trimmedLower(_ s: String) -> String { s.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+        let incoming = remoteIds
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard !incoming.isEmpty else { return [] }
+
+        // 去重（保持顺序）
+        var seen: Set<String> = []
+        var unique: [String] = []
+        for rid in incoming {
+            let k = trimmedLower(rid)
+            if seen.insert(k).inserted { unique.append(rid) }
+        }
+
+        var changed: Set<UUID> = []
+        var anyApplied = false
+
+        for rid in unique {
+            if let snap0 = findScheduleSnapshotByRemoteId(rid) {
+                var snap = snap0
+                // 以 remoteId 为主键，强制对齐（避免快照里 remoteId 为空/带空格）
+                snap.remoteId = rid
+                snap.isObsolete = true
+
+                let ids = markScheduleCardsAsObsoleteAndPersist(updated: snap, modelContext: modelContext)
+                if !ids.isEmpty {
+                    changed.formUnion(ids)
+                }
+
+                // 工具箱软删快照：保证后端已删除时仍能展示“已删除”状态（与手动删除一致）
+                deletedScheduleSnapshotByKey[EntityKey.schedule(snap)] = snap
+                anyApplied = true
+            } else {
+                // 找不到历史快照也不强造卡片；但仍应视为远端变更（用于工具箱刷新）
+                anyApplied = true
+            }
+        }
+
+        if anyApplied {
+            persistDeletedScheduleSnapshots()
+        }
+        return changed
+    }
+
+    /// 从聊天历史中按 remoteId 找一个“可作为快照”的 ScheduleEvent（用于删除置灰）。
+    /// - 策略：从新到旧找，优先 segments 内的 scheduleCards，其次聚合 scheduleEvents。
+    @MainActor
+    private func findScheduleSnapshotByRemoteId(_ remoteId: String) -> ScheduleEvent? {
+        let rid = remoteId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !rid.isEmpty else { return nil }
+        func trimmed(_ s: String?) -> String { (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
+
+        for msg in chatMessages.reversed() {
+            if let segs = msg.segments, !segs.isEmpty {
+                for seg in segs.reversed() where seg.kind == .scheduleCards {
+                    if let evs = seg.scheduleEvents, !evs.isEmpty {
+                        if let hit = evs.first(where: { trimmed($0.remoteId) == rid }) {
+                            return hit
+                        }
+                    }
+                }
+            }
+            if let evs = msg.scheduleEvents, !evs.isEmpty {
+                if let hit = evs.first(where: { trimmed($0.remoteId) == rid }) {
+                    return hit
+                }
+            }
+        }
+        return nil
     }
 
     @MainActor
