@@ -366,6 +366,10 @@ struct ContactCardLoadingView: View {
 struct ContactCardView: View {
     @Binding var contact: ContactCard
     @State private var showPhoneSheet: Bool = false
+
+    /// 仅用于「人脉卡片」姓名高亮色
+    /// 用纯 SwiftUI Color 避免被 UIKit bridging / 外层样式链路影响
+    private let contactNameColor = Color(red: 0.63, green: 0.4, blue: 0.01)
     
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -373,7 +377,7 @@ struct ContactCardView: View {
             HStack(alignment: .lastTextBaseline, spacing: 8) {
                 Text(contact.name)
                     .font(.custom("SourceHanSerifSC-Bold", size: 24))
-                    .foregroundColor(contact.isObsolete ? Color(hex: "999999") : Color(red: 0.2, green: 0.2, blue: 0.2))
+                    .foregroundStyle(contact.isObsolete ? Color(hex: "999999") : contactNameColor)
                     .strikethrough(contact.isObsolete, color: Color(hex: "999999"))
                 
                 Spacer()

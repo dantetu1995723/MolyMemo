@@ -1303,6 +1303,12 @@ struct UserBubble: View {
     
     private let messageImageSize: CGFloat = 120
     
+    private struct ImagePreviewItem: Identifiable {
+        let id = UUID()
+        let image: UIImage
+    }
+    @State private var previewItem: ImagePreviewItem? = nil
+    
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
             Spacer(minLength: 40) // 确保左侧有足够空间
@@ -1316,6 +1322,11 @@ struct UserBubble: View {
                             .frame(width: messageImageSize, height: messageImageSize)
                             .cornerRadius(12)
                             .clipped()
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                HapticFeedback.light()
+                                previewItem = ImagePreviewItem(image: image)
+                            }
                     }
                 }
                 
@@ -1334,6 +1345,29 @@ struct UserBubble: View {
             }
             .frame(maxWidth: ScreenMetrics.width * 0.80, alignment: .trailing)
         }
+        .fullScreenCover(item: $previewItem) { item in
+            FullscreenImagePreview(image: item.image)
+        }
+    }
+}
+
+private struct FullscreenImagePreview: View {
+    let image: UIImage
+    
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFill()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .clipped()
+                .ignoresSafeArea()
+        }
+        .onTapGesture { dismiss() }
     }
 }
 
