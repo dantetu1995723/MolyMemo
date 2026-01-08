@@ -30,11 +30,14 @@ class ChatInputViewModel: ObservableObject {
     
     // MARK: - Actions
     var onSend: ((String, UIImage?) -> Void)?
+    var onSendImmediate: (() -> UUID?)?  // 立即发送占位消息，返回消息ID用于后续更新
+    var onUpdateAndSend: ((UUID, String) -> Void)?  // 更新消息内容并触发AI对话
+    var onRemovePlaceholder: ((UUID) -> Void)?  // 删除占位消息（用于转录失败或结果为空）
     var onBoxTap: (() -> Void)?
     var onStopGenerator: (() -> Void)?
     
     // MARK: - Internal
-    private let holdToTalkRecorder = HoldToTalkM4ARecorder()
+    private let holdToTalkRecorder = HoldToTalkPCMRecorder()
     private var holdToTalkGeneration: Int = 0
     private var holdToTalkASRTask: Task<Void, Never>?
     private var cancellables = Set<AnyCancellable>()
@@ -173,9 +176,9 @@ class ChatInputViewModel: ObservableObject {
         holdToTalkASRTask?.cancel()
         holdToTalkASRTask = nil
 
-        // 停止录音：取消则删文件，不取消则留文件用于上传识别
-        let url = holdToTalkRecorder.stop(deleteFile: !shouldSend)
-        print("[HoldToTalk] stopRecording isCanceling=\(isCanceling) shouldSend=\(shouldSend) file=\(url?.lastPathComponent ?? "nil")")
+        // 停止录音：取消则丢弃数据，不取消则取 PCM bytes 用于识别
+        let pcm = holdToTalkRecorder.stop(discard: !shouldSend)
+        print("[HoldToTalk] stopRecording isCanceling=\(isCanceling) shouldSend=\(shouldSend) pcmBytes=\(pcm.count)")
         
         // 先走“球 -> 输入框”的逆向动画，结束后再真正收起 overlay
         withAnimation(.easeInOut(duration: 0.16)) {
@@ -183,23 +186,37 @@ class ChatInputViewModel: ObservableObject {
             audioPower = 0
         }
 
-        guard shouldSend, let fileURL = url else { return }
+        guard shouldSend, !pcm.isEmpty else { return }
         recordingTranscript = "识别中..."
+        
+        // 立即发送占位消息
+        let placeholderMessageId = onSendImmediate?()
+        print("[HoldToTalk] 🚀 immediate send placeholder messageId=\(placeholderMessageId?.uuidString ?? "nil")")
 
         holdToTalkASRTask = Task { [weak self] in
             guard let self else { return }
             do {
-                print("[HoldToTalk] 🚀 SAUC WS request start -> \(fileURL.lastPathComponent)")
+                print("[HoldToTalk] 🚀 SAUC WS request start -> pcmBytes=\(pcm.count)")
                 let service = try SAUCWebSocketASRService()
-                let text = try await service.transcribeM4AFile(at: fileURL)
+                let text = try await service.transcribePCMBytes(pcm)
                 guard !Task.isCancelled else {
-                    try? FileManager.default.removeItem(at: fileURL)
+                    // 如果任务被取消，删除占位消息
+                    if let messageId = placeholderMessageId {
+                        await MainActor.run {
+                            self.onRemovePlaceholder?(messageId)
+                        }
+                    }
                     return
                 }
                 // 如果期间又开始了新一轮按住说话，就不要把旧结果发出去
                 guard self.holdToTalkGeneration == genAtStop else {
                     print("[HoldToTalk] ⚠️ drop transcript due to generation changed (genAtStop=\(genAtStop), current=\(self.holdToTalkGeneration))")
-                    try? FileManager.default.removeItem(at: fileURL)
+                    // 删除占位消息
+                    if let messageId = placeholderMessageId {
+                        await MainActor.run {
+                            self.onRemovePlaceholder?(messageId)
+                        }
+                    }
                     return
                 }
                 let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -207,21 +224,33 @@ class ChatInputViewModel: ObservableObject {
                 if !trimmed.isEmpty {
                     await MainActor.run {
                         self.recordingTranscript = trimmed
-                        self.onSend?(trimmed, nil)
+                        // 如果有占位消息ID，更新消息内容并触发AI对话；否则使用原来的方式
+                        if let messageId = placeholderMessageId {
+                            self.onUpdateAndSend?(messageId, trimmed)
+                        } else {
+                            self.onSend?(trimmed, nil)
+                        }
                     }
                 } else {
                     await MainActor.run {
                         self.recordingTranscript = ""
+                        // 如果转录结果为空，删除占位消息
+                        if let messageId = placeholderMessageId {
+                            self.onRemovePlaceholder?(messageId)
+                        }
                     }
                 }
-                try? FileManager.default.removeItem(at: fileURL)
             } catch {
                 guard !Task.isCancelled else { return }
-                print("[HoldToTalk] ❌ SAUC WS error -> \(error.localizedDescription)")
+                let ns = error as NSError
+                print("[HoldToTalk] ❌ SAUC WS error -> \(ns.domain)(\(ns.code)) \(ns.localizedDescription)")
                 await MainActor.run {
                     self.recordingTranscript = ""
+                    // 如果转录失败，删除占位消息
+                    if let messageId = placeholderMessageId {
+                        self.onRemovePlaceholder?(messageId)
+                    }
                 }
-                try? FileManager.default.removeItem(at: fileURL)
             }
         }
     }
@@ -273,11 +302,7 @@ class ChatInputViewModel: ObservableObject {
             guard let self else { return }
             do {
                 try await self.holdToTalkRecorder.start()
-                if let url = self.holdToTalkRecorder.currentFileURL {
-                    print("[HoldToTalk] recording started ok (gen=\(gen)) file=\(url.lastPathComponent)")
-                } else {
-                    print("[HoldToTalk] recording started ok (gen=\(gen)) file=nil")
-                }
+                print("[HoldToTalk] recording started ok (gen=\(gen))")
             } catch {
                 print("[HoldToTalk] ❌ start recording failed -> \(error.localizedDescription)")
                 self.isPreCapturingHoldToTalk = false
@@ -308,7 +333,7 @@ class ChatInputViewModel: ObservableObject {
         isPreCapturingHoldToTalk = false
         holdToTalkASRTask?.cancel()
         holdToTalkASRTask = nil
-        _ = holdToTalkRecorder.stop(deleteFile: true)
+        _ = holdToTalkRecorder.stop(discard: true)
         recordingTranscript = ""
         audioPower = 0.0
         isCanceling = false

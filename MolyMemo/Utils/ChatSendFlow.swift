@@ -34,7 +34,7 @@ enum ChatSendFlow {
         }
         appState.saveMessageToStorage(userMsg, modelContext: modelContext)
 
-        // 发送给模型的上下文：默认带历史；截图等“直发”场景可选择不带历史避免串话
+        // 发送给模型的上下文：默认带历史；截图等"直发"场景可选择不带历史避免串话
         let messagesForModel: [ChatMessage] = includeHistory ? appState.chatMessages : [userMsg]
 
         // 2) AI 占位消息
@@ -68,6 +68,120 @@ enum ChatSendFlow {
                 onError: { error in
                     Task { @MainActor in
                         appState.handleStreamingError(error, for: messageId)
+                        appState.isAgentTyping = false
+                    }
+                }
+            )
+        }
+    }
+    
+    /// 立即发送占位消息并返回消息ID，用于后续更新消息内容
+    static func sendPlaceholder(
+        appState: AppState,
+        modelContext: ModelContext,
+        placeholderText: String = "",
+        includeHistory: Bool = true
+    ) -> UUID? {
+        // 1) 创建用户占位消息
+        let userMsg = ChatMessage(role: .user, content: placeholderText)
+        
+        withAnimation {
+            appState.chatMessages.append(userMsg)
+        }
+        appState.saveMessageToStorage(userMsg, modelContext: modelContext)
+        
+        return userMsg.id
+    }
+    
+    /// 删除占位消息（用于转录失败或结果为空的情况）
+    static func removePlaceholder(
+        appState: AppState,
+        modelContext: ModelContext,
+        messageId: UUID
+    ) {
+        guard let index = appState.chatMessages.firstIndex(where: { $0.id == messageId }) else {
+            return
+        }
+        
+        withAnimation {
+            appState.chatMessages.remove(at: index)
+        }
+        
+        // 从存储中删除
+        do {
+            let descriptor = FetchDescriptor<PersistentChatMessage>(
+                predicate: #Predicate { $0.id == messageId }
+            )
+            if let stored = try modelContext.fetch(descriptor).first {
+                modelContext.delete(stored)
+                try modelContext.save()
+            }
+        } catch {
+            // 忽略删除错误
+        }
+    }
+    
+    /// 更新已存在的用户消息内容并触发AI对话
+    static func updateAndSend(
+        appState: AppState,
+        modelContext: ModelContext,
+        messageId: UUID,
+        text: String,
+        includeHistory: Bool = true
+    ) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            // 如果内容为空，删除占位消息
+            removePlaceholder(appState: appState, modelContext: modelContext, messageId: messageId)
+            return
+        }
+        
+        // 更新用户消息内容
+        guard let index = appState.chatMessages.firstIndex(where: { $0.id == messageId }) else {
+            // 如果找不到消息，直接发送新消息
+            send(appState: appState, modelContext: modelContext, text: trimmed, includeHistory: includeHistory)
+            return
+        }
+        
+        var updatedMessage = appState.chatMessages[index]
+        updatedMessage.content = trimmed
+        appState.chatMessages[index] = updatedMessage
+        appState.saveMessageToStorage(updatedMessage, modelContext: modelContext)
+        
+        // 发送给模型的上下文
+        let messagesForModel: [ChatMessage] = includeHistory ? appState.chatMessages : [updatedMessage]
+        
+        // 创建AI占位消息
+        let agentMsg = ChatMessage(role: .agent, content: "")
+        withAnimation {
+            appState.chatMessages.append(agentMsg)
+        }
+        let agentMessageId = agentMsg.id
+        
+        // 调用 AI
+        appState.isAgentTyping = true
+        appState.startStreaming(messageId: agentMessageId)
+        appState.currentGenerationTask = Task {
+            await SmartModelRouter.sendMessageStream(
+                messages: messagesForModel,
+                mode: appState.currentMode,
+                onStructuredOutput: { output in
+                    Task { @MainActor in
+                        appState.applyStructuredOutput(output, to: agentMessageId, modelContext: modelContext)
+                    }
+                },
+                onComplete: { finalText in
+                    await appState.playResponse(finalText, for: agentMessageId)
+                    await MainActor.run {
+                        appState.isAgentTyping = false
+                        if let completedMessage = appState.chatMessages.first(where: { $0.id == agentMessageId }) {
+                            appState.saveMessageToStorage(completedMessage, modelContext: modelContext)
+                        }
+                    }
+                },
+                onError: { error in
+                    Task { @MainActor in
+                        appState.handleStreamingError(error, for: agentMessageId)
                         appState.isAgentTyping = false
                     }
                 }

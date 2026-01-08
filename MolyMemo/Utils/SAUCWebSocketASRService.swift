@@ -83,19 +83,13 @@ struct SAUCWebSocketASRService {
 
     // MARK: - Public
 
-    func transcribeM4AFile(at m4aURL: URL) async throws -> String {
+    /// 直接用 16k/16bit/mono 的 Int16 PCM bytes 推送 SAUC
+    func transcribePCMBytes(_ pcm: Data) async throws -> String {
         print("[HoldToTalk] SAUC config: resourceId=\(config.resourceId) ws=\(config.wsURL.absoluteString)")
 
-        // 1) m4a -> wav(16k/16bit/mono) -> 取 PCM data chunk
-        let wavURL = try await AudioConversion.convertToWav16kMono(from: m4aURL)
-        defer { try? FileManager.default.removeItem(at: wavURL) }
-        let wavData = try Data(contentsOf: wavURL)
-        let wav = try WavParser.parse(wavData)
-        let pcm = wav.pcmData
-        let segmentBytes = wav.bytesPerSample * wav.channels * wav.sampleRate * config.segmentDurationMs / 1000
-        let segmentSize = max(1, segmentBytes)
+        let segmentSize = max(1, 16_000 * 2 * 1 * config.segmentDurationMs / 1000) // 16k * 2bytes * 1ch
 
-        print("[HoldToTalk] SAUC wav: rate=\(wav.sampleRate)Hz bits=\(wav.bitsPerSample) ch=\(wav.channels) pcmBytes=\(pcm.count) seg=\(segmentSize)B")
+        print("[HoldToTalk] SAUC pcm: bytes=\(pcm.count) seg=\(segmentSize)B")
 
         // 2) 建立 WS
         var request = URLRequest(url: config.wsURL)
@@ -123,13 +117,15 @@ struct SAUCWebSocketASRService {
         return final
     }
 
+
     // MARK: - Send
 
     private func sendFullClientRequest(ws: URLSessionWebSocketTask, seq: Int32) async throws {
-        var payload: [String: Any] = [
+        let payload: [String: Any] = [
             "user": ["uid": "demo_uid"],
             "audio": [
-                "format": "wav",
+                // 对齐官方 payload：我们发送的是裸 PCM（不是 WAV 容器）
+                "format": "pcm",
                 "codec": "raw",
                 "rate": 16000,
                 "bits": 16,
@@ -141,7 +137,10 @@ struct SAUCWebSocketASRService {
                 "enable_punc": config.enablePunc,
                 "enable_ddc": config.enableDDC,
                 "show_utterances": config.showUtterances,
-                "enable_nonstream": config.enableNonstream
+                "enable_nonstream": config.enableNonstream,
+                // 对齐截图：加速相关（如果服务端不支持会忽略/报错，我们后续可根据回包调整）
+                "accelerate_score": 10,
+                "enable_accelerate_text": true
             ]
         ]
         // 保持结构稳定（Any 编码顺序无所谓；服务端只看字段）
@@ -203,6 +202,9 @@ struct SAUCWebSocketASRService {
             case .data(let data):
                 let resp = try parseResponseFrame(data)
                 if resp.code != 0 {
+                    if let payload = resp.payloadJSON {
+                        print("[HoldToTalk] SAUC <- server error payload: \(payload)")
+                    }
                     throw ServiceError.serverError(code: resp.code, message: resp.message)
                 }
                 if let payload = resp.payloadJSON {
@@ -427,103 +429,7 @@ struct SAUCWebSocketASRService {
 
 // MARK: - WAV parsing (只取 data chunk 的 PCM)
 
-private enum WavParser {
-    struct ParsedWav {
-        var channels: Int
-        var sampleRate: Int
-        var bitsPerSample: Int
-        var bytesPerSample: Int
-        var pcmData: Data
-    }
-
-    static func parse(_ data: Data) throws -> ParsedWav {
-        guard data.count >= 44 else { throw SAUCWebSocketASRService.ServiceError.invalidWav("too short") }
-        func s(_ r: Range<Int>) -> String { String(data: data.subdata(in: r), encoding: .ascii) ?? "" }
-        guard s(0..<4) == "RIFF" else { throw SAUCWebSocketASRService.ServiceError.invalidWav("not RIFF") }
-        guard s(8..<12) == "WAVE" else { throw SAUCWebSocketASRService.ServiceError.invalidWav("not WAVE") }
-
-        let numChannels = Int(data.readUInt16LE(at: 22))
-        let sampleRate = Int(data.readUInt32LE(at: 24))
-        let bitsPerSample = Int(data.readUInt16LE(at: 34))
-        let bytesPerSample = max(1, bitsPerSample / 8)
-
-        var pos = 12
-        while pos + 8 <= data.count {
-            let chunkId = s(pos..<(pos + 4))
-            let chunkSize = Int(data.readUInt32LE(at: pos + 4))
-            let chunkDataStart = pos + 8
-            let chunkDataEnd = min(chunkDataStart + chunkSize, data.count)
-            if chunkId == "data" {
-                guard chunkDataEnd > chunkDataStart else { throw SAUCWebSocketASRService.ServiceError.invalidWav("empty data chunk") }
-                let pcm = data.subdata(in: chunkDataStart..<chunkDataEnd)
-                return ParsedWav(
-                    channels: numChannels,
-                    sampleRate: sampleRate,
-                    bitsPerSample: bitsPerSample,
-                    bytesPerSample: bytesPerSample,
-                    pcmData: pcm
-                )
-            }
-            pos = chunkDataStart + chunkSize
-        }
-        throw SAUCWebSocketASRService.ServiceError.invalidWav("no data chunk")
-    }
-}
-
-// MARK: - m4a -> wav(16k/mono/s16) conversion
-
-private enum AudioConversion {
-    static func convertToWav16kMono(from m4aURL: URL) async throws -> URL {
-        // AVAudioFile 读 m4a（AAC），用 AVAudioConverter 转成 16k/mono/s16，然后写 wav 临时文件
-        let input = try AVAudioFile(forReading: m4aURL)
-        let inFormat = input.processingFormat
-
-        guard let outFormat = AVAudioFormat(
-            commonFormat: .pcmFormatInt16,
-            sampleRate: 16_000,
-            channels: 1,
-            interleaved: true
-        ) else {
-            throw SAUCWebSocketASRService.ServiceError.audioConvertFailed("cannot create out format")
-        }
-
-        guard let converter = AVAudioConverter(from: inFormat, to: outFormat) else {
-            throw SAUCWebSocketASRService.ServiceError.audioConvertFailed("cannot create converter")
-        }
-
-        let outURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("hold_to_talk_\(UUID().uuidString).wav")
-        try? FileManager.default.removeItem(at: outURL)
-        let output = try AVAudioFile(forWriting: outURL, settings: outFormat.settings)
-
-        let inFrameCapacity: AVAudioFrameCount = 4096
-        guard let inBuffer = AVAudioPCMBuffer(pcmFormat: inFormat, frameCapacity: inFrameCapacity) else {
-            throw SAUCWebSocketASRService.ServiceError.audioConvertFailed("cannot alloc in buffer")
-        }
-
-        let outFrameCapacity: AVAudioFrameCount = 4096
-        guard let outBuffer = AVAudioPCMBuffer(pcmFormat: outFormat, frameCapacity: outFrameCapacity) else {
-            throw SAUCWebSocketASRService.ServiceError.audioConvertFailed("cannot alloc out buffer")
-        }
-
-        while true {
-            try input.read(into: inBuffer, frameCount: inFrameCapacity)
-            if inBuffer.frameLength == 0 { break }
-
-            var error: NSError?
-            let status = converter.convert(to: outBuffer, error: &error) { _, outStatus in
-                outStatus.pointee = .haveData
-                return inBuffer
-            }
-            if let error { throw error }
-            guard status != .error else { throw SAUCWebSocketASRService.ServiceError.audioConvertFailed("convert status error") }
-
-            try output.write(from: outBuffer)
-        }
-
-        return outURL
-    }
-}
+// （已移除 WAV 解析与 m4a->wav 转码：现在统一走 PCM 录音文件直接读取）
 
 // MARK: - Transcript collector (从 payload JSON 尽量抽出 text)
 
@@ -570,11 +476,15 @@ private final class TranscriptCollector: @unchecked Sendable {
 private extension Data {
     mutating func appendInt32BE(_ v: Int32) {
         var x = v.bigEndian
-        append(UnsafeBufferPointer(start: &x, count: 1))
+        Swift.withUnsafeBytes(of: &x) { bytes in
+            append(contentsOf: bytes)
+        }
     }
     mutating func appendUInt32BE(_ v: UInt32) {
         var x = v.bigEndian
-        append(UnsafeBufferPointer(start: &x, count: 1))
+        Swift.withUnsafeBytes(of: &x) { bytes in
+            append(contentsOf: bytes)
+        }
     }
     func readUInt16LE(at i: Int) -> UInt16 {
         let b0 = UInt16(self[i])

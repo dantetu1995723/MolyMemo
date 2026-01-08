@@ -445,6 +445,34 @@ struct ChatView: View {
                 sendChatMessage(text: text, images: images)
             }
             
+            inputViewModel.onSendImmediate = {
+                // 立即发送占位消息，返回消息ID用于后续更新
+                return ChatSendFlow.sendPlaceholder(
+                    appState: appState,
+                    modelContext: modelContext,
+                    placeholderText: "识别中..."
+                )
+            }
+            
+            inputViewModel.onUpdateAndSend = { messageId, text in
+                // 更新消息内容并触发AI对话
+                ChatSendFlow.updateAndSend(
+                    appState: appState,
+                    modelContext: modelContext,
+                    messageId: messageId,
+                    text: text
+                )
+            }
+            
+            inputViewModel.onRemovePlaceholder = { messageId in
+                // 删除占位消息（用于转录失败或结果为空）
+                ChatSendFlow.removePlaceholder(
+                    appState: appState,
+                    modelContext: modelContext,
+                    messageId: messageId
+                )
+            }
+            
             inputViewModel.onBoxTap = {
                 showModuleContainer = true
             }
