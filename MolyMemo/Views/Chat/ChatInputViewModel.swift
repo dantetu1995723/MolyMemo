@@ -34,7 +34,9 @@ class ChatInputViewModel: ObservableObject {
     var onStopGenerator: (() -> Void)?
     
     // MARK: - Internal
-    private let speechRecognizer = SpeechRecognizer()
+    private let holdToTalkRecorder = HoldToTalkM4ARecorder()
+    private var holdToTalkGeneration: Int = 0
+    private var holdToTalkASRTask: Task<Void, Never>?
     private var cancellables = Set<AnyCancellable>()
     /// 按住说话：按下瞬间就开始“预收音/预转写”，但不立刻展示 overlay（避免轻点聚焦时闪一下 UI）
     private var isPreCapturingHoldToTalk: Bool = false
@@ -53,8 +55,8 @@ class ChatInputViewModel: ObservableObject {
     // MARK: - Methods
     
     init() {
-        // 用真实收音 level 驱动 UI（不做 demo 模拟）
-        speechRecognizer.$audioLevel
+        // 用真实收音 level 驱动 UI（来自 m4a recorder meter）
+        holdToTalkRecorder.$audioLevel
             .receive(on: DispatchQueue.main)
             .sink { [weak self] level in
                 self?.audioPower = CGFloat(level)
@@ -166,48 +168,81 @@ class ChatInputViewModel: ObservableObject {
 
         // 结束预收音状态（无论是否已展示 overlay）
         isPreCapturingHoldToTalk = false
-        // 标记：允许在 overlay 退场结束时用最终 transcript 回填
-        shouldBackfillTranscriptOnOverlayDismiss = !isCanceling
-        
-        speechRecognizer.stopRecording()
+        let shouldSend = !isCanceling
+        let genAtStop = holdToTalkGeneration
+        holdToTalkASRTask?.cancel()
+        holdToTalkASRTask = nil
+
+        // 停止录音：取消则删文件，不取消则留文件用于上传识别
+        let url = holdToTalkRecorder.stop(deleteFile: !shouldSend)
+        print("[HoldToTalk] stopRecording isCanceling=\(isCanceling) shouldSend=\(shouldSend) file=\(url?.lastPathComponent ?? "nil")")
         
         // 先走“球 -> 输入框”的逆向动画，结束后再真正收起 overlay
         withAnimation(.easeInOut(duration: 0.16)) {
             isAnimatingRecordingExit = true
             audioPower = 0
         }
-        
-        // 注意：不在这里读取 recordingTranscript。
-        // 原因：stop 后语音识别可能还会回调 final 结果（更完整），
-        // 我们在 overlay 退场结束时再取，能显著减少“尾字漏掉”的体感。
+
+        guard shouldSend, let fileURL = url else { return }
+        recordingTranscript = "识别中..."
+
+        holdToTalkASRTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                print("[HoldToTalk] 🚀 SAUC WS request start -> \(fileURL.lastPathComponent)")
+                let service = try SAUCWebSocketASRService()
+                let text = try await service.transcribeM4AFile(at: fileURL)
+                guard !Task.isCancelled else {
+                    try? FileManager.default.removeItem(at: fileURL)
+                    return
+                }
+                // 如果期间又开始了新一轮按住说话，就不要把旧结果发出去
+                guard self.holdToTalkGeneration == genAtStop else {
+                    print("[HoldToTalk] ⚠️ drop transcript due to generation changed (genAtStop=\(genAtStop), current=\(self.holdToTalkGeneration))")
+                    try? FileManager.default.removeItem(at: fileURL)
+                    return
+                }
+                let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                print("[HoldToTalk] ✅ SAUC transcript -> \(trimmed)")
+                if !trimmed.isEmpty {
+                    await MainActor.run {
+                        self.recordingTranscript = trimmed
+                        self.onSend?(trimmed, nil)
+                    }
+                } else {
+                    await MainActor.run {
+                        self.recordingTranscript = ""
+                    }
+                }
+                try? FileManager.default.removeItem(at: fileURL)
+            } catch {
+                guard !Task.isCancelled else { return }
+                print("[HoldToTalk] ❌ SAUC WS error -> \(error.localizedDescription)")
+                await MainActor.run {
+                    self.recordingTranscript = ""
+                }
+                try? FileManager.default.removeItem(at: fileURL)
+            }
+        }
     }
     
     /// 由 overlay 的逆向动画结束回调触发：真正收起 overlay 并恢复输入框
     func finishRecordingOverlayDismissal() {
-        withAnimation(.easeInOut(duration: 0.12)) {
+        withAnimation(.easeInOut(duration: 0.1)) {
             isRecording = false
             isAnimatingRecordingEntry = false
             isAnimatingRecordingExit = false
             isCanceling = false
             audioPower = 0
         }
-        // overlay 退场完成时，语音识别通常已经产出更完整的 final 文本
-        if shouldBackfillTranscriptOnOverlayDismiss {
-            let text = recordingTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !text.isEmpty, text != "正在聆听..." {
-                pendingDictationTextForInput = text
-            }
-        }
-        shouldBackfillTranscriptOnOverlayDismiss = false
-        applyPendingDictationTextToInputIfNeeded()
+        // 发送动作由 AUC flash 回调驱动；这里仅负责收 UI
     }
     
     func cancelRecording() {
         withAnimation {
             isCanceling = true
         }
-        // 取消：不回填
-        shouldBackfillTranscriptOnOverlayDismiss = false
+        print("[HoldToTalk] 🙅 cancel (will stop after 0.3s)")
         // Delay stop to show cancel animation
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
              self.stopRecording()
@@ -225,19 +260,30 @@ class ChatInputViewModel: ObservableObject {
 
         isPreCapturingHoldToTalk = true
         isCanceling = false
-        recordingTranscript = "" // 先留空，overlay 出现时会显示“正在聆听...”
+        recordingTranscript = "" // overlay 当前不展示 transcript，但留着调试
         audioPower = 0.0
 
-        // 请求权限（只会在未授权/未决定时弹窗）
-        speechRecognizer.requestAuthorization()
+        holdToTalkGeneration &+= 1
+        let gen = holdToTalkGeneration
+        holdToTalkASRTask?.cancel()
+        holdToTalkASRTask = nil
 
-        // 开始真实收音 + 转写（partial results）
-        speechRecognizer.startRecording { [weak self] text in
-            guard let self = self else { return }
-            // 只有在“预收音”或“已展示 overlay”阶段才接收回调，避免 stop 后又回写 UI
-            guard self.isPreCapturingHoldToTalk || self.isRecording else { return }
-            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            self.recordingTranscript = trimmed
+        print("[HoldToTalk] press down -> start pre-capture (gen=\(gen))")
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await self.holdToTalkRecorder.start()
+                if let url = self.holdToTalkRecorder.currentFileURL {
+                    print("[HoldToTalk] recording started ok (gen=\(gen)) file=\(url.lastPathComponent)")
+                } else {
+                    print("[HoldToTalk] recording started ok (gen=\(gen)) file=nil")
+                }
+            } catch {
+                print("[HoldToTalk] ❌ start recording failed -> \(error.localizedDescription)")
+                self.isPreCapturingHoldToTalk = false
+                self.isCanceling = false
+                self.audioPower = 0
+            }
         }
     }
 
@@ -260,10 +306,13 @@ class ChatInputViewModel: ObservableObject {
     func stopHoldToTalkPreCaptureIfNeeded() {
         guard isPreCapturingHoldToTalk else { return }
         isPreCapturingHoldToTalk = false
-        speechRecognizer.stopRecording()
+        holdToTalkASRTask?.cancel()
+        holdToTalkASRTask = nil
+        _ = holdToTalkRecorder.stop(deleteFile: true)
         recordingTranscript = ""
         audioPower = 0.0
         isCanceling = false
+        print("[HoldToTalk] pre-capture stopped (no overlay) -> deleted file")
     }
     
     func updateDragLocation(_ location: CGPoint, in bounds: CGRect) {

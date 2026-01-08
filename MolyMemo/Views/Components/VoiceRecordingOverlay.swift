@@ -4,13 +4,13 @@ private struct VoiceWaveformView: View {
     let audioPower: CGFloat
     var isCanceling: Bool = false
     
-    private let barCount: Int = 20
-    private let activeThreshold: CGFloat = 0.05  // 与蓝色球阈值统一
-    private let barWidth: CGFloat = 1.5
-    private let barSpacing: CGFloat = 1.5
+    private let barCount: Int = 40
+    private let activeThreshold: CGFloat = 0.01
+    private let barWidth: CGFloat = 3.0
+    private let barSpacing: CGFloat = 3.0
     private let minHeight: CGFloat = 5
-    private let maxContainerHeight: CGFloat = 24
-    private let activeAmplitude: CGFloat = 12
+    private let maxContainerHeight: CGFloat = 54
+    private let activeAmplitude: CGFloat = 45
     
     private var barColor: Color {
         isCanceling ? Color(hex: "FF453A") : Color(hex: "007AFF")
@@ -32,9 +32,8 @@ private struct VoiceWaveformView: View {
     private func idleBars() -> some View {
         return HStack(alignment: .center, spacing: barSpacing) {
             ForEach(0..<barCount, id: \.self) { _ in
-                // 静止时所有条等高
-                RoundedRectangle(cornerRadius: 0.75)
-                    .fill(barColor.opacity(0.7))
+                RoundedRectangle(cornerRadius: 1.5)
+                    .fill(barColor.opacity(0.6))
                     .frame(width: barWidth, height: minHeight)
             }
         }
@@ -45,7 +44,7 @@ private struct VoiceWaveformView: View {
         return HStack(alignment: .center, spacing: barSpacing) {
             ForEach(0..<barCount, id: \.self) { i in
                 let height = activeHeight(index: i, time: time, power: audioPower, mid: mid)
-                RoundedRectangle(cornerRadius: 0.75)
+                RoundedRectangle(cornerRadius: 1.5)
                     .fill(barColor.opacity(0.8))
                     .frame(width: barWidth, height: height)
             }
@@ -53,126 +52,123 @@ private struct VoiceWaveformView: View {
     }
     
     private func activeHeight(index i: Int, time: TimeInterval, power: CGFloat, mid: Double) -> CGFloat {
-        // 中间更强，边缘更弱
         let dist = abs(Double(i) - mid) / mid
-        let centerWeight = max(0.15, 1.0 - dist)
+        let centerWeight = max(0.2, 1.0 - pow(dist, 1.2))
         
-        // 多频正弦叠加，打散周期性（无序感更强）
-        let n1 = sin(time * 13.7 + Double(i) * 0.9)
-        let n2 = sin(time * 21.3 + Double(i) * 1.7)
-        let n3 = sin(time * 29.1 + Double(i) * 0.35)
-        let mixed = (n1 * 0.45 + n2 * 0.35 + n3 * 0.20 + 1.0) / 2.0 // 约 0..1
+        let n1 = sin(time * 10.0 + Double(i) * 0.7)
+        let n2 = sin(time * 15.0 + Double(i) * 1.3)
+        let mixed = (n1 * 0.5 + n2 * 0.5 + 1.0) / 2.0
         
-        let dynamic = CGFloat(max(0, mixed)) * power * (activeAmplitude * CGFloat(centerWeight))
+        let dynamic = CGFloat(mixed) * power * (activeAmplitude * CGFloat(centerWeight))
         return minHeight + dynamic
+    }
+}
+
+private struct BlueArcView: View {
+    let power: CGFloat
+    let isCanceling: Bool
+    let isExiting: Bool
+    
+    @State private var breathingAmount: CGFloat = 0
+    
+    var body: some View {
+        GeometryReader { geo in
+            let width = geo.size.width
+            let height = geo.size.height
+            
+            ZStack {
+                // 大圆弧：增加直径到 2.2 倍宽度，使其弧度更平缓
+                Circle()
+                    .fill(isCanceling ? Color(hex: "FF453A") : Color(hex: "007AFF"))
+                    .frame(width: width * 2.2, height: width * 2.2)
+                    // 将初始位置下移，增加 offset 使其初始高度降低
+                    .offset(y: height * 0.8) 
+                    .offset(y: -power * 70 - breathingAmount * 15) // 随音量和呼吸移动
+                    .animation(.interactiveSpring(response: 0.35, dampingFraction: 0.7), value: power)
+            }
+            .frame(width: width, height: height)
+            .opacity(isExiting ? 0 : 1)
+            .offset(y: isExiting ? height * 0.4 : 0)
+        }
+        .onAppear {
+            withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
+                breathingAmount = 1.0
+            }
+        }
     }
 }
 
 struct VoiceRecordingOverlay: View {
     @Binding var isRecording: Bool
     @Binding var isCanceling: Bool
-    /// true：松手后的退场（球 -> 输入框）
     var isExiting: Bool = false
-    /// 逆向动画结束后回调（用于外部把 overlay 彻底收起）
     var onExitComplete: (() -> Void)? = nil
     var audioPower: CGFloat
     var transcript: String
     var inputFrame: CGRect
     var toolboxFrame: CGRect
     
-    @State private var isAnimatingEntry = true
     @State private var showMainUI = false
+    @State private var smoothedPower: CGFloat = 0
     @State private var backgroundOpacity: Double = 0
-    @State private var smoothedPower: CGFloat = 0  // 统一平滑后的音频值
-    
-    /// 仅调“语音转文字白色外框”的高度，不改变内部字体/padding/音浪尺寸
-    private let transcriptCardMinHeight: CGFloat = 132
     
     var body: some View {
-        ZStack {
-            // 1. 背景蒙版：独立图层，在录音开始时自然淡入
-            Color.black.opacity(isCanceling ? 0.5 : backgroundOpacity)
+        ZStack(alignment: .center) {
+            // 1. 背景蒙版
+            Color.black.opacity(backgroundOpacity)
                 .ignoresSafeArea()
-                .animation(.easeInOut(duration: 0.12), value: isCanceling)
             
-            // 2. 粘滞流体球：负责全生命周期（融合、内缩、循环旋转）
-            StickyBallAnimationView(
-                inputFrame: inputFrame,
-                toolboxFrame: toolboxFrame,
-                isAnimating: .constant(true),
-                isCanceling: isCanceling,
-                isReversing: isExiting,
-                audioPower: smoothedPower,  // 使用统一平滑后的值
-                onComplete: {
-                    // 动画到达成球状态瞬间，显示文字框
-                    withAnimation(.spring(response: 0.2, dampingFraction: 0.85)) {
-                        showMainUI = true
-                    }
-                },
-                onReverseComplete: {
-                    onExitComplete?()
-                }
-            )
+            // 2. 底部蓝色弧
+            BlueArcView(power: smoothedPower, isCanceling: isCanceling, isExiting: isExiting)
             
-            // 3. 录音主界面层（文字框、音浪）
+            // 3. 录音主界面
             if showMainUI {
-                // 文字识别结果 + 提示文字
-                VStack(spacing: 20) {
-                    VStack(alignment: .leading, spacing: 0) {
-                        // 文字区域
-                        Text(transcript.isEmpty ? "正在聆听..." : transcript)
-                            .font(.system(size: 15, weight: .regular))
-                            .foregroundColor(.black.opacity(0.8))
-                            .lineSpacing(4)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .frame(minHeight: 32)
-                            .padding(.horizontal, 16)
-                            .padding(.top, 16)
-                    }
-                    .frame(width: ScreenMetrics.width - 60)
-                    .frame(minHeight: transcriptCardMinHeight, alignment: .topLeading)
-                    .background(
-                        RoundedRectangle(cornerRadius: 24)
-                            .fill(.white)
-                            .shadow(color: .black.opacity(0.08), radius: 15, x: 0, y: 5)
-                    )
-                    // 不用 Spacer：直接把音浪贴在卡片右下角，避免把卡片撑满全屏
-                    .overlay(alignment: .bottomTrailing) {
+                VStack(spacing: 0) {
+                    VStack(alignment: .center, spacing: 24) {
+                        // 音浪
                         VoiceWaveformView(audioPower: smoothedPower, isCanceling: isCanceling)
-                            .padding(.trailing, 16)
-                            .padding(.bottom, 14)
+                        
+                        // 提示文字
+                        Text(isCanceling ? "松手发送，上滑取消" : "松手发送，上滑取消")
+                            .font(.system(size: 16, weight: .regular))
+                            .foregroundColor(isCanceling ? Color(hex: "FF453A") : Color(hex: "333333").opacity(0.6))
                     }
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 16)
+                    .frame(width: 279, alignment: .center)
+                    .background(.white)
+                    .cornerRadius(12)
+                    .shadow(color: .black.opacity(0.08), radius: 20, x: 0, y: 10)
+                    .transition(.scale(scale: 0.9).combined(with: .opacity))
                     
-                    // 提示文字
-                    Text(isCanceling ? "放开手指取消" : "放开手指传送，向上滑动取消")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(isCanceling ? Color(hex: "FF453A") : .white.opacity(0.9))
+                    // 占位，让卡片稍微靠上一点
+                    Spacer()
+                        .frame(height: ScreenMetrics.height * 0.12)
                 }
-                .padding(.bottom, 120)
-                .transition(.scale(scale: 0.9).combined(with: .opacity))
             }
         }
         .ignoresSafeArea()
         .onAppear {
-            // 融合开始时启动背景淡入，此时正好完成粘滞融合
-            withAnimation(.easeInOut(duration: 0.12)) {
+            withAnimation(.easeInOut(duration: 0.25)) {
                 backgroundOpacity = 0.35
+                showMainUI = true
             }
         }
         .onChange(of: audioPower) { _, newValue in
-            // 统一平滑处理：蓝色球和音浪条使用同一个平滑后的值
-            withAnimation(.linear(duration: 0.08)) {
-                smoothedPower = newValue
-            }
+            // 进一步平滑音频输入，避免视觉抖动
+            smoothedPower = smoothedPower * 0.6 + newValue * 0.4
         }
         .onChange(of: isExiting) { _, exiting in
             guard exiting else { return }
-            // 退场时先收起主 UI，再淡出背景，避免"文字框悬空"
-            withAnimation(.easeInOut(duration: 0.12)) {
+            // 提速：缩短退场动画时长，增强敏捷感
+            withAnimation(.easeInOut(duration: 0.15)) {
                 showMainUI = false
+                backgroundOpacity = 0
             }
-            withAnimation(.easeOut(duration: 0.15)) {
-                backgroundOpacity = 0.0
+            
+            // 延迟触发完成回调，匹配动画时长
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.16) {
+                onExitComplete?()
             }
         }
     }
