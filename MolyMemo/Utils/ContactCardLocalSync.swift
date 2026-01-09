@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import Contacts
 
 /// 统一：把聊天/资料库里的 `ContactCard` 同步到本地 SwiftData `Contact`。
 /// 目标：
@@ -7,6 +8,12 @@ import SwiftData
 /// - 仅在“确实有变更”时保存，避免频繁写盘
 @MainActor
 enum ContactCardLocalSync {
+    private static func log(_ message: String) {
+#if DEBUG
+        print("[ContactCardLocalSync] \(message)")
+#endif
+    }
+    
     /// 根据 card 在本地查找或创建 `Contact`，并把 card 的“有值字段”补齐写回。
     static func findOrCreateContact(from card: ContactCard, allContacts: [Contact], modelContext: ModelContext) -> Contact {
         // 1) 优先按本地 id 命中（我们在创建时会对齐 id）
@@ -75,6 +82,9 @@ enum ContactCardLocalSync {
         newContact.id = card.id
         modelContext.insert(newContact)
         try? modelContext.save()
+        
+        // 单向同步到系统通讯录：仅新建且有手机号时尝试（不阻塞主流程）
+        triggerSystemContactSyncIfNeeded(for: newContact, modelContext: modelContext)
         return newContact
     }
 
@@ -164,12 +174,64 @@ enum ContactCardLocalSync {
         if changed {
             contact.lastModified = Date()
             try? modelContext.save()
+            
+            // 若本次同步补齐了手机号，且尚未绑定系统联系人，则尝试单向同步
+            if !trimmed(contact.phoneNumber).isEmpty, trimmed(contact.systemContactIdentifier).isEmpty {
+                triggerSystemContactSyncIfNeeded(for: contact, modelContext: modelContext)
+            }
         }
         return changed
     }
 
     private static func trimmed(_ s: String?) -> String {
         (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    
+    private static func triggerSystemContactSyncIfNeeded(for contact: Contact, modelContext: ModelContext) {
+        let phone = trimmed(contact.phoneNumber)
+        guard !phone.isEmpty else { return }
+        guard trimmed(contact.systemContactIdentifier).isEmpty else { return }
+        
+        log("triggerSystemContactSyncIfNeeded() start name=\(contact.name) phone=\(phone) id=\(contact.id)")
+        
+        // 重要：不要 detached。通讯录权限弹窗在后台任务里可能不会弹，导致永远拿不到授权。
+        Task(priority: .utility) {
+            let granted = await ContactsManager.shared.requestAccess()
+            guard granted else {
+                log("triggerSystemContactSyncIfNeeded() requestAccess denied")
+                return
+            }
+            
+            // 先匹配系统已有联系人（避免重复创建）
+            if let matched = try? await ContactsManager.shared.findMatchingSystemContact(name: contact.name, phoneNumber: contact.phoneNumber) {
+                let id = matched.identifier.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !id.isEmpty {
+                    contact.systemContactIdentifier = id
+                    try? modelContext.save()
+                    log("triggerSystemContactSyncIfNeeded() matched existing system id=\(id)")
+                    return
+                }
+            }
+            
+            do {
+                let result = try await ContactsManager.shared.syncToSystemContacts(contact: contact)
+                let id: String? = {
+                    switch result {
+                    case .success(let identifier): return identifier
+                    case .duplicate(let identifier): return identifier
+                    }
+                }()
+                if let id, !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    contact.systemContactIdentifier = id
+                    try? modelContext.save()
+                    log("triggerSystemContactSyncIfNeeded() saved system id=\(id)")
+                } else {
+                    log("triggerSystemContactSyncIfNeeded() finished but identifier is nil/empty")
+                }
+            } catch {
+                log("triggerSystemContactSyncIfNeeded() error=\(error.localizedDescription)")
+            }
+        }
     }
 }
 

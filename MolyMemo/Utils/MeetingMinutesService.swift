@@ -669,7 +669,8 @@ class MeetingMinutesService {
                 return MeetingTranscription(
                     speaker: item.speaker ?? "说话人",
                     time: item.time ?? "00:00:00",
-                    content: content
+                    content: content,
+                    startTime: parseHMSSeconds(item.time ?? "")
                 )
             }
             return GeneratedMinutes(id: nil, title: nil, date: nil, summary: summary, transcriptions: transcriptions, audioDuration: nil, audioUrl: nil)
@@ -706,7 +707,7 @@ class MeetingMinutesService {
                         ? d.speakerName!
                         : ("说话人" + (d.speakerId ?? ""))
                     let time = formatHMS(d.startTime ?? 0)
-                    return MeetingTranscription(speaker: speaker, time: time, content: text)
+                    return MeetingTranscription(speaker: speaker, time: time, content: text, startTime: d.startTime, endTime: d.endTime)
                 }
             }
             if let ts = item.transcriptions, !ts.isEmpty {
@@ -715,7 +716,8 @@ class MeetingMinutesService {
                     return MeetingTranscription(
                         speaker: t.speaker ?? "说话人",
                         time: t.time ?? "00:00:00",
-                        content: content
+                        content: content,
+                        startTime: parseHMSSeconds(t.time ?? "")
                     )
                 }
             }
@@ -890,6 +892,25 @@ class MeetingMinutesService {
         let m = (total % 3600) / 60
         let s = total % 60
         return String(format: "%02d:%02d:%02d", h, m, s)
+    }
+    
+    private static func parseHMSSeconds(_ raw: String) -> TimeInterval? {
+        let s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !s.isEmpty else { return nil }
+        let parts = s.split(separator: ":").map { String($0) }
+        if parts.count == 3 {
+            let h = Double(parts[0]) ?? 0
+            let m = Double(parts[1]) ?? 0
+            let sec = Double(parts[2]) ?? 0
+            return max(0, h * 3600 + m * 60 + sec)
+        }
+        if parts.count == 2 {
+            let m = Double(parts[0]) ?? 0
+            let sec = Double(parts[1]) ?? 0
+            return max(0, m * 60 + sec)
+        }
+        if let v = Double(s) { return max(0, v) }
+        return nil
     }
 
     private static func parseMeetingDate(item: MeetingMinutesItem) -> Date? {

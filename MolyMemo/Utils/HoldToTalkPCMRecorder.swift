@@ -2,7 +2,6 @@ import Foundation
 @preconcurrency import AVFoundation
 
 /// 按住说话：直接采集麦克风 PCM（统一输出 16k/16bit/mono 的 Int16 PCM bytes）
-@MainActor
 final class HoldToTalkPCMRecorder: ObservableObject {
     enum RecorderError: LocalizedError {
         case micPermissionDenied
@@ -25,6 +24,7 @@ final class HoldToTalkPCMRecorder: ObservableObject {
     private let engine = AVAudioEngine()
     private var converter: AVAudioConverter?
 
+    // 仅在 audioQueue 内读写，避免与音频 tap 线程抢数据
     private var pcmData = Data()
     private var bytesPerFrame: Int = 2 // int16 mono
 
@@ -63,16 +63,17 @@ final class HoldToTalkPCMRecorder: ObservableObject {
         isRecording = true
         print("[HoldToTalk] 🎙️ start PCM engine capture (in=\(inFormat.sampleRate)Hz ch=\(inFormat.channelCount))")
 
+        // 捕获必要对象，避免在 @Sendable 闭包里直接触碰 main-actor 状态
+        let q = audioQueue
         inputNode.installTap(onBus: bus, bufferSize: 1024, format: inFormat) { [weak self] buffer, _ in
-            guard let self else { return }
-            // 计算音量（用输入 buffer 更实时）
+            // 1) 计算音量（用输入 buffer 更实时），回到主线程更新 UI
             let level = Self.computeLevel(buffer: buffer)
-            DispatchQueue.main.async {
-                self.audioLevel = level
+            DispatchQueue.main.async { [weak self] in
+                self?.audioLevel = level
             }
 
-            // 转成 16k/int16/mono 并 append 到内存
-            self.audioQueue.async { [weak self] in
+            // 2) 转成 16k/int16/mono，并把 bytes 追加到内存（追加操作放到串行队列，避免数据竞争）
+            q.async { [weak self] in
                 guard let self else { return }
                 guard self.isRecording else { return }
                 guard let converter = self.converter else { return }
@@ -122,8 +123,12 @@ final class HoldToTalkPCMRecorder: ObservableObject {
             // ignore
         }
 
-        let bytes = pcmData
-        pcmData = Data()
+        // 等待音频队列把尾巴收干净，避免“最后一段”丢失
+        let bytes: Data = audioQueue.sync {
+            let out = pcmData
+            pcmData = Data()
+            return out
+        }
 
         if wasRecording {
             if discard {

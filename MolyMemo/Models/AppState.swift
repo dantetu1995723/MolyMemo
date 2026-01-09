@@ -457,6 +457,10 @@ struct MeetingTranscription: Identifiable, Equatable, Codable {
     var speaker: String
     var time: String
     var content: String
+    /// 该句开始时间（秒）。用于“播放跟随滚动/高亮”；旧数据可能为 nil。
+    var startTime: TimeInterval? = nil
+    /// 该句结束时间（秒）。可选：后端有时提供；旧数据可能为 nil。
+    var endTime: TimeInterval? = nil
 }
 
 // 人脉预览数据
@@ -1085,6 +1089,30 @@ class AppState: ObservableObject {
         let obsoleteChangedMessageIds = markPreviousCardsAsObsoleteIfNeeded(output: output)
 
         StructuredOutputApplier.apply(output, to: &msg)
+
+        // ✅ 聊天里“创建联系人/更新联系人”成功后：
+        // 把 contact card 同步到本地 SwiftData Contact 库，随后由 ContactCardLocalSync 触发单向写入系统通讯录。
+        if let modelContext {
+            let incoming = (msg.contacts ?? []).dedup(by: ChatCardStableId.contact)
+            if !incoming.isEmpty {
+#if DEBUG
+                print("[AppState] applyStructuredOutput() syncing contacts to local store. isDelta=\(output.isDelta) count=\(incoming.count)")
+#endif
+                do {
+                    var all = try modelContext.fetch(FetchDescriptor<Contact>())
+                    for card in incoming {
+                        let local = ContactCardLocalSync.findOrCreateContact(from: card, allContacts: all, modelContext: modelContext)
+                        if !all.contains(where: { $0.id == local.id }) {
+                            all.append(local)
+                        }
+                    }
+                } catch {
+#if DEBUG
+                    print("[AppState] applyStructuredOutput() local Contact sync failed: \(error.localizedDescription)")
+#endif
+                }
+            }
+        }
 
         // ✅ 每次“聊天室创建或修改完日程”后立刻强刷：
         // 触发条件：
@@ -2059,150 +2087,6 @@ class AppState: ObservableObject {
     }
     
     // MARK: - 调试/演示
-    
-    /// 添加示例日程消息
-    func addSampleScheduleMessage() {
-        let calendar = Calendar.current
-        
-        // Helper to create dates
-        func createDate(day: Int, hour: Int, minute: Int) -> Date {
-            var components = DateComponents()
-            components.year = 2025
-            components.month = 12
-            components.day = day
-            components.hour = hour
-            components.minute = minute
-            return calendar.date(from: components) ?? Date()
-        }
-        
-        // Event 1
-        var event1 = ScheduleEvent(
-            title: "定粤菜馆",
-            description: "提前一周预定和王总吃饭的餐馆",
-            startTime: createDate(day: 9, hour: 10, minute: 30),
-            endTime: createDate(day: 9, hour: 11, minute: 0)
-        )
-        event1.hasConflict = true // 示例冲突
-        
-        // Event 2
-        let event2 = ScheduleEvent(
-            title: "和张总开会",
-            description: "讨论下季度项目规划",
-            startTime: createDate(day: 10, hour: 14, minute: 0),
-            endTime: createDate(day: 10, hour: 15, minute: 30)
-        )
-        
-        // Event 3
-        var event3 = ScheduleEvent(
-            title: "团队周会",
-            description: "同步本周工作进度和下周计划",
-            startTime: createDate(day: 11, hour: 9, minute: 30),
-            endTime: createDate(day: 11, hour: 11, minute: 0)
-        )
-        event3.hasConflict = true
-        
-        // Event 4
-        let event4 = ScheduleEvent(
-            title: "客户拜访",
-            description: "去上海分公司拜访李总，确认合同细节",
-            startTime: createDate(day: 12, hour: 10, minute: 0),
-            endTime: createDate(day: 12, hour: 12, minute: 0)
-        )
-        
-        // Event 5
-        let event5 = ScheduleEvent(
-            title: "项目复盘",
-            description: "针对上一期项目进行复盘总结",
-            startTime: createDate(day: 13, hour: 15, minute: 0),
-            endTime: createDate(day: 13, hour: 17, minute: 0)
-        )
-        
-        var message = ChatMessage(role: .agent, content: "已为您创建了五个日程，可滑动查看，长按可调整。")
-        message.scheduleEvents = [event1, event2, event3, event4, event5]
-        
-        chatMessages.append(message)
-    }
-    
-    /// 添加示例人脉消息
-    func addSampleContactMessage() {
-        // Contact 1
-        let contact1 = ContactCard(
-            name: "庄靖瑶",
-            englishName: "Kinyoo",
-            company: "北京数据项素智能科技有限公司",
-            title: "UI 设计师",
-            phone: "18311117777",
-            email: "18311117777@dataelem.com"
-        )
-        
-        // Contact 2
-        let contact2 = ContactCard(
-            name: "王建国",
-            englishName: "James",
-            company: "上海科技创新中心",
-            title: "产品总监",
-            phone: "13900008888",
-            email: "james.wang@sh-tech.com"
-        )
-        
-        var message = ChatMessage(role: .agent, content: "识别到人脉信息，已为您创建了一个人脉卡片，长按可调整，点击可翻面查看。")
-        message.contacts = [contact1, contact2]
-        
-        chatMessages.append(message)
-    }
-    
-    /// 添加示例发票消息
-    func addSampleInvoiceMessage() {
-        // Invoice 1
-        let invoice1 = InvoiceCard(
-            invoiceNumber: "2511200000247821866",
-            merchantName: "北京市紫光园餐饮有限责任公司",
-            amount: 71.00,
-            date: Date(),
-            type: "餐饮",
-            notes: "中午请客吃饭"
-        )
-        
-        var message = ChatMessage(role: .agent, content: "识别到发票信息，已为您创建了发票记录，长按可调整。")
-        message.invoices = [invoice1]
-        
-        chatMessages.append(message)
-    }
-    
-    /// 添加示例会议纪要消息
-    func addSampleMeetingMessage() {
-        let meeting = MeetingCard(
-            title: "圆圆产品记忆系统设计",
-            date: {
-                var components = DateComponents()
-                components.year = 2025
-                components.month = 12
-                components.day = 17
-                components.hour = 1
-                components.minute = 27
-                components.second = 27
-                return Calendar.current.date(from: components) ?? Date()
-            }(),
-            summary: "本次会议围绕个人AI助手「圆圆」的产品功能设计与技术实现路径展开，重点讨论了核心功能模块、知识库构建策略以及多模态交互体验的优化方案。会议明确了第一阶段的研发重点为长效记忆的准确索引与上下文关联能力的提升。",
-            transcriptions: [
-                MeetingTranscription(
-                    speaker: "说话人1",
-                    time: "00:00:00",
-                    content: "本次会议围绕个人AI助手「圆圆」的产品功能设计与技术实现路径展开，重点讨论了核心功能模块、信息采集方式、人脉系统逻辑及记忆架构等关键议题。"
-                ),
-                MeetingTranscription(
-                    speaker: "说话人2",
-                    time: "00:00:00",
-                    content: "本次会议围绕个人AI助手「圆圆」的产品功能设计与技术实现路径展开，重点讨论了核心功能模块、信息采集方式、人脉系统逻辑及记忆架构等关键议题。"
-                )
-            ]
-        )
-        
-        var message = ChatMessage(role: .agent, content: MeetingCardCopy.agentMessageReady)
-        message.meetings = [meeting]
-        
-        chatMessages.append(message)
-    }
     
     /// 添加会议卡片消息（从录音完成后调用）
     @discardableResult

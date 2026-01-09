@@ -1,5 +1,6 @@
 import Foundation
 import Contacts
+import ContactsUI
 import SwiftUI
 
 // 通讯录管理器
@@ -7,23 +8,52 @@ class ContactsManager: ObservableObject {
     static let shared = ContactsManager()
     
     private let store = CNContactStore()
+
+    private func log(_ message: String) {
+#if DEBUG
+        print("[ContactsManager] \(message)")
+#endif
+    }
+    
+    private func trimmed(_ s: String?) -> String {
+        (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    
+    private func digitsOnly(_ s: String?) -> String {
+        trimmed(s).filter { $0.isNumber }
+    }
     
     // 请求通讯录权限
     func requestAccess() async -> Bool {
+        let status = checkAuthorizationStatus()
+        log("requestAccess() status=\(status.rawValue)")
         do {
             // iOS 18+ 需要使用新的权限请求方式
             if #available(iOS 18.0, *) {
                 let granted = try await store.requestAccess(for: .contacts)
                 // 等待一下让权限生效
                 try? await Task.sleep(nanoseconds: 100_000_000) // 0.1秒
+                log("requestAccess() granted=\(granted)")
                 return granted
             } else {
                 let granted = try await store.requestAccess(for: .contacts)
+                log("requestAccess() granted=\(granted)")
                 return granted
             }
         } catch {
+            log("requestAccess() error=\(error.localizedDescription)")
             return false
         }
+    }
+
+    /// 启动时前置请求：仅当状态为 `.notDetermined` 才会触发系统弹窗
+    /// - Important: 需要在主线程调用，确保系统权限弹窗可展示
+    @MainActor
+    func requestAccessIfNotDetermined(source: String) async {
+        let status = checkAuthorizationStatus()
+        log("requestAccessIfNotDetermined(source=\(source)) status=\(status.rawValue)")
+        guard status == .notDetermined else { return }
+        _ = await requestAccess()
     }
     
     // 检查当前权限状态
@@ -57,6 +87,26 @@ class ContactsManager: ObservableObject {
         
         return contacts
     }
+
+    /// 按 identifier 获取“可用于系统联系人详情展示”的 unified contact。
+    /// - Note: keys 使用 `CNContactViewController.descriptorForRequiredKeys()`，避免详情页缺字段/崩溃。
+    func fetchSystemContactForDetail(identifier: String) async throws -> CNContact {
+        let status = checkAuthorizationStatus()
+        guard status == .authorized else {
+            log("fetchSystemContactForDetail() not authorized")
+            throw ContactsError.notAuthorized
+        }
+        let id = trimmed(identifier)
+        guard !id.isEmpty else {
+            log("fetchSystemContactForDetail() empty identifier")
+            throw ContactsError.fetchFailed
+        }
+        // iOS 26 / Swift 6：descriptorForRequiredKeys() 变为 MainActor 隔离
+        let descriptor: CNKeyDescriptor = await MainActor.run { CNContactViewController.descriptorForRequiredKeys() }
+        let keys: [CNKeyDescriptor] = [descriptor]
+        log("fetchSystemContactForDetail() id=\(id)")
+        return try store.unifiedContact(withIdentifier: id, keysToFetch: keys)
+    }
     
     // 将CNContact转换为Contact模型
     func convertToContact(_ cnContact: CNContact) -> Contact {
@@ -86,14 +136,17 @@ class ContactsManager: ObservableObject {
     
     // MARK: - 同步到系统通讯录
     
-    // 检查通讯录中是否已存在相同联系人
-    func checkDuplicate(name: String, phoneNumber: String?) async throws -> Bool {
+    /// 查找系统通讯录中是否已存在相同联系人（优先手机号，其次名字）。
+    /// - Returns: 匹配到的 CNContact（若无则为 nil）
+    func findMatchingSystemContact(name: String, phoneNumber: String?) async throws -> CNContact? {
         let status = checkAuthorizationStatus()
         guard status == .authorized else {
+            log("findMatchingSystemContact() not authorized")
             throw ContactsError.notAuthorized
         }
         
         let keysToFetch: [CNKeyDescriptor] = [
+            CNContactIdentifierKey as CNKeyDescriptor,
             CNContactGivenNameKey as CNKeyDescriptor,
             CNContactFamilyNameKey as CNKeyDescriptor,
             CNContactPhoneNumbersKey as CNKeyDescriptor
@@ -102,15 +155,19 @@ class ContactsManager: ObservableObject {
         let predicate: NSPredicate
         
         // 如果有手机号，优先用手机号匹配
-        if let phone = phoneNumber?.filter({ $0.isNumber }), !phone.isEmpty {
-            predicate = CNContact.predicateForContacts(matching: CNPhoneNumber(stringValue: phone))
+        let phoneDigits = digitsOnly(phoneNumber)
+        if !phoneDigits.isEmpty {
+            log("findMatchingSystemContact() by phone digits=\(phoneDigits)")
+            predicate = CNContact.predicateForContacts(matching: CNPhoneNumber(stringValue: phoneDigits))
         } else {
             // 否则用名字匹配
+            log("findMatchingSystemContact() by name=\(name)")
             predicate = CNContact.predicateForContacts(matchingName: name)
         }
         
         do {
             let contacts = try store.unifiedContacts(matching: predicate, keysToFetch: keysToFetch)
+            log("findMatchingSystemContact() candidates=\(contacts.count)")
             
             // 检查是否有完全匹配的联系人
             for contact in contacts {
@@ -118,23 +175,27 @@ class ContactsManager: ObservableObject {
                 
                 // 名字匹配
                 if fullName == name {
-                    return true
+                    log("findMatchingSystemContact() matched by name id=\(contact.identifier)")
+                    return contact
                 }
                 
                 // 如果有手机号，检查手机号是否匹配
-                if let phone = phoneNumber?.filter({ $0.isNumber }), !phone.isEmpty {
+                if !phoneDigits.isEmpty {
                     for contactPhone in contact.phoneNumbers {
                         let contactPhoneNumber = contactPhone.value.stringValue.filter { $0.isNumber }
-                        if contactPhoneNumber == phone {
-                            return true
+                        if contactPhoneNumber == phoneDigits {
+                            log("findMatchingSystemContact() matched by phone id=\(contact.identifier)")
+                            return contact
                         }
                     }
                 }
             }
             
-            return false
+            log("findMatchingSystemContact() no match")
+            return nil
         } catch {
-            return false
+            log("findMatchingSystemContact() error=\(error.localizedDescription)")
+            return nil
         }
     }
     
@@ -142,13 +203,16 @@ class ContactsManager: ObservableObject {
     func syncToSystemContacts(contact: Contact) async throws -> SyncResult {
         let status = checkAuthorizationStatus()
         guard status == .authorized else {
+            log("syncToSystemContacts() not authorized")
             throw ContactsError.notAuthorized
         }
+        log("syncToSystemContacts() start name=\(contact.name) phone=\(trimmed(contact.phoneNumber))")
         
-        // 检查是否重复
-        let isDuplicate = try await checkDuplicate(name: contact.name, phoneNumber: contact.phoneNumber)
-        if isDuplicate {
-            return .duplicate
+        // 先匹配，避免重复创建
+        if let existing = try await findMatchingSystemContact(name: contact.name, phoneNumber: contact.phoneNumber) {
+            let id = trimmed(existing.identifier)
+            log("syncToSystemContacts() duplicate id=\(id)")
+            return .duplicate(identifier: id.isEmpty ? nil : id)
         }
         
         // 创建新的联系人
@@ -202,8 +266,11 @@ class ContactsManager: ObservableObject {
         
         do {
             try store.execute(saveRequest)
-            return .success
+            let id = trimmed(newContact.identifier)
+            log("syncToSystemContacts() saved id=\(id)")
+            return .success(identifier: id.isEmpty ? nil : id)
         } catch {
+            log("syncToSystemContacts() save error=\(error.localizedDescription)")
             throw ContactsError.saveFailed
         }
     }
@@ -211,8 +278,8 @@ class ContactsManager: ObservableObject {
 
 // 同步结果
 enum SyncResult {
-    case success      // 同步成功
-    case duplicate    // 已存在重复联系人
+    case success(identifier: String?)      // 同步成功（可能拿到系统联系人 identifier）
+    case duplicate(identifier: String?)    // 已存在重复联系人（尽量返回 identifier）
 }
 
 // 错误类型

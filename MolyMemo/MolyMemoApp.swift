@@ -50,6 +50,11 @@ struct MolyMemoApp: App {
                     Task {
                         _ = await CalendarManager.shared.requestNotificationPermission()
                     }
+
+                    // 前置请求通讯录权限：仅首次（notDetermined）会弹窗
+                    Task { @MainActor in
+                        await ContactsManager.shared.requestAccessIfNotDetermined(source: "app:onAppear")
+                    }
                     
                     // App首次启动时，开始新session
                     appState.startNewSession()
@@ -151,22 +156,25 @@ struct MolyMemoApp: App {
                     let date = userInfo["date"] as? Date ?? Date()
                     let duration = userInfo["duration"] as? TimeInterval ?? 0
                     let audioPath = userInfo["audioPath"] as? String ?? ""
+                    let suppressChatCard = userInfo["suppressChatCard"] as? Bool ?? false
                     
                     
                     // 先添加一个"处理中"的卡片
-                    DispatchQueue.main.async {
-                        appState.clearActiveRecordingStatus()
-                        
-                        let processingCard = MeetingCard(
-                            title: title,
-                            date: date,
-                            summary: "正在生成会议纪要，请稍候...",
-                            duration: duration,
-                            audioPath: audioPath,
-                            isGenerating: true
-                        )
-                        let agentMsg = appState.addMeetingCardMessage(processingCard)
-                        appState.saveMessageToStorage(agentMsg, modelContext: modelContainer.mainContext)
+                    if !suppressChatCard {
+                        DispatchQueue.main.async {
+                            appState.clearActiveRecordingStatus()
+                            
+                            let processingCard = MeetingCard(
+                                title: title,
+                                date: date,
+                                summary: "正在生成会议纪要，请稍候...",
+                                duration: duration,
+                                audioPath: audioPath,
+                                isGenerating: true
+                            )
+                            let agentMsg = appState.addMeetingCardMessage(processingCard)
+                            appState.saveMessageToStorage(agentMsg, modelContext: modelContainer.mainContext)
+                        }
                     }
                     
                     // 异步调用后端API
@@ -199,14 +207,34 @@ struct MolyMemoApp: App {
                                 audioFileURL: audioURL,
                                 onJobCreated: { jobId in
                                     // 关键：尽早写入 remoteId，避免用户生成过程中退出 App 后“无法续跑/无法再轮询”
-                                    Task { @MainActor in
-                                        if let lastIndex = appState.chatMessages.lastIndex(where: { $0.meetings != nil }) {
-                                            if var meetings = appState.chatMessages[lastIndex].meetings,
-                                               let meetingIndex = meetings.lastIndex(where: { $0.audioPath == audioPath }) {
-                                                meetings[meetingIndex].remoteId = jobId
-                                                meetings[meetingIndex].isGenerating = true
-                                                appState.chatMessages[lastIndex].meetings = meetings
-                                                appState.saveMessageToStorage(appState.chatMessages[lastIndex], modelContext: modelContainer.mainContext)
+                                    if suppressChatCard {
+                                        // 会议纪要列表页录音：通知列表占位卡尽早拿到 remoteId
+                                        let postJobCreated = {
+                                            NotificationCenter.default.post(
+                                                name: NSNotification.Name("MeetingListJobCreated"),
+                                                object: nil,
+                                                userInfo: ["audioPath": audioPath, "remoteId": jobId]
+                                            )
+                                        }
+                                        // NotificationCenter 的 publisher 默认在“发送线程”回调；
+                                        // 为避免 SwiftUI 状态在后台更新，强制在主线程发送。
+                                        if Thread.isMainThread {
+                                            postJobCreated()
+                                        } else {
+                                            DispatchQueue.main.async {
+                                                postJobCreated()
+                                            }
+                                        }
+                                    } else {
+                                        Task { @MainActor in
+                                            if let lastIndex = appState.chatMessages.lastIndex(where: { $0.meetings != nil }) {
+                                                if var meetings = appState.chatMessages[lastIndex].meetings,
+                                                   let meetingIndex = meetings.lastIndex(where: { $0.audioPath == audioPath }) {
+                                                    meetings[meetingIndex].remoteId = jobId
+                                                    meetings[meetingIndex].isGenerating = true
+                                                    appState.chatMessages[lastIndex].meetings = meetings
+                                                    appState.saveMessageToStorage(appState.chatMessages[lastIndex], modelContext: modelContainer.mainContext)
+                                                }
                                             }
                                         }
                                     }
@@ -216,6 +244,36 @@ struct MolyMemoApp: App {
                             
                             // 更新卡片内容
                             await MainActor.run {
+                                // 会议记录页录音：不更新聊天室，但仍可预下载提升首次播放体验
+                                if suppressChatCard {
+                                    let card = MeetingCard(
+                                        remoteId: result.id,
+                                        title: (result.title?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false) ? (result.title ?? title) : title,
+                                        date: result.date ?? date,
+                                        summary: result.summary,
+                                        duration: result.audioDuration ?? duration,
+                                        audioPath: audioPath,
+                                        audioRemoteURL: result.audioUrl,
+                                        transcriptions: result.transcriptions,
+                                        isGenerating: false
+                                    )
+                                    RecordingPlaybackController.shared.prefetch(meeting: card)
+                                    // 通知会议列表：把“生成中”小卡片立刻更新成正常卡片（无需等刷新）
+                                    NotificationCenter.default.post(
+                                        name: NSNotification.Name("MeetingListDidComplete"),
+                                        object: nil,
+                                        userInfo: [
+                                            "audioPath": audioPath,
+                                            "remoteId": result.id,
+                                            "title": card.title,
+                                            "date": card.date,
+                                            "duration": card.duration ?? (result.audioDuration ?? duration),
+                                            "summary": card.summary
+                                        ]
+                                    )
+                                    return
+                                }
+                                
                                 // 找到最后一条会议卡片消息并更新
                                 if let lastIndex = appState.chatMessages.lastIndex(where: { $0.meetings != nil }) {
                                     if var meetings = appState.chatMessages[lastIndex].meetings,
@@ -256,6 +314,19 @@ struct MolyMemoApp: App {
                             
                             // 更新卡片显示错误
                             await MainActor.run {
+                                if suppressChatCard {
+                                    // 会议列表占位卡：生成失败后维持条目，用户可手动删除/刷新
+                                    NotificationCenter.default.post(
+                                        name: NSNotification.Name("MeetingListDidComplete"),
+                                        object: nil,
+                                        userInfo: [
+                                            "audioPath": audioPath,
+                                            "title": "生成失败",
+                                            "summary": "⚠️ 会议纪要生成失败: \(error.localizedDescription)"
+                                        ]
+                                    )
+                                    return
+                                }
                                 if let lastIndex = appState.chatMessages.lastIndex(where: { $0.meetings != nil }) {
                                     if var meetings = appState.chatMessages[lastIndex].meetings,
                                        let meetingIndex = meetings.lastIndex(where: { $0.audioPath == audioPath }) {

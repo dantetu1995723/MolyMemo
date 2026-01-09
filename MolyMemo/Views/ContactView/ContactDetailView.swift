@@ -10,7 +10,6 @@ struct ContactDetailView: View {
     @EnvironmentObject var appState: AppState
     @Bindable var contact: Contact
     
-    @State private var selectedTab = 0 // 0: 基础信息, 1: 时间线
     @State private var showDeleteMenu = false
     @State private var isLoadingDetail: Bool = false
     @State private var isSubmitting: Bool = false
@@ -232,229 +231,205 @@ struct ContactDetailView: View {
                             .padding(.top, 10)
                             .disabled(isSubmitting)
                         
-                        // 分段选择器
-                        HStack(spacing: 0) {
-                            TabButton(title: "基础信息", isSelected: selectedTab == 0) {
-                                withAnimation(.spring(response: 0.3)) { selectedTab = 0 }
+                        // 基础信息内容（时间线暂不展示）
+                        VStack(spacing: 20) {
+                            // 公司和职位
+                            EditableInfoRow(
+                                icon: "building.2",
+                                placeholder: "公司",
+                                text: userEditedBinding($editedCompany),
+                                subPlaceholder: "职位",
+                                subText: userEditedBinding($editedIdentity),
+                                isSubmitting: isSubmitting,
+                                primaryTextColor: primaryTextColor,
+                                secondaryTextColor: secondaryTextColor,
+                                iconColor: iconColor
+                            )
+                            
+                            // 行业
+                            EditableSingleRow(
+                                icon: "bag",
+                                placeholder: "行业",
+                                text: userEditedBinding($editedIndustry),
+                                isSubmitting: isSubmitting,
+                                primaryTextColor: primaryTextColor,
+                                secondaryTextColor: secondaryTextColor,
+                                iconColor: iconColor
+                            )
+                            
+                            // 地区
+                            EditableSingleRow(
+                                icon: "mappin.and.ellipse",
+                                placeholder: "地区",
+                                text: userEditedBinding($editedLocation),
+                                isSubmitting: isSubmitting,
+                                primaryTextColor: primaryTextColor,
+                                secondaryTextColor: secondaryTextColor,
+                                iconColor: iconColor
+                            )
+                            
+                            Divider()
+                                .padding(.horizontal, 20)
+                                .padding(.vertical, 8)
+                            
+                            // 电话
+                            HStack(spacing: 0) {
+                                EditableSingleRow(
+                                    icon: "phone",
+                                    placeholder: "手机号",
+                                    text: userEditedBinding($editedPhone),
+                                    keyboardType: .phonePad,
+                                    isSubmitting: isSubmitting,
+                                    primaryTextColor: primaryTextColor,
+                                    secondaryTextColor: secondaryTextColor,
+                                    iconColor: iconColor
+                                )
+                                
+                                Button(action: {
+                                    let phone = editedPhone.trimmingCharacters(in: .whitespacesAndNewlines)
+                                    if !phone.isEmpty, let url = URL(string: "tel://\(phone.filter { $0.isNumber })") {
+                                        UIApplication.shared.open(url)
+                                    }
+                                }) {
+                                    Image(systemName: "phone.arrow.up.right")
+                                        .font(.system(size: 18, weight: .medium))
+                                        .foregroundColor(primaryTextColor)
+                                        .frame(width: 44, height: 44)
+                                        .background(Circle().fill(Color.white).shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 2))
+                                }
+                                .padding(.trailing, 20)
                             }
                             
-                            TabButton(title: "时间线", isSelected: selectedTab == 1) {
-                                withAnimation(.spring(response: 0.3)) { selectedTab = 1 }
-                            }
-                        }
-                        .padding(4)
-                        .background(Color.black.opacity(0.05))
-                        .clipShape(Capsule())
-                        .padding(.horizontal, 40)
-                        
-                        if selectedTab == 0 {
-                            // 基础信息内容
-                            VStack(spacing: 20) {
-                                // 公司和职位
-                                EditableInfoRow(
-                                    icon: "building.2",
-                                    placeholder: "公司",
-                                    text: userEditedBinding($editedCompany),
-                                    subPlaceholder: "职位",
-                                    subText: userEditedBinding($editedIdentity),
-                                    isSubmitting: isSubmitting,
-                                    primaryTextColor: primaryTextColor,
-                                    secondaryTextColor: secondaryTextColor,
-                                    iconColor: iconColor
-                                )
+                            // 邮箱
+                            EditableSingleRow(
+                                icon: "envelope",
+                                placeholder: "邮箱",
+                                text: userEditedBinding($editedEmail),
+                                keyboardType: .emailAddress,
+                                isSubmitting: isSubmitting,
+                                primaryTextColor: primaryTextColor,
+                                secondaryTextColor: secondaryTextColor,
+                                iconColor: iconColor
+                            )
+                            
+                            Divider()
+                                .padding(.horizontal, 20)
+                                .padding(.vertical, 8)
+                            
+                            // 生日
+                            Button(action: {
+                                HapticFeedback.light()
+                                // sheet 方式：点击即弹出系统弹窗；不依赖行内 frame，逻辑更简单稳定
+                                showGenderMenu = false
+                                showDeleteMenu = false
+
+                                // 以“后端真相”为准：若草稿为空，优先用 contact.birthday 初始化
+                                let rawEdited = editedBirthday.trimmingCharacters(in: .whitespacesAndNewlines)
+                                let rawContact = (contact.birthday ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                                let raw = rawEdited.isEmpty ? rawContact : rawEdited
                                 
-                                // 行业
-                                EditableSingleRow(
-                                    icon: "bag",
-                                    placeholder: "行业",
-                                    text: userEditedBinding($editedIndustry),
-                                    isSubmitting: isSubmitting,
-                                    primaryTextColor: primaryTextColor,
-                                    secondaryTextColor: secondaryTextColor,
-                                    iconColor: iconColor
-                                )
-                                
-                                // 地区
-                                EditableSingleRow(
-                                    icon: "mappin.and.ellipse",
-                                    placeholder: "地区",
-                                    text: userEditedBinding($editedLocation),
-                                    isSubmitting: isSubmitting,
-                                    primaryTextColor: primaryTextColor,
-                                    secondaryTextColor: secondaryTextColor,
-                                    iconColor: iconColor
-                                )
-                                
-                                Divider()
-                                    .padding(.horizontal, 20)
-                                    .padding(.vertical, 8)
-                                
-                                // 电话
-                                HStack(spacing: 0) {
-                                    EditableSingleRow(
-                                        icon: "phone",
-                                        placeholder: "手机号",
-                                        text: userEditedBinding($editedPhone),
-                                        keyboardType: .phonePad,
-                                        isSubmitting: isSubmitting,
-                                        primaryTextColor: primaryTextColor,
-                                        secondaryTextColor: secondaryTextColor,
-                                        iconColor: iconColor
-                                    )
-                                    
-                                    Button(action: {
-                                        let phone = editedPhone.trimmingCharacters(in: .whitespacesAndNewlines)
-                                        if !phone.isEmpty, let url = URL(string: "tel://\(phone.filter { $0.isNumber })") {
-                                            UIApplication.shared.open(url)
-                                        }
-                                    }) {
-                                        Image(systemName: "phone.arrow.up.right")
-                                            .font(.system(size: 18, weight: .medium))
-                                            .foregroundColor(primaryTextColor)
-                                            .frame(width: 44, height: 44)
-                                            .background(Circle().fill(Color.white).shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 2))
-                                    }
-                                    .padding(.trailing, 20)
+                                if raw.isEmpty {
+                                    birthdayPickerDate = Date()
+                                } else if let d = editedBirthdayDate ?? parseBirthday(raw) {
+                                    birthdayPickerDate = d
+                                } else {
+                                    birthdayPickerDate = Date()
                                 }
-                                
-                                // 邮箱
-                                EditableSingleRow(
-                                    icon: "envelope",
-                                    placeholder: "邮箱",
-                                    text: userEditedBinding($editedEmail),
-                                    keyboardType: .emailAddress,
-                                    isSubmitting: isSubmitting,
-                                    primaryTextColor: primaryTextColor,
-                                    secondaryTextColor: secondaryTextColor,
-                                    iconColor: iconColor
-                                )
-                                
-                                Divider()
-                                    .padding(.horizontal, 20)
-                                    .padding(.vertical, 8)
-                                
-                                // 生日
+                                showBirthdayPickerSheet = true
+                            }) {
+                                HStack(spacing: 0) {
+                                    LabelWithIcon(icon: "calendar", title: "生日")
+                                    Spacer()
+                                    Text(editedBirthday.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "未设置" : editedBirthday)
+                                        .font(.system(size: 16))
+                                        .foregroundColor(secondaryTextColor)
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundColor(iconColor)
+                                        .padding(.leading, 6)
+                                        .padding(.trailing, 20)
+                                }
+                                .padding(.leading, 20)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(!isBirthdayPickerEnabled)
+                            
+                            // 性别
+                            HStack(spacing: 0) {
+                                LabelWithIcon(icon: "person.fill", title: "性别")
+                                Spacer()
                                 Button(action: {
                                     HapticFeedback.light()
-                                    // sheet 方式：点击即弹出系统弹窗；不依赖行内 frame，逻辑更简单稳定
-                                    showGenderMenu = false
-                                    showDeleteMenu = false
-
-                                    // 以“后端真相”为准：若草稿为空，优先用 contact.birthday 初始化
-                                    let rawEdited = editedBirthday.trimmingCharacters(in: .whitespacesAndNewlines)
-                                    let rawContact = (contact.birthday ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                                    let raw = rawEdited.isEmpty ? rawContact : rawEdited
-                                    
-                                    if raw.isEmpty {
-                                        birthdayPickerDate = Date()
-                                    } else if let d = editedBirthdayDate ?? parseBirthday(raw) {
-                                        birthdayPickerDate = d
-                                    } else {
-                                        birthdayPickerDate = Date()
+                                    withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) {
+                                        showGenderMenu.toggle()
                                     }
-                                    showBirthdayPickerSheet = true
                                 }) {
-                                    HStack(spacing: 0) {
-                                        LabelWithIcon(icon: "calendar", title: "生日")
-                                        Spacer()
-                                        Text(editedBirthday.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "未设置" : editedBirthday)
+                                    HStack(spacing: 6) {
+                                        Text(genderDisplayText(editedGender))
                                             .font(.system(size: 16))
                                             .foregroundColor(secondaryTextColor)
-                                        Image(systemName: "chevron.right")
-                                            .font(.system(size: 12, weight: .semibold))
+                                        Image(systemName: "chevron.up.chevron.down")
+                                            .font(.system(size: 12, weight: .medium))
                                             .foregroundColor(iconColor)
-                                            .padding(.leading, 6)
-                                            .padding(.trailing, 20)
                                     }
-                                    .padding(.leading, 20)
                                     .contentShape(Rectangle())
                                 }
                                 .buttonStyle(.plain)
-                                .disabled(!isBirthdayPickerEnabled)
+                                .disabled(isSubmitting)
+                                .padding(.trailing, 20)
+                            }
+                            .padding(.leading, 20)
+                            .modifier(GlobalFrameReporter(frame: $genderRowFrame))
+                            
+                            Divider()
+                                .padding(.horizontal, 20)
+                                .padding(.vertical, 8)
+                            
+                            // 备注/详细描述
+                            HStack(alignment: .top, spacing: 16) {
+                                Image(systemName: "tag")
+                                    .font(.system(size: 18))
+                                    .foregroundColor(iconColor)
+                                    .frame(width: 24, alignment: .leading)
                                 
-                                // 性别
-                                HStack(spacing: 0) {
-                                    LabelWithIcon(icon: "person.fill", title: "性别")
-                                    Spacer()
-                                    Button(action: {
-                                        HapticFeedback.light()
-                                        withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) {
-                                            showGenderMenu.toggle()
-                                        }
-                                    }) {
-                                        HStack(spacing: 6) {
-                                            Text(genderDisplayText(editedGender))
+                                Group {
+                                    if isNotesFocused {
+                                        TextField("添加备注", text: userEditedBinding($editedNotes), axis: .vertical)
+                                            .font(.system(size: 16))
+                                            .foregroundColor(primaryTextColor)
+                                            .lineLimit(4...10)
+                                            .lineSpacing(6)
+                                            .disabled(isSubmitting)
+                                            .focused($isNotesFocused)
+                                    } else {
+                                        let trimmed = editedNotes.trimmingCharacters(in: .whitespacesAndNewlines)
+                                        if trimmed.isEmpty {
+                                            Text("添加备注")
                                                 .font(.system(size: 16))
                                                 .foregroundColor(secondaryTextColor)
-                                            Image(systemName: "chevron.up.chevron.down")
-                                                .font(.system(size: 12, weight: .medium))
-                                                .foregroundColor(iconColor)
-                                        }
-                                        .contentShape(Rectangle())
-                                    }
-                                    .buttonStyle(.plain)
-                                    .disabled(isSubmitting)
-                                    .padding(.trailing, 20)
-                                }
-                                .padding(.leading, 20)
-                                .modifier(GlobalFrameReporter(frame: $genderRowFrame))
-                                
-                                Divider()
-                                    .padding(.horizontal, 20)
-                                    .padding(.vertical, 8)
-                                
-                                // 备注/详细描述
-                                HStack(alignment: .top, spacing: 16) {
-                                    Image(systemName: "tag")
-                                        .font(.system(size: 18))
-                                        .foregroundColor(iconColor)
-                                        .frame(width: 24, alignment: .leading)
-                                    
-                                    Group {
-                                        if isNotesFocused {
-                                            TextField("添加备注", text: userEditedBinding($editedNotes), axis: .vertical)
-                                                .font(.system(size: 16))
-                                                .foregroundColor(primaryTextColor)
-                                                .lineLimit(4...10)
-                                                .lineSpacing(6)
-                                                .disabled(isSubmitting)
-                                                .focused($isNotesFocused)
-                                        } else {
-                                            let trimmed = editedNotes.trimmingCharacters(in: .whitespacesAndNewlines)
-                                            if trimmed.isEmpty {
-                                                Text("添加备注")
-                                                    .font(.system(size: 16))
-                                                    .foregroundColor(secondaryTextColor)
-                                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                                    .contentShape(Rectangle())
-                                                    .onTapGesture { isNotesFocused = true }
-                                            } else {
-                                                LinkifiedText(
-                                                    text: editedNotes,
-                                                    font: .system(size: 16),
-                                                    textColor: primaryTextColor,
-                                                    linkColor: .blue,
-                                                    lineSpacing: 6,
-                                                    lineLimit: 10
-                                                )
                                                 .frame(maxWidth: .infinity, alignment: .leading)
                                                 .contentShape(Rectangle())
                                                 .onTapGesture { isNotesFocused = true }
-                                            }
+                                        } else {
+                                            LinkifiedText(
+                                                text: editedNotes,
+                                                font: .system(size: 16),
+                                                textColor: primaryTextColor,
+                                                linkColor: .blue,
+                                                lineSpacing: 6,
+                                                lineLimit: 10
+                                            )
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .contentShape(Rectangle())
+                                            .onTapGesture { isNotesFocused = true }
                                         }
                                     }
-                                    
-                                    Spacer()
                                 }
-                                .padding(.horizontal, 20)
+                                
+                                Spacer()
                             }
-                        } else {
-                            // 时间线内容
-                            VStack {
-                                Text("暂无时间线记录")
-                                    .foregroundColor(secondaryTextColor)
-                                    .padding(.top, 40)
-                            }
+                            .padding(.horizontal, 20)
                         }
                         
                         Spacer(minLength: 120)
@@ -819,6 +794,9 @@ struct ContactDetailView: View {
             // ✅ 仅展示后端给的文案；若后端没有给，则不再硬编码“已更新联系人”，只更新卡片本身。
             let reasonText = (opResult.displayText ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             appState.commitContactCardRevision(updated: canonical, modelContext: modelContext, reasonText: reasonText)
+            
+            // 单向同步到系统通讯录：保存成功后，若有手机号且尚未绑定 identifier，则后台尝试同步/匹配
+            triggerSystemContactSyncIfNeeded()
             dismiss()
         } catch {
             alertMessage = "保存失败：\(error.localizedDescription)"
@@ -868,6 +846,44 @@ struct ContactDetailView: View {
         default: return "未设置"
         }
     }
+    
+    private func triggerSystemContactSyncIfNeeded() {
+        let phone = (contact.phoneNumber ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !phone.isEmpty else { return }
+        let linked = (contact.systemContactIdentifier ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard linked.isEmpty else { return }
+        
+        Task(priority: .utility) {
+            let granted = await ContactsManager.shared.requestAccess()
+            guard granted else { return }
+           
+            // 先匹配已有联系人（避免重复创建）
+            if let matched = try? await ContactsManager.shared.findMatchingSystemContact(name: contact.name, phoneNumber: contact.phoneNumber) {
+                let id = matched.identifier.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !id.isEmpty {
+                    contact.systemContactIdentifier = id
+                    try? modelContext.save()
+                    return
+                }
+            }
+            
+            do {
+                let result = try await ContactsManager.shared.syncToSystemContacts(contact: contact)
+                let id: String? = {
+                    switch result {
+                    case .success(let identifier): return identifier
+                    case .duplicate(let identifier): return identifier
+                    }
+                }()
+                if let id, !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    contact.systemContactIdentifier = id
+                    try? modelContext.save()
+                }
+            } catch {
+                // 静默失败
+            }
+        }
+    }
 }
 
 // MARK: - 辅助组件
@@ -890,25 +906,6 @@ private struct BirthdayPickerSheet: View {
             .onChange(of: date) { _, newValue in
                 onDateChange(newValue)
             }
-        }
-    }
-}
-
-struct TabButton: View {
-    let title: String
-    let isSelected: Bool
-    let action: () -> Void
-    
-    var body: some View {
-        Button(action: action) {
-            Text(title)
-                .font(.system(size: 14, weight: isSelected ? .bold : .medium))
-                .foregroundColor(isSelected ? Color(hex: "333333") : Color(hex: "999999"))
-                .padding(.vertical, 8)
-                .frame(maxWidth: .infinity)
-                .background(isSelected ? Color.white : Color.clear)
-                .clipShape(Capsule())
-                .shadow(color: isSelected ? Color.black.opacity(0.05) : Color.clear, radius: 4, x: 0, y: 2)
         }
     }
 }

@@ -12,11 +12,32 @@ struct MeetingDetailSheet: View {
     @State private var didFetchOnAppear: Bool = false
     @State private var pollingTask: Task<Void, Never>? = nil
     
+    // “歌词滚动”跟随：当前高亮的转写条目
+    @State private var activeTranscriptId: UUID? = nil
+    // 用户手动滚动时，短暂抑制自动滚动（避免抢控制权）
+    @State private var suppressAutoScrollUntil: Date = .distantPast
+    
+    // 右上角“更多”-> 删除胶囊（与人脉/日程详情一致）
+    @State private var showDeleteMenu: Bool = false
+    @State private var deleteMenuAnchorFrame: CGRect = .zero
+    @State private var isDeleting: Bool = false
+    @State private var deleteAlertMessage: String? = nil
+    
     var body: some View {
         let canPlay = playback.canPlay(meeting: meeting)
         let isCurrent = playback.isCurrent(meeting: meeting)
         let isPlaying = isCurrent && playback.isPlaying
         let isDownloading = isCurrent && playback.isDownloading
+        
+        let trimmedSummary = meeting.summary.trimmingCharacters(in: .whitespacesAndNewlines)
+        let hasAnyTextContent = !trimmedSummary.isEmpty || (meeting.transcriptions?.isEmpty == false)
+        let hasAnyAudioRef: Bool = {
+            let lp = (meeting.audioPath ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let ru = (meeting.audioRemoteURL ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            return !lp.isEmpty || !ru.isEmpty
+        }()
+        // “没录到音”的判定：既没有可用音频引用，也没有任何文本内容，且不在生成中
+        let showNoValidContentTip = (!meeting.isGenerating) && (!hasAnyAudioRef) && (!hasAnyTextContent)
 
         // 🔍 调试：播放器时长 vs 后端时长
         let backendDuration = meeting.duration ?? 0
@@ -27,9 +48,18 @@ struct MeetingDetailSheet: View {
             return true
         }()
         #endif
+        let playheadTime = isScrubbing ? scrubValue * duration : playback.currentTime
         let progressValue = isScrubbing ? scrubValue : min(max(playback.currentTime / duration, 0), 1)
-        let currentTimeLabel = formatHMS(isScrubbing ? scrubValue * duration : playback.currentTime)
-        let remainingTimeLabel = "-\(formatHMS(max(duration - (isScrubbing ? scrubValue * duration : playback.currentTime), 0)))"
+        let currentTimeLabel = formatHMS(playheadTime)
+        let remainingTimeLabel = "-\(formatHMS(max(duration - playheadTime, 0)))"
+        
+        let transcriptionsSorted: [MeetingTranscription] = {
+            guard let ts = meeting.transcriptions, !ts.isEmpty else { return [] }
+            return ts.sorted(by: { transcriptionStartSeconds($0) < transcriptionStartSeconds($1) })
+        }()
+        
+        // 悬浮播放器会遮挡底部：给 ScrollView 预留足够空间，让最后一条也能滚到顶部
+        let floatingPlayerReservedHeight: CGFloat = 320
 
         ZStack(alignment: .top) {
             // 背景色
@@ -53,7 +83,10 @@ struct MeetingDetailSheet: View {
                         HStack {
                             Spacer()
                             Button(action: {
-                                // 更多操作
+                                HapticFeedback.light()
+                                withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) {
+                                    showDeleteMenu.toggle()
+                                }
                             }) {
                                 Image(systemName: "ellipsis")
                                     .font(.system(size: 18, weight: .medium))
@@ -61,6 +94,10 @@ struct MeetingDetailSheet: View {
                                     .frame(width: 38, height: 38)
                                     .background(Circle().fill(Color.white).shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 2))
                             }
+                            .disabled(isDeleting)
+                            .modifier(GlobalFrameReporter(frame: $deleteMenuAnchorFrame))
+                            .opacity(showDeleteMenu ? 0 : 1)
+                            .allowsHitTesting(!showDeleteMenu)
                         }
                         .padding(.trailing, 0)
                     }
@@ -71,125 +108,162 @@ struct MeetingDetailSheet: View {
                 }
                 .background(Color(hex: "F7F8FA"))
                 
-                ScrollView(showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 30) {
-                        // 2. 标题和日期
-                        VStack(alignment: .leading, spacing: 10) {
-                            HStack(spacing: 10) {
-                                if meeting.isGenerating {
-                                    TimelineView(.periodic(from: .now, by: 0.5)) { context in
-                                        let tick = Int(context.date.timeIntervalSinceReferenceDate / 0.5) % 4
-                                        Text("正在生成标题" + String(repeating: "·", count: tick))
+                ScrollViewReader { proxy in
+                    ScrollView(showsIndicators: false) {
+                        VStack(alignment: .leading, spacing: 30) {
+                            if showNoValidContentTip {
+                                VStack(spacing: 12) {
+                                    Image(systemName: "mic.slash")
+                                        .font(.system(size: 40, weight: .light))
+                                        .foregroundColor(Color.black.opacity(0.22))
+                                        .padding(.top, 26)
+                                    
+                                    Text("未录到有效内容")
+                                        .font(.system(size: 17, weight: .semibold))
+                                        .foregroundColor(Color(hex: "333333"))
+                                    
+                                    Text("请重新录音后再试")
+                                        .font(.system(size: 14))
+                                        .foregroundColor(Color(hex: "999999"))
+                                        .padding(.bottom, 26)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.horizontal, 24)
+                                
+                                Spacer(minLength: 240)
+                            } else {
+                            // 2. 标题和日期
+                            VStack(alignment: .leading, spacing: 10) {
+                                HStack(spacing: 10) {
+                                    if meeting.isGenerating {
+                                        TimelineView(.periodic(from: .now, by: 0.5)) { context in
+                                            let tick = Int(context.date.timeIntervalSinceReferenceDate / 0.5) % 4
+                                            Text("正在生成标题" + String(repeating: "·", count: tick))
+                                                .font(.system(size: 26, weight: .bold))
+                                                .foregroundColor(Color(hex: "333333"))
+                                        }
+                                    } else {
+                                        Text(meeting.title)
                                             .font(.system(size: 26, weight: .bold))
                                             .foregroundColor(Color(hex: "333333"))
                                     }
-                                } else {
-                                    Text(meeting.title)
-                                        .font(.system(size: 26, weight: .bold))
-                                        .foregroundColor(Color(hex: "333333"))
-                                }
 
-                                if meeting.isGenerating {
-                                    ProgressView()
-                                        .scaleEffect(0.9)
-                                        .tint(Color(hex: "007AFF"))
+                                    if meeting.isGenerating {
+                                        ProgressView()
+                                            .scaleEffect(0.9)
+                                            .tint(Color(hex: "007AFF"))
+                                    }
                                 }
-                            }
-                            
-                            Text(meeting.formattedDate)
-                                .font(.system(size: 16))
-                                .foregroundColor(Color(hex: "999999"))
-                        }
-                        .padding(.horizontal, 24)
-                        
-                        if isLoading {
-                            HStack(spacing: 12) {
-                                ProgressView()
-                                    .tint(Color(hex: "007AFF"))
-                                Text("正在更新会议详情...")
-                                    .font(.system(size: 15))
+                                
+                                Text(meeting.formattedDate)
+                                    .font(.system(size: 16))
                                     .foregroundColor(Color(hex: "999999"))
                             }
                             .padding(.horizontal, 24)
-                        } else if let error = loadError {
-                            HStack(spacing: 8) {
-                                Image(systemName: "exclamationmark.circle.fill")
-                                    .foregroundColor(.red)
-                                Text(error)
-                                    .font(.system(size: 14))
-                                    .foregroundColor(.red)
-                                Button("重试") {
-                                    pollingTask?.cancel()
-                                    pollingTask = Task { await fetchDetailsWithPolling() }
+                            
+                            if isLoading && meeting.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                VStack(alignment: .leading, spacing: 20) {
+                                    HStack(spacing: 12) {
+                                        ProgressView()
+                                            .tint(Color(hex: "007AFF"))
+                                        Text("正在获取会议详情...")
+                                            .font(.system(size: 15))
+                                            .foregroundColor(Color(hex: "999999"))
+                                    }
+                                    
+                                    // 简单的骨架屏效果
+                                    VStack(alignment: .leading, spacing: 12) {
+                                        RoundedRectangle(cornerRadius: 4)
+                                            .fill(Color.black.opacity(0.05))
+                                            .frame(height: 16)
+                                        RoundedRectangle(cornerRadius: 4)
+                                            .fill(Color.black.opacity(0.05))
+                                            .frame(height: 16)
+                                        RoundedRectangle(cornerRadius: 4)
+                                            .fill(Color.black.opacity(0.05))
+                                            .frame(width: 200, height: 16)
+                                    }
                                 }
-                                .font(.system(size: 14, weight: .bold))
-                                .foregroundColor(Color(hex: "007AFF"))
+                                .padding(.horizontal, 24)
+                            } else if let error = loadError {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "exclamationmark.circle.fill")
+                                        .foregroundColor(.red)
+                                    Text(error)
+                                        .font(.system(size: 14))
+                                        .foregroundColor(.red)
+                                    Button("重试") {
+                                        pollingTask?.cancel()
+                                        pollingTask = Task { await fetchDetailsWithPolling() }
+                                    }
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundColor(Color(hex: "007AFF"))
+                                }
+                                .padding(.horizontal, 24)
+                            }
+                            
+                            // 3. 智能总结区块
+                            VStack(alignment: .leading, spacing: 14) {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "sparkles")
+                                        .font(.system(size: 16))
+                                        .foregroundColor(Color(hex: "007AFF"))
+                                    Text("智能总结")
+                                        .font(.system(size: 17, weight: .bold))
+                                        .foregroundColor(Color(hex: "333333"))
+                                }
+
+                                Group {
+                                    if meeting.isGenerating {
+                                        VStack(alignment: .leading, spacing: 14) {
+                                            HStack(spacing: 10) {
+                                                ProgressView()
+                                                    .scaleEffect(0.95)
+                                                TimelineView(.periodic(from: .now, by: 0.5)) { context in
+                                                    let tick = Int(context.date.timeIntervalSinceReferenceDate / 0.5) % 4
+                                                    Text("正在生成会议纪要" + String(repeating: "·", count: tick))
+                                                        .font(.system(size: 15, weight: .medium))
+                                                        .foregroundColor(Color(hex: "777777"))
+                                                }
+                                            }
+
+                                            RoundedRectangle(cornerRadius: 8)
+                                                .fill(Color.black.opacity(0.06))
+                                                .frame(height: 14)
+                                                .opacity(0.7)
+                                            RoundedRectangle(cornerRadius: 8)
+                                                .fill(Color.black.opacity(0.06))
+                                                .frame(height: 14)
+                                                .opacity(0.5)
+                                            RoundedRectangle(cornerRadius: 8)
+                                                .fill(Color.black.opacity(0.06))
+                                                .frame(width: 220, height: 14)
+                                                .opacity(0.6)
+                                        }
+                                    } else {
+                                        Text(meeting.summary)
+                                            .font(.system(size: 16))
+                                            .foregroundColor(Color(hex: "555555"))
+                                            .lineSpacing(7)
+                                    }
+                                }
+                                .padding(20)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 18)
+                                        .fill(Color.white)
+                                        .shadow(color: Color.black.opacity(0.02), radius: 10, x: 0, y: 4)
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 18)
+                                        .stroke(Color.black.opacity(0.03), lineWidth: 1)
+                                )
                             }
                             .padding(.horizontal, 24)
-                        }
-                        
-                        // 3. 智能总结区块
-                        VStack(alignment: .leading, spacing: 14) {
-                            HStack(spacing: 8) {
-                                Image(systemName: "sparkles")
-                                    .font(.system(size: 16))
-                                    .foregroundColor(Color(hex: "007AFF"))
-                                Text("智能总结")
-                                    .font(.system(size: 17, weight: .bold))
-                                    .foregroundColor(Color(hex: "333333"))
-                            }
-
-                            Group {
-                                if meeting.isGenerating {
-                                    VStack(alignment: .leading, spacing: 14) {
-                                        HStack(spacing: 10) {
-                                            ProgressView()
-                                                .scaleEffect(0.95)
-                                            TimelineView(.periodic(from: .now, by: 0.5)) { context in
-                                                let tick = Int(context.date.timeIntervalSinceReferenceDate / 0.5) % 4
-                                                Text("正在生成会议纪要" + String(repeating: "·", count: tick))
-                                                    .font(.system(size: 15, weight: .medium))
-                                                    .foregroundColor(Color(hex: "777777"))
-                                            }
-                                        }
-
-                                        RoundedRectangle(cornerRadius: 8)
-                                            .fill(Color.black.opacity(0.06))
-                                            .frame(height: 14)
-                                            .opacity(0.7)
-                                        RoundedRectangle(cornerRadius: 8)
-                                            .fill(Color.black.opacity(0.06))
-                                            .frame(height: 14)
-                                            .opacity(0.5)
-                                        RoundedRectangle(cornerRadius: 8)
-                                            .fill(Color.black.opacity(0.06))
-                                            .frame(width: 220, height: 14)
-                                            .opacity(0.6)
-                                    }
-                                } else {
-                                    Text(meeting.summary)
-                                        .font(.system(size: 16))
-                                        .foregroundColor(Color(hex: "555555"))
-                                        .lineSpacing(7)
-                                }
-                            }
-                            .padding(20)
-                            .background(
-                                RoundedRectangle(cornerRadius: 18)
-                                    .fill(Color.white)
-                                    .shadow(color: Color.black.opacity(0.02), radius: 10, x: 0, y: 4)
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 18)
-                                    .stroke(Color.black.opacity(0.03), lineWidth: 1)
-                            )
-                        }
-                        .padding(.horizontal, 24)
-                        
-                        // 4. 对话列表
-                        VStack(alignment: .leading, spacing: 28) {
-                            if let transcriptions = meeting.transcriptions {
-                                ForEach(transcriptions) { transcript in
+                            
+                            // 4. 对话列表（随播放“歌词滚动”）
+                            VStack(alignment: .leading, spacing: 16) {
+                                ForEach(transcriptionsSorted) { transcript in
+                                    let isActive = (transcript.id == activeTranscriptId)
                                     VStack(alignment: .leading, spacing: 12) {
                                         HStack(spacing: 10) {
                                             Text(transcript.speaker)
@@ -202,113 +276,192 @@ struct MeetingDetailSheet: View {
                                         
                                         Text(transcript.content)
                                             .font(.system(size: 16))
-                                            .foregroundColor(Color(hex: "999999"))
+                                            // 命中播放时间节点：文字变黑；其余保持灰色（不使用背景高亮）
+                                            .foregroundColor(isActive ? Color(hex: "333333") : Color(hex: "999999"))
                                             .lineSpacing(7)
                                     }
+                                    .padding(.vertical, 6)
+                                    .id(transcript.id)
+                                }
+                            }
+                            .padding(.horizontal, 24)
+                            .padding(.bottom, floatingPlayerReservedHeight) // 给悬浮播放器留足空间（加大滚动幅度）
+                            }
+                        }
+                        .padding(.top, 10)
+                    }
+                    .simultaneousGesture(
+                        DragGesture(minimumDistance: 2)
+                            .onChanged { _ in
+                                suppressAutoScrollUntil = Date().addingTimeInterval(2.0)
+                            }
+                    )
+                    .onChange(of: playheadTime) { _, newTime in
+                        // 只在“当前会议播放中/拖动中”跟随，并且避免用户手动滚动时抢控制权
+                        guard isCurrent else { return }
+                        guard isPlaying || isScrubbing else { return }
+                        guard !transcriptionsSorted.isEmpty else { return }
+
+                        let newId = resolveActiveTranscriptId(at: newTime, in: transcriptionsSorted)
+                        if newId != activeTranscriptId {
+                            activeTranscriptId = newId
+                            guard Date() >= suppressAutoScrollUntil else { return }
+                            if let id = newId {
+                                withAnimation(.easeInOut(duration: 0.28)) {
+                                    // “歌词效果”：当前句保持在列表顶部（不会被底部播放器遮挡）
+                                    proxy.scrollTo(id, anchor: .top)
                                 }
                             }
                         }
-                        .padding(.horizontal, 24)
-                        .padding(.bottom, 160) // 给悬浮播放器留足空间
                     }
-                    .padding(.top, 10)
                 }
             }
             
             // 5. 悬浮播放控制模块
-            VStack(spacing: 0) {
-                Spacer()
-                
-                VStack(spacing: 20) {
-                    // 进度条
-                    VStack(spacing: 10) {
-                        Slider(
-                            value: Binding(
-                                get: { progressValue },
-                                set: { newValue in
-                                    isScrubbing = true
-                                    scrubValue = min(max(newValue, 0), 1)
-                                }
-                            ),
-                            onEditingChanged: { editing in
-                                if !editing {
-                                    isScrubbing = false
-                                    playback.seek(to: scrubValue * duration)
-                                }
-                            }
-                        )
-                            .tint(Color(hex: "007AFF"))
-                            .disabled(!canPlay || !isCurrent)
-                        
-                        HStack {
-                            Text(currentTimeLabel)
-                            Spacer()
-                            Text(remainingTimeLabel)
-                        }
-                        .font(.system(size: 13))
-                        .foregroundColor(Color(hex: "999999"))
-                    }
-                    .padding(.horizontal, 24)
+            if !showNoValidContentTip {
+                VStack(spacing: 0) {
+                    Spacer()
                     
-                    // 控制按钮
-                    HStack(spacing: 45) {
-                        Button(action: {
-                            HapticFeedback.light()
-                            guard canPlay, isCurrent else { return }
-                            playback.skip(by: -15)
-                        }) {
-                            Image(systemName: "gobackward.15")
-                                .font(.system(size: 26))
-                                .foregroundColor(Color(hex: "333333"))
+                    VStack(spacing: 20) {
+                        // 进度条
+                        VStack(spacing: 10) {
+                            Slider(
+                                value: Binding(
+                                    get: { progressValue },
+                                    set: { newValue in
+                                        isScrubbing = true
+                                        scrubValue = min(max(newValue, 0), 1)
+                                    }
+                                ),
+                                onEditingChanged: { editing in
+                                    if !editing {
+                                        isScrubbing = false
+                                        playback.seek(to: scrubValue * duration)
+                                    }
+                                }
+                            )
+                                .tint(Color(hex: "007AFF"))
+                                .disabled(!canPlay || !isCurrent)
+                            
+                            HStack {
+                                Text(currentTimeLabel)
+                                Spacer()
+                                Text(remainingTimeLabel)
+                            }
+                            .font(.system(size: 13))
+                            .foregroundColor(Color(hex: "999999"))
                         }
-                        .disabled(!canPlay || !isCurrent)
+                        .padding(.horizontal, 24)
                         
-                        Button(action: {
-                            HapticFeedback.medium()
-                            guard canPlay else { return }
-                            playback.togglePlay(meeting: meeting)
-                        }) {
-                            ZStack {
-                                Circle()
-                                    .fill(Color(hex: "007AFF"))
-                                    .frame(width: 68, height: 68)
-                                    .shadow(color: Color(hex: "007AFF").opacity(0.3), radius: 8, x: 0, y: 4)
-
-                                if isDownloading {
-                                    ProgressView()
-                                        .tint(.white)
-                                } else {
-                                    Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                                        .font(.system(size: 30))
-                                        .foregroundColor(.white)
-                                        .offset(x: isPlaying ? 0 : 3)
+                        // 控制按钮
+                        HStack(spacing: 45) {
+                            Button(action: {
+                                HapticFeedback.light()
+                                guard canPlay, isCurrent else { return }
+                                playback.skip(by: -15)
+                            }) {
+                                Image(systemName: "gobackward.15")
+                                    .font(.system(size: 26))
+                                    .foregroundColor(Color(hex: "333333"))
+                            }
+                            .disabled(!canPlay || !isCurrent)
+                            
+                            Button(action: {
+                                HapticFeedback.medium()
+                                guard canPlay else { return }
+                                playback.togglePlay(meeting: meeting)
+                            }) {
+                                ZStack {
+                                    Circle()
+                                        .fill(Color(hex: "007AFF"))
+                                        .frame(width: 68, height: 68)
+                                        .shadow(color: Color(hex: "007AFF").opacity(0.3), radius: 8, x: 0, y: 4)
+                                    
+                                    if isDownloading {
+                                        ProgressView()
+                                            .tint(.white)
+                                    } else {
+                                        Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                                            .font(.system(size: 30))
+                                            .foregroundColor(.white)
+                                            .offset(x: isPlaying ? 0 : 3)
+                                    }
                                 }
                             }
+                            .disabled(!canPlay)
+                            .opacity(canPlay ? 1.0 : 0.45)
+                            
+                            Button(action: {
+                                HapticFeedback.light()
+                                guard canPlay, isCurrent else { return }
+                                playback.skip(by: 15)
+                            }) {
+                                Image(systemName: "goforward.15")
+                                    .font(.system(size: 26))
+                                    .foregroundColor(Color(hex: "333333"))
+                            }
+                            .disabled(!canPlay || !isCurrent)
                         }
-                        .disabled(!canPlay)
-                        .opacity(canPlay ? 1.0 : 0.45)
-                        
-                        Button(action: {
-                            HapticFeedback.light()
-                            guard canPlay, isCurrent else { return }
-                            playback.skip(by: 15)
-                        }) {
-                            Image(systemName: "goforward.15")
-                                .font(.system(size: 26))
-                                .foregroundColor(Color(hex: "333333"))
-                        }
-                        .disabled(!canPlay || !isCurrent)
+                        .padding(.bottom, 50) // 适配安全区高度
                     }
-                    .padding(.bottom, 50) // 适配安全区高度
+                    .padding(.top, 25)
+                    .background(
+                        RoundedRectangle(cornerRadius: 35)
+                            .fill(Color.white)
+                            .shadow(color: Color.black.opacity(0.06), radius: 12, x: 0, y: -5)
+                    )
                 }
-                .padding(.top, 25)
-                .background(
-                    RoundedRectangle(cornerRadius: 35)
-                        .fill(Color.white)
-                        .shadow(color: Color.black.opacity(0.06), radius: 12, x: 0, y: -5)
-                )
+                .ignoresSafeArea(edges: .bottom)
             }
-            .ignoresSafeArea(edges: .bottom)
+        }
+        // 点击空白处关闭删除胶囊（与人脉/日程一致）
+        .overlay {
+            GeometryReader { geo in
+                ZStack(alignment: .topLeading) {
+                    if showDeleteMenu {
+                        Color.black.opacity(0.001)
+                            .ignoresSafeArea()
+                            .onTapGesture {
+                                withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) {
+                                    showDeleteMenu = false
+                                }
+                            }
+                    }
+                    
+                    if showDeleteMenu {
+                        TopDeletePillButton(title: isDeleting ? "正在删除…" : "删除录音") {
+                            withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) {
+                                showDeleteMenu = false
+                            }
+                            HapticFeedback.medium()
+                            Task { await submitDelete() }
+                        }
+                        .frame(width: 200)
+                        .offset(
+                            PopupMenuPositioning.rightAlignedCenterOffset(
+                                for: deleteMenuAnchorFrame,
+                                in: geo.frame(in: .global),
+                                width: 200,
+                                height: 52
+                            )
+                        )
+                        .transition(.asymmetric(insertion: .scale(scale: 0.9, anchor: .topTrailing).combined(with: .opacity), removal: .scale(scale: 0.9, anchor: .topTrailing).combined(with: .opacity)))
+                        .zIndex(30)
+                        .allowsHitTesting(!isDeleting)
+                    }
+                }
+            }
+        }
+        .alert(
+            "删除失败",
+            isPresented: Binding(
+                get: { deleteAlertMessage != nil },
+                set: { if !$0 { deleteAlertMessage = nil } }
+            )
+        ) {
+            Button("知道了", role: .cancel) {}
+        } message: {
+            Text(deleteAlertMessage ?? "")
         }
         .task {
             // 如果有远程ID，自动获取详情以更新内容（特别是转写记录）
@@ -342,6 +495,47 @@ struct MeetingDetailSheet: View {
             pollingTask = nil
             // 下滑关闭详情页时，停止播放（避免切换到其他会议详情仍在播放上一条）
             playback.stop()
+        }
+    }
+    
+    @MainActor
+    private func submitDelete() async {
+        guard !isDeleting else { return }
+        isDeleting = true
+        defer { isDeleting = false }
+        
+        do {
+            // 1) 先停播放，避免删文件时播放器仍占用
+            playback.stop()
+            
+            // 2) 删远端（有 remoteId 才删）
+            let rid = (meeting.remoteId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !rid.isEmpty {
+                try await MeetingMinutesService.deleteMeetingMinutes(id: rid)
+            }
+            
+            // 3) 删本地音频文件（仅当 file path 存在）
+            let localPath = (meeting.audioPath ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !localPath.isEmpty {
+                let url = URL(fileURLWithPath: localPath)
+                if FileManager.default.fileExists(atPath: url.path) {
+                    try? FileManager.default.removeItem(at: url)
+                }
+            }
+            
+            // 4) 通知会议列表立即移除
+            NotificationCenter.default.post(
+                name: NSNotification.Name("MeetingListDidDelete"),
+                object: nil,
+                userInfo: [
+                    "remoteId": rid,
+                    "audioPath": (meeting.audioPath ?? "")
+                ]
+            )
+            
+            dismiss()
+        } catch {
+            deleteAlertMessage = error.localizedDescription
         }
     }
 
@@ -382,7 +576,7 @@ struct MeetingDetailSheet: View {
                         ? d.speakerName!
                         : ("说话人" + (d.speakerId ?? ""))
                     let time = formatHMS(d.startTime ?? 0)
-                    return MeetingTranscription(speaker: speaker, time: time, content: text)
+                    return MeetingTranscription(speaker: speaker, time: time, content: text, startTime: d.startTime, endTime: d.endTime)
                 }
             } else if let ts = item.transcriptions, !ts.isEmpty {
                 meeting.transcriptions = ts.compactMap { t in
@@ -390,7 +584,8 @@ struct MeetingDetailSheet: View {
                     return MeetingTranscription(
                         speaker: t.speaker ?? "说话人",
                         time: t.time ?? "00:00:00",
-                        content: content
+                        content: content,
+                        startTime: parseHMSSeconds(t.time ?? "")
                     )
                 }
             }
@@ -453,5 +648,43 @@ struct MeetingDetailSheet: View {
         let m = (total % 3600) / 60
         let s = total % 60
         return String(format: "%02d:%02d:%02d", h, m, s)
+    }
+    
+    private func parseHMSSeconds(_ raw: String) -> TimeInterval? {
+        let s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !s.isEmpty else { return nil }
+        
+        let parts = s.split(separator: ":").map { String($0) }
+        if parts.count == 3 {
+            let h = Double(parts[0]) ?? 0
+            let m = Double(parts[1]) ?? 0
+            let sec = Double(parts[2]) ?? 0
+            return max(0, h * 3600 + m * 60 + sec)
+        }
+        if parts.count == 2 {
+            let m = Double(parts[0]) ?? 0
+            let sec = Double(parts[1]) ?? 0
+            return max(0, m * 60 + sec)
+        }
+        if let v = Double(s) {
+            return max(0, v)
+        }
+        return nil
+    }
+    
+    private func transcriptionStartSeconds(_ t: MeetingTranscription) -> TimeInterval {
+        if let v = t.startTime { return max(0, v) }
+        return parseHMSSeconds(t.time) ?? 0
+    }
+    
+    private func resolveActiveTranscriptId(at time: TimeInterval, in transcriptions: [MeetingTranscription]) -> UUID? {
+        guard !transcriptions.isEmpty else { return nil }
+        let t = max(0, time)
+        // 取最后一个 startTime <= 当前时间 的条目
+        if let idx = transcriptions.lastIndex(where: { transcriptionStartSeconds($0) <= t + 0.05 }) {
+            return transcriptions[idx].id
+        }
+        // 当前时间在第一句之前：高亮第一句
+        return transcriptions.first?.id
     }
 }

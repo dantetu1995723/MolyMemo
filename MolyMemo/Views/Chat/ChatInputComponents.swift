@@ -159,19 +159,10 @@ struct ActionMenu: View {
                     MenuCardView(icon: "photo", label: "传图片")
                 }
                 .buttonStyle(PlainButtonStyle())
-                
-                // 扫一扫
-                Button(action: {
-                    // Scan action
-                }) {
-                    MenuCardView(icon: "qrcode.viewfinder", label: "扫一扫")
-                }
-                .buttonStyle(PlainButtonStyle())
             }
             
             // 第二行占位（保持两行高度）
             HStack(spacing: 12) {
-                Color.clear.frame(maxWidth: .infinity).frame(height: 110)
                 Color.clear.frame(maxWidth: .infinity).frame(height: 110)
                 Color.clear.frame(maxWidth: .infinity).frame(height: 110)
             }

@@ -8,12 +8,17 @@ struct RecordingItem: Identifiable {
     var id: UUID
     var remoteId: String?  // 远程服务器ID
     var audioURL: URL?  // 本地音频文件URL（可选）
-    let createdAt: Date
-    let duration: TimeInterval
+    var createdAt: Date
+    var duration: TimeInterval
     var meetingSummary: String?  // 会议纪要内容
     var title: String  // 会议标题
     var transcriptions: [MeetingTranscription]?  // 转写记录
     var isFromRemote: Bool = false  // 是否来自远程服务器
+    var status: String?  // 状态：processing, completed, failed
+    
+    var isProcessing: Bool {
+        status == "processing" || status == "generating"
+    }
     
     // 本地录音初始化
     init(id: UUID = UUID(), audioURL: URL, createdAt: Date = Date(), duration: TimeInterval, meetingSummary: String? = nil, title: String = "") {
@@ -31,6 +36,7 @@ struct RecordingItem: Identifiable {
         self.id = UUID()
         self.remoteId = remoteItem.id
         self.isFromRemote = true
+        self.status = remoteItem.status
         
         // 解析日期：列表要显示“时分秒/分钟”，优先用 updated_at/created_at（通常带时间），不要用 meeting_date(yyyy-MM-dd) 导致 00:00
         func parseBackendTimestamp(_ raw: String) -> Date? {
@@ -99,7 +105,7 @@ struct RecordingItem: Identifiable {
                     let s = total % 60
                     return String(format: "%02d:%02d:%02d", h, m, s)
                 }()
-                return MeetingTranscription(speaker: speaker, time: time, content: text)
+                return MeetingTranscription(speaker: speaker, time: time, content: text, startTime: d.startTime, endTime: d.endTime)
             }
         } else {
             self.transcriptions = remoteItem.transcriptions?.compactMap { item in
@@ -107,10 +113,30 @@ struct RecordingItem: Identifiable {
                 return MeetingTranscription(
                     speaker: item.speaker ?? "说话人",
                     time: item.time ?? "00:00:00",
-                    content: content
+                    content: content,
+                    startTime: RecordingItem.parseHMSSeconds(item.time ?? "")
                 )
             }
         }
+    }
+
+    private static func parseHMSSeconds(_ raw: String) -> TimeInterval? {
+        let s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !s.isEmpty else { return nil }
+        let parts = s.split(separator: ":").map { String($0) }
+        if parts.count == 3 {
+            let h = Double(parts[0]) ?? 0
+            let m = Double(parts[1]) ?? 0
+            let sec = Double(parts[2]) ?? 0
+            return max(0, h * 3600 + m * 60 + sec)
+        }
+        if parts.count == 2 {
+            let m = Double(parts[0]) ?? 0
+            let sec = Double(parts[1]) ?? 0
+            return max(0, m * 60 + sec)
+        }
+        if let v = Double(s) { return max(0, v) }
+        return nil
     }
     
     var formattedDate: String {
@@ -185,6 +211,25 @@ struct MeetingRecordView: View {
     
     // 主题色 - 统一灰色
     private let themeColor = Color(white: 0.55)
+
+    /// 空状态视图（放在同一作用域内，避免 Xcode 索引偶发“找不到符号”假报错）
+    private struct EmptyMeetingView: View {
+        var body: some View {
+            VStack(spacing: 18) {
+                Image(systemName: "mic.circle")
+                    .font(.system(size: 64, weight: .light))
+                    .foregroundColor(Color.black.opacity(0.15))
+
+                Text("暂无会议录音")
+                    .font(.system(size: 18, weight: .medium, design: .rounded))
+                    .foregroundColor(Color.black.opacity(0.55))
+
+                Text("点击右上角 + 开始新录音")
+                    .font(.system(size: 14, weight: .regular, design: .rounded))
+                    .foregroundColor(Color.black.opacity(0.35))
+            }
+        }
+    }
     
     var body: some View {
         ZStack {
@@ -195,80 +240,118 @@ struct MeetingRecordView: View {
                 VStack(spacing: 0) {
                     // 主内容区域
                     if showContent {
-                        ScrollView {
-                            LazyVStack(spacing: 12) {
-                                // 加载中状态
-                                if isLoading && recordingItems.isEmpty {
-                                    VStack(spacing: 16) {
-                                        ProgressView()
-                                            .scaleEffect(1.2)
-                                        Text("正在加载会议纪要...")
-                                            .font(.system(size: 14, weight: .medium, design: .rounded))
-                                            .foregroundColor(Color.black.opacity(0.5))
-                                    }
-                                    .padding(.top, 80)
+                        List {
+                            // 1. 录制中卡片 (如果有正在进行的录音)
+                            if recordingManager.isRecording {
+                                MeetingRecordingCardView()
+                                    .transition(.move(edge: .top).combined(with: .opacity))
+                                    .listRowInsets(EdgeInsets(top: 6, leading: 0, bottom: 6, trailing: 0))
+                                    .listRowSeparator(.hidden)
+                                    .listRowBackground(Color.clear)
+                            }
+
+                            // 2. 会议列表
+                            if isLoading && recordingItems.isEmpty {
+                                VStack(spacing: 16) {
+                                    ProgressView()
+                                        .scaleEffect(1.2)
+                                    Text("正在加载会议纪要...")
+                                        .font(.system(size: 14, weight: .medium, design: .rounded))
+                                        .foregroundColor(Color.black.opacity(0.5))
                                 }
-                                // 错误状态
-                                else if let error = loadError {
-                                    VStack(spacing: 16) {
-                                        Image(systemName: "exclamationmark.triangle")
-                                            .font(.system(size: 48, weight: .light))
-                                            .foregroundColor(Color.orange.opacity(0.6))
-                                        Text(error)
-                                            .font(.system(size: 14, weight: .medium, design: .rounded))
-                                            .foregroundColor(Color.black.opacity(0.5))
-                                        Button("重试") {
-                                            loadRecordingsFromMeetings()
-                                        }
-                                        .font(.system(size: 14, weight: .medium))
-                                        .foregroundColor(.blue)
+                                .padding(.top, 80)
+                                .frame(maxWidth: .infinity)
+                                .listRowInsets(EdgeInsets(top: 6, leading: 0, bottom: 6, trailing: 0))
+                                .listRowSeparator(.hidden)
+                                .listRowBackground(Color.clear)
+                            }
+                            // 错误状态
+                            else if let error = loadError {
+                                VStack(spacing: 16) {
+                                    Image(systemName: "exclamationmark.triangle")
+                                        .font(.system(size: 48, weight: .light))
+                                        .foregroundColor(Color.orange.opacity(0.6))
+                                    Text(error)
+                                        .font(.system(size: 14, weight: .medium, design: .rounded))
+                                        .foregroundColor(Color.black.opacity(0.5))
+                                    Button("重试") {
+                                        loadRecordingsFromMeetings()
                                     }
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundColor(.blue)
+                                }
+                                .padding(.top, 60)
+                                .frame(maxWidth: .infinity)
+                                .listRowInsets(EdgeInsets(top: 6, leading: 0, bottom: 6, trailing: 0))
+                                .listRowSeparator(.hidden)
+                                .listRowBackground(Color.clear)
+                            }
+                            // 空状态 (且没有在录音)
+                            else if recordingItems.isEmpty && !recordingManager.isRecording {
+                                EmptyMeetingView()
                                     .padding(.top, 60)
-                                }
-                                // 空状态
-                                else if recordingItems.isEmpty {
-                                    EmptyMeetingView()
-                                        .padding(.top, 60)
-                                } else {
-                                    ForEach(recordingItems) { item in
-                                        RecordingItemCard(
-                                            item: item,
-                                            onTap: {
-                                                // 转换为 MeetingCard 并显示详情页
-                                                let remoteURLString: String? = {
-                                                    guard let u = item.audioURL, !u.isFileURL else { return nil }
-                                                    return u.absoluteString
-                                                }()
-                                                let localPath: String? = {
-                                                    guard let u = item.audioURL, u.isFileURL else { return nil }
-                                                    return u.path
-                                                }()
-                                                let card = MeetingCard(
-                                                    id: item.id,
-                                                    remoteId: item.remoteId,
-                                                    title: item.title,
-                                                    date: item.createdAt,
-                                                    // 不使用 list 接口的摘要/转写，强制以详情 GET 的返回为准
-                                                    summary: "",
-                                                    duration: item.duration,
-                                                    audioPath: localPath,
-                                                    audioRemoteURL: remoteURLString,
-                                                    transcriptions: nil,
-                                                    isGenerating: false
-                                                )
-                                                selectedMeetingCard = card
-                                                showingDetailSheet = true
-                                            },
-                                            onDelete: {
-                                                deleteRecording(item)
-                                            }
-                                        )
+                                    .frame(maxWidth: .infinity)
+                                    .listRowInsets(EdgeInsets(top: 6, leading: 0, bottom: 6, trailing: 0))
+                                    .listRowSeparator(.hidden)
+                                    .listRowBackground(Color.clear)
+                            } else {
+                                ForEach(recordingItems) { item in
+                                    MeetingCardItemView(
+                                        item: item,
+                                        onTap: {
+                                            // 转换为 MeetingCard 并显示详情页
+                                            let remoteURLString: String? = {
+                                                guard let u = item.audioURL, !u.isFileURL else { return nil }
+                                                return u.absoluteString
+                                            }()
+                                            let localPath: String? = {
+                                                guard let u = item.audioURL, u.isFileURL else { return nil }
+                                                return u.path
+                                            }()
+                                            let card = MeetingCard(
+                                                id: item.id,
+                                                remoteId: item.remoteId,
+                                                title: item.title,
+                                                date: item.createdAt,
+                                                summary: "",
+                                                duration: item.duration,
+                                                audioPath: localPath,
+                                                audioRemoteURL: remoteURLString,
+                                                transcriptions: nil,
+                                                isGenerating: item.isProcessing
+                                            )
+                                            selectedMeetingCard = card
+                                            showingDetailSheet = true
+                                        }
+                                    )
+                                    // ✅ 左滑删除（替代长按菜单）
+                                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                        Button(role: .destructive) {
+                                            deleteRecording(item)
+                                        } label: {
+                                            Label("删除", systemImage: "trash")
+                                                .labelStyle(.iconOnly)
+                                        }
                                     }
+                                    .listRowInsets(EdgeInsets(top: 6, leading: 0, bottom: 6, trailing: 0))
+                                    .listRowSeparator(.hidden)
+                                    .listRowBackground(Color.clear)
                                 }
                             }
-                            .padding(.top, 8)
-                            .padding(.bottom, 120)
+
+                            // 预留底部空间，避免被底部栏遮挡
+                            Color.clear
+                                .frame(height: 120)
+                                .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+                                .listRowSeparator(.hidden)
+                                .listRowBackground(Color.clear)
                         }
+                        .listStyle(.plain)
+                        .scrollContentBackground(.hidden)
+                        .background(Color.clear)
+                        // 关键：List 自身内缩，swipeActions 按钮也会随之内缩，从而与卡片右边对齐
+                        .padding(.horizontal, 20)
+                        .padding(.top, 8)
                         .refreshable {
                             // 下拉刷新
                             await loadRecordingsFromServer()
@@ -287,8 +370,19 @@ struct MeetingRecordView: View {
                 title: "会议纪要",
                 themeColor: themeColor,
                 onBack: { dismiss() },
-                // 新流程：会议纪要页不再提供“开始录音”入口（避免与快捷指令流程冲突）
-                customTrailing: AnyView(EmptyView())
+                customTrailing: AnyView(
+                    Button(action: {
+                        HapticFeedback.light()
+                        if !recordingManager.isRecording {
+                            // 会议记录页内发起：不要往聊天室插入“正在生成”卡片
+                            recordingManager.startRecording(suppressChatCardOnUpload: true)
+                        }
+                    }) {
+                        Image(systemName: "plus")
+                            .font(.system(size: 20, weight: .medium))
+                            .foregroundColor(.black.opacity(0.7))
+                    }
+                )
             )
         }
         .toolbar(.hidden, for: .navigationBar)
@@ -296,8 +390,8 @@ struct MeetingRecordView: View {
             if selectedMeetingCard != nil {
                 MeetingDetailSheet(meeting: Binding(
                     get: {
-                        selectedMeetingCard
-                            ?? MeetingCard(remoteId: nil, title: "", date: Date(), summary: "")
+                        // 这里不做 demo/空对象兜底：避免出现“空白会议详情”
+                        selectedMeetingCard!
                     },
                     set: { selectedMeetingCard = $0 }
                 ))
@@ -329,6 +423,13 @@ struct MeetingRecordView: View {
             if recordingManager.isRecording {
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("StopRecordingFromUI"))) { _ in
+            recordingManager.stopRecording(modelContext: modelContext)
+            // 录音停止后延迟刷新列表
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                loadRecordingsFromMeetings()
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("StopRecordingFromWidget"))) { _ in
             // 从灵动岛停止录音后，延迟刷新列表
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
@@ -348,6 +449,136 @@ struct MeetingRecordView: View {
             if newValue {
                 showAddSheet = false
             }
+        }
+        // ✅ 详情页删除：列表立刻移除（避免返回后还看到旧条目）
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("MeetingListDidDelete"))) { notification in
+            guard let userInfo = notification.userInfo else { return }
+            let remoteId = (userInfo["remoteId"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let audioPath = (userInfo["audioPath"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !remoteId.isEmpty || !audioPath.isEmpty else { return }
+            
+            if let idx = recordingItems.firstIndex(where: { item in
+                let rid = (item.remoteId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                let lp = (item.audioURL?.isFileURL == true) ? (item.audioURL?.path ?? "") : ""
+                return (!remoteId.isEmpty && rid == remoteId) || (!audioPath.isEmpty && lp == audioPath)
+            }) {
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+                    recordingItems.remove(at: idx)
+                }
+            }
+        }
+        // ✅ 会议页录音：一旦进入“上传/生成”流程，立刻在列表插入等高的加载小卡片
+        .onReceive(
+            NotificationCenter.default.publisher(for: NSNotification.Name("RecordingNeedsUpload"))
+                .receive(on: RunLoop.main)
+        ) { notification in
+            guard let userInfo = notification.userInfo else { return }
+            let suppressChatCard = userInfo["suppressChatCard"] as? Bool ?? false
+            guard suppressChatCard else { return }
+
+            let title = userInfo["title"] as? String ?? "会议录音"
+            let date = userInfo["date"] as? Date ?? Date()
+            let duration = userInfo["duration"] as? TimeInterval ?? 0
+            let audioPath = (userInfo["audioPath"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !audioPath.isEmpty else { return }
+
+            // 去重：同一个 audioPath 的占位卡只插一次
+            if recordingItems.contains(where: { ($0.audioURL?.isFileURL == true) && ($0.audioURL?.path == audioPath) && ($0.status == "generating" || $0.status == "processing") }) {
+                return
+            }
+
+            var placeholder = RecordingItem(
+                id: UUID(),
+                audioURL: URL(fileURLWithPath: audioPath),
+                createdAt: date,
+                duration: duration,
+                meetingSummary: nil,
+                title: "正在生成会议纪要…"
+            )
+            placeholder.status = "generating"
+            placeholder.isFromRemote = false
+
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+                recordingItems.insert(placeholder, at: 0)
+            }
+        }
+        // ✅ 后端创建 job 后，尽早拿到 remoteId，后续详情/轮询才可用
+        .onReceive(
+            NotificationCenter.default.publisher(for: NSNotification.Name("MeetingListJobCreated"))
+                .receive(on: RunLoop.main)
+        ) { notification in
+            guard let userInfo = notification.userInfo else { return }
+            let audioPath = (userInfo["audioPath"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let remoteId = (userInfo["remoteId"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !audioPath.isEmpty, !remoteId.isEmpty else { return }
+
+            if let idx = recordingItems.firstIndex(where: { ($0.audioURL?.isFileURL == true) && ($0.audioURL?.path == audioPath) }) {
+                recordingItems[idx].remoteId = remoteId
+                recordingItems[idx].status = "processing"
+            }
+        }
+        // ✅ 生成完成：把占位卡立即更新成正常条目（无需等刷新）
+        .onReceive(
+            NotificationCenter.default.publisher(for: NSNotification.Name("MeetingListDidComplete"))
+                .receive(on: RunLoop.main)
+        ) { notification in
+            guard let userInfo = notification.userInfo else { return }
+            let audioPath = (userInfo["audioPath"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !audioPath.isEmpty else { return }
+
+            let remoteId = (userInfo["remoteId"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let title = (userInfo["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let date = userInfo["date"] as? Date
+            let duration = userInfo["duration"] as? TimeInterval
+            let summary = userInfo["summary"] as? String
+
+            if let idx = recordingItems.firstIndex(where: { ($0.audioURL?.isFileURL == true) && ($0.audioURL?.path == audioPath) }) {
+                if let rid = remoteId, !rid.isEmpty { recordingItems[idx].remoteId = rid }
+                if let t = title, !t.isEmpty { recordingItems[idx].title = t }
+                if let d = date { recordingItems[idx].createdAt = d }
+                if let du = duration { recordingItems[idx].duration = du }
+                if let s = summary, !s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    recordingItems[idx].meetingSummary = s
+                }
+                recordingItems[idx].status = "completed"
+            } else {
+                // 兜底：如果占位卡不存在，也插入一个完成态条目
+                var item = RecordingItem(
+                    id: UUID(),
+                    audioURL: URL(fileURLWithPath: audioPath),
+                    createdAt: date ?? Date(),
+                    duration: duration ?? 0,
+                    meetingSummary: summary,
+                    title: title ?? "会议录音"
+                )
+                item.remoteId = remoteId
+                item.status = "completed"
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+                    recordingItems.insert(item, at: 0)
+                }
+            }
+        }
+        // ✅ 详情页一旦把标题/摘要拉到，就同步回列表（用户返回列表立刻看到更新）
+        .onChange(of: selectedMeetingCard) { _, newValue in
+            guard let card = newValue else { return }
+            let rid = (card.remoteId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let lp = (card.audioPath ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !rid.isEmpty || !lp.isEmpty else { return }
+
+            guard let idx = recordingItems.firstIndex(where: { item in
+                let sameRid = (!rid.isEmpty) && (item.remoteId?.trimmingCharacters(in: .whitespacesAndNewlines) == rid)
+                let sameLocalPath = (!lp.isEmpty) && (item.audioURL?.isFileURL == true) && (item.audioURL?.path == lp)
+                return sameRid || sameLocalPath
+            }) else { return }
+
+            let newTitle = card.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !newTitle.isEmpty { recordingItems[idx].title = newTitle }
+            recordingItems[idx].createdAt = card.date
+            if let d = card.duration { recordingItems[idx].duration = d }
+            let s = card.summary.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !s.isEmpty { recordingItems[idx].meetingSummary = s }
+            if !rid.isEmpty { recordingItems[idx].remoteId = rid }
+            recordingItems[idx].status = card.isGenerating ? "processing" : "completed"
         }
     }
     
@@ -373,10 +604,30 @@ struct MeetingRecordView: View {
             )
             
             // 转换为 RecordingItem
-            recordingItems = remoteItems.map { remoteItem in
-                let recordingItem = RecordingItem(remoteItem: remoteItem)
-                return recordingItem
+            let remoteRecordingItems: [RecordingItem] = remoteItems.map { RecordingItem(remoteItem: $0) }
+
+            // 合并：保留本地“生成中/处理中”占位卡，避免被服务端列表覆盖导致“回显消失”
+            let placeholders = recordingItems.filter { !$0.isFromRemote && ($0.status == "generating" || $0.status == "processing") }
+            let keepPlaceholders = placeholders.filter { p in
+                if let rid = p.remoteId?.trimmingCharacters(in: .whitespacesAndNewlines), !rid.isEmpty {
+                    return !remoteRecordingItems.contains(where: { ($0.remoteId ?? "") == rid })
+                }
+                return true
             }
+
+            var merged = remoteRecordingItems + keepPlaceholders
+            // 去重（按 remoteId）
+            var seen = Set<String>()
+            merged = merged.filter { item in
+                let rid = (item.remoteId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !rid.isEmpty else { return true }
+                if seen.contains(rid) { return false }
+                seen.insert(rid)
+                return true
+            }
+            merged.sort { $0.createdAt > $1.createdAt }
+
+            recordingItems = merged
             
             isLoading = false
             
@@ -430,295 +681,164 @@ struct MeetingRecordView: View {
 
 // MARK: - 子组件
 
-// 空状态视图
-struct EmptyMeetingView: View {
-    var body: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "mic.circle")
-                .font(.system(size: 64, weight: .light))
-                .foregroundColor(Color.black.opacity(0.15))
-            
-            Text("暂无会议录音")
-                .font(.system(size: 18, weight: .medium, design: .rounded))
-                .foregroundColor(Color.black.opacity(0.5))
-            
-            Text("通过快捷指令开始录音")
-                .font(.system(size: 14, weight: .regular, design: .rounded))
-                .foregroundColor(Color.black.opacity(0.35))
-        }
-    }
-}
-
-// 导航栏录音按钮 - 紧凑型
-struct NavRecordingButton: View {
-    let isRecording: Bool
-    let isPaused: Bool
-    let recordingDuration: TimeInterval
-    let onStartRecording: () -> Void
-    let onPauseRecording: () -> Void
-    let onResumeRecording: () -> Void
-    let onStopRecording: () -> Void
-    
-    @State private var pulseScale: CGFloat = 1.0
+/// 录制中卡片组件
+struct MeetingRecordingCardView: View {
+    @ObservedObject var recordingManager = LiveRecordingManager.shared
     
     var body: some View {
-        HStack(spacing: 8) {
-            // 时长显示 (仅在录音时)
-            if isRecording {
-                Text(formatDuration(recordingDuration))
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
-                    .foregroundColor(isPaused ? .black.opacity(0.5) : .red)
-                    .monospacedDigit()
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(
-                        Capsule()
-                            .fill(.ultraThinMaterial)
-                            .overlay(
-                                Capsule()
-                                    .strokeBorder(Color.white.opacity(0.4), lineWidth: 0.5)
-                            )
-                    )
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
+        VStack(spacing: 12) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("录音纪要 | 录制中...")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(.black.opacity(0.8))
+                    
+                    Text(formatDuration(recordingManager.recordingDuration))
+                        .font(.system(size: 13))
+                        .foregroundColor(.black.opacity(0.4))
+                        .monospacedDigit()
+                }
+                Spacer()
             }
             
-            // 主按钮
+            // 波纹展示区
+            SimpleWaveformView(audioPower: 0.5)
+                .frame(height: 30)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 4)
+            
+            // 停止按钮 - 更加集成
             Button(action: {
-                if !isRecording {
-                    onStartRecording()
-                } else if isPaused {
-                    onResumeRecording()
-                } else {
-                    onPauseRecording()
-                }
+                HapticFeedback.medium()
+                NotificationCenter.default.post(name: NSNotification.Name("StopRecordingFromUI"), object: nil)
             }) {
                 ZStack {
-                    if isRecording && !isPaused {
-                        Circle()
-                            .fill(Color.red.opacity(0.2))
-                            .frame(width: 34, height: 34)
-                            .scaleEffect(pulseScale)
-                    }
+                    Circle()
+                        .fill(.white)
+                        .frame(width: 44, height: 44)
+                        .shadow(color: .black.opacity(0.08), radius: 6, x: 0, y: 3)
                     
-                    Image(systemName: isRecording ? (isPaused ? "play.fill" : "pause.fill") : "mic.fill")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundColor(isRecording && !isPaused ? .red : .black.opacity(0.7))
-                        .frame(width: 34, height: 34)
-                        .background(
-                            Circle()
-                                .fill(.ultraThinMaterial)
-                                .overlay(
-                                    Circle()
-                                        .strokeBorder(Color.white.opacity(0.45), lineWidth: 0.6)
-                                )
-                                .shadow(color: Color.black.opacity(0.06), radius: 6, x: 0, y: 2)
-                        )
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(Color.red)
+                        .frame(width: 14, height: 14)
                 }
             }
             .buttonStyle(.plain)
-            
-            // 停止按钮
-            if isRecording {
-                Button(action: onStopRecording) {
-                    Image(systemName: "stop.fill")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundColor(.red)
-                        .frame(width: 34, height: 34)
-                        .background(
-                            Circle()
-                                .fill(.ultraThinMaterial)
-                                .overlay(
-                                    Circle()
-                                        .strokeBorder(Color.white.opacity(0.45), lineWidth: 0.6)
-                                )
-                                .shadow(color: Color.black.opacity(0.06), radius: 6, x: 0, y: 2)
-                        )
-                }
-                .buttonStyle(.plain)
-                .transition(.scale.combined(with: .opacity))
-            }
         }
-        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isRecording)
-        .onChange(of: isRecording, initial: true) { _, newValue in
-            if newValue && !isPaused {
-                withAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true)) {
-                    pulseScale = 1.2
-                }
-            } else {
-                pulseScale = 1.0
-            }
-        }
-        .onChange(of: isPaused) { _, newValue in
-            if isRecording && !newValue {
-                withAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true)) {
-                    pulseScale = 1.2
-                }
-            } else {
-                pulseScale = 1.0
-            }
-        }
+        .padding(.vertical, 16)
+        .padding(.horizontal, 20)
+        .frame(maxWidth: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(Color.white)
+                .shadow(color: .black.opacity(0.04), radius: 10, x: 0, y: 4)
+        )
     }
     
     private func formatDuration(_ duration: TimeInterval) -> String {
-        let minutes = Int(duration) / 60
-        let seconds = Int(duration) % 60
-        return String(format: "%02d:%02d", minutes, seconds)
+        let total = Int(duration)
+        let h = total / 3600
+        let m = (total % 3600) / 60
+        let s = total % 60
+        return String(format: "%02d:%02d:%02d", h, m, s)
     }
 }
 
-// 录音文件卡片（简化样式：仅标题、日期、时长）
-struct RecordingItemCard: View {
-    let item: RecordingItem
-    let onTap: () -> Void
-    let onDelete: () -> Void
-    
-    @State private var offset: CGFloat = 0
-    @State private var isDeleteVisible = false
-    @State private var isDragging = false
-    
-    private var isButtonDisabled: Bool {
-        isDragging || abs(offset) > 5
-    }
+/// 简易波纹视图
+struct SimpleWaveformView: View {
+    let audioPower: CGFloat
+    private let barCount = 50
     
     var body: some View {
-        ZStack(alignment: .trailing) {
-            // 删除背景层
-            if offset < 0 {
-                ZStack(alignment: .trailing) {
-                    Color.red
-                    
-                    Button(action: {
-                        onDelete()
-                        offset = 0
-                        isDeleteVisible = false
-                    }) {
-                        Image(systemName: "trash.fill")
-                            .font(.system(size: 22, weight: .bold))
-                            .foregroundColor(.white)
-                            .frame(width: 90)
-                            .frame(maxHeight: .infinity)
-                            .contentShape(Rectangle())
-                    }
+        GeometryReader { geo in
+            let count = max(barCount, 1)
+            let spacing: CGFloat = 1.5
+            let totalSpacing = spacing * CGFloat(max(count - 1, 0))
+            let barWidth = max((geo.size.width - totalSpacing) / CGFloat(count), 1)
+
+            HStack(spacing: spacing) {
+                ForEach(0..<count, id: \.self) { i in
+                    WaveBar(index: i, audioPower: audioPower, barWidth: barWidth)
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 18))
-                .padding(.horizontal, 20)
             }
-            
-            // 前景卡片内容
-            Button(action: {
-                if !isDragging && abs(offset) < 5 {
-                    onTap()
-                }
-            }) {
-                VStack(spacing: 12) {
-                    // 标题
-                    Text(item.title.isEmpty ? "会议录音" : item.title)
-                        .font(.system(size: 17, weight: .bold, design: .rounded))
-                        .foregroundColor(Color.black.opacity(0.9))
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    
-                    // 日期和时长
-                    HStack {
-                        HStack(spacing: 4) {
-                            Image(systemName: "calendar")
-                                .font(.system(size: 11))
-                            Text(item.formattedDate)
-                        }
-                        
-                        Spacer()
-                        
-                        HStack(spacing: 4) {
-                            Image(systemName: "clock")
-                                .font(.system(size: 11))
-                            Text(item.formattedDuration)
-                        }
-                    }
-                    .font(.system(size: 13, weight: .medium, design: .rounded))
-                    .foregroundColor(Color.black.opacity(0.4))
-                }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 18)
-                .background(
-                    ZStack {
-                        // 液态玻璃基础
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .fill(
-                                LinearGradient(
-                                    gradient: Gradient(stops: [
-                                        .init(color: Color.white.opacity(0.88), location: 0.0),
-                                        .init(color: Color.white.opacity(0.68), location: 0.5),
-                                        .init(color: Color.white.opacity(0.78), location: 1.0)
-                                    ]),
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                        
-                        // 表面高光
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .fill(
-                                LinearGradient(
-                                    gradient: Gradient(stops: [
-                                        .init(color: Color.white.opacity(0.45), location: 0.0),
-                                        .init(color: Color.white.opacity(0.15), location: 0.2),
-                                        .init(color: Color.clear, location: 0.5)
-                                    ]),
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
-                            )
-                        
-                        // 晶体边框
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .strokeBorder(
-                                LinearGradient(
-                                    gradient: Gradient(stops: [
-                                        .init(color: Color.white.opacity(0.9), location: 0.0),
-                                        .init(color: Color.white.opacity(0.35), location: 0.5),
-                                        .init(color: Color.white.opacity(0.65), location: 1.0)
-                                    ]),
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                ),
-                                lineWidth: 1
-                            )
-                    }
-                )
-                .shadow(color: Color.white.opacity(0.5), radius: 6, x: 0, y: -2)
-                .shadow(color: Color.black.opacity(0.06), radius: 10, x: 0, y: 4)
-            }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 20)
-            .offset(x: offset)
-            .simultaneousGesture(
-                DragGesture(minimumDistance: 20, coordinateSpace: .local)
-                    .onChanged { value in
-                        isDragging = true
-                        if value.translation.width < 0 {
-                            offset = value.translation.width
-                        } else if isDeleteVisible {
-                            let newOffset = -90 + value.translation.width
-                            offset = min(0, newOffset)
-                        }
-                    }
-                    .onEnded { value in
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                            if value.translation.width < -60 {
-                                offset = -90
-                                isDeleteVisible = true
-                            } else {
-                                offset = 0
-                                isDeleteVisible = false
-                            }
-                        }
-                        // 延迟一点再恢复按钮，确保动画完成
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                            isDragging = false
-                        }
-                    }
-            )
+            .frame(width: geo.size.width, height: geo.size.height, alignment: .center)
         }
     }
 }
+
+struct WaveBar: View {
+    let index: Int
+    let audioPower: CGFloat
+    let barWidth: CGFloat
+    @State private var height: CGFloat = 3
+    
+    var body: some View {
+        RoundedRectangle(cornerRadius: 0.5)
+            .fill(Color.black.opacity(0.08))
+            .frame(width: barWidth, height: height)
+            .onAppear {
+                withAnimation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true).delay(Double(index) * 0.015)) {
+                    height = CGFloat.random(in: 3...20)
+                }
+            }
+    }
+}
+
+/// 普通会议卡片组件
+struct MeetingCardItemView: View {
+    let item: RecordingItem
+    let onTap: () -> Void
+    
+    var body: some View {
+        Button(action: onTap) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text(item.title.isEmpty ? "会议录音" : item.title)
+                        .font(.system(size: 17, weight: .bold))
+                        .foregroundColor(.black)
+                        .lineLimit(2)
+                    
+                    if item.isProcessing {
+                        Spacer()
+                        HStack(spacing: 4) {
+                            ProgressView()
+                                .scaleEffect(0.7)
+                            Text("处理中")
+                                .font(.system(size: 12))
+                                .foregroundColor(.blue)
+                        }
+                    }
+                }
+                
+                HStack {
+                    HStack(spacing: 4) {
+                        Image(systemName: "calendar")
+                            .font(.system(size: 12))
+                        Text(item.formattedDate)
+                    }
+                    
+                    Spacer()
+                    
+                    HStack(spacing: 4) {
+                        Image(systemName: "clock")
+                            .font(.system(size: 12))
+                        Text(item.formattedDuration)
+                    }
+                }
+                .font(.system(size: 13))
+                .foregroundColor(.black.opacity(0.4))
+            }
+            .padding(20)
+            .background(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(Color.white)
+                    .shadow(color: .black.opacity(0.04), radius: 10, x: 0, y: 4)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - 子组件
+
+// MARK: - 辅助方法
