@@ -18,6 +18,9 @@ struct ChatView: View {
     // MARK: - Input ViewModel
     @StateObject private var inputViewModel = ChatInputViewModel()
     @Namespace private var inputNamespace
+
+    // 快捷指令/会议纪要录音：复用 LiveRecordingManager 的同一套通路
+    @ObservedObject private var meetingRecordingManager = LiveRecordingManager.shared
     
     // UI State
     @State private var showContent: Bool = false
@@ -448,6 +451,12 @@ struct ChatView: View {
         }
         .onChange(of: appState.isAgentTyping) { _, newValue in
             inputViewModel.isAgentTyping = newValue
+        }
+        .onChange(of: meetingRecordingManager.isRecording) { _, _ in
+            // 录音开始/结束时，尽量保持最新内容可见
+            if let proxy = chatScrollProxy {
+                scrollToLatestMessageOnOpen(proxy: proxy)
+            }
         }
         // 远端日程变更（创建/更新/删除）后强刷，确保通知栏及时更新
         .onReceive(NotificationCenter.default.publisher(for: .remoteScheduleDidChange).receive(on: RunLoop.main)) { _ in
@@ -955,6 +964,16 @@ struct ChatView: View {
                     .padding(.leading, 12)
                     .id(message.id)
                 }
+            }
+
+            // ✅ 快捷指令录音：聊天室内显示“录音中卡片”（与会议纪要页同一录音通路）
+            if meetingRecordingManager.isRecording {
+                ChatMeetingRecordingCardView(recordingManager: meetingRecordingManager) {
+                    appState.stopRecordingAndShowGenerating(modelContext: modelContext)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .offset(x: -chatCardVisualLeadingCompensation)
+                .id("liveRecordingCard")
             }
             
             // 锚点

@@ -137,7 +137,7 @@ class LiveRecordingManager: ObservableObject {
             recordingTimer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
                 guard let self = self else { return }
                 self.recordingDuration += 0.5
-                self.updateLiveActivity()
+                // 不再用灵动岛展示计时：避免频繁刷新 Live Activity
             }
             RunLoop.current.add(recordingTimer!, forMode: .common)
             
@@ -384,7 +384,7 @@ class LiveRecordingManager: ObservableObject {
         
         let attributes = MeetingRecordingAttributes(meetingTitle: "Moly录音")
         let contentState = MeetingRecordingAttributes.ContentState(
-            transcribedText: publishTranscriptionToUI ? "开始录音..." : "",
+            transcribedText: isPaused ? "已暂停" : "录音中",
             duration: 0,
             isRecording: true,
             isPaused: false
@@ -412,8 +412,8 @@ class LiveRecordingManager: ObservableObject {
         
         let contentState = MeetingRecordingAttributes.ContentState(
             transcribedText: {
-                guard publishTranscriptionToUI else { return "" }
-                return recognizedText.isEmpty ? "等待说话..." : recognizedText
+                // 灵动岛不再展示实时转写/计时，固定文案即可
+                return isPaused ? "已暂停" : "录音中"
             }(),
             duration: recordingDuration,
             isRecording: isRecording,
@@ -435,7 +435,7 @@ class LiveRecordingManager: ObservableObject {
         guard let activity = activity else { return }
         
         let finalState = MeetingRecordingAttributes.ContentState(
-            transcribedText: recognizedText,
+            transcribedText: "录音中",
             duration: recordingDuration,
             isRecording: false,
             isPaused: false
@@ -445,24 +445,16 @@ class LiveRecordingManager: ObservableObject {
         let currentActivity = activity
         
         Task {
-            // 1. 立即更新到“已完成”状态，灵动岛会根据 Widget 逻辑显示绿色勾选和完成文案
-            let updateContent = ActivityContent(
-                state: finalState,
-                staleDate: nil,
-                relevanceScore: 100.0
-            )
-            await currentActivity.update(updateContent)
-            
-            // 2. 停留 2.5 秒，让用户有充足的时间感受到录音已经成功结束并保存
-            try? await Task.sleep(nanoseconds: 2_500_000_000)
-            
-            // 3. 正式告知系统结束 Activity
-            // dismissalPolicy 设置为 immediate 因为我们已经在上面主动停留过了
-            // 如果是在锁屏界面，系统会根据其策略决定是否继续保留小部件
+            // 点击停止后立刻结束灵动岛/Live Activity（不再停留/不展示计时完成态）
             if #available(iOS 16.2, *) {
-                await currentActivity.end(updateContent, dismissalPolicy: .after(.now + 1.0))
+                let content = ActivityContent(
+                    state: finalState,
+                    staleDate: nil,
+                    relevanceScore: 100.0
+                )
+                await currentActivity.end(content, dismissalPolicy: .immediate)
             } else {
-                await currentActivity.end(dismissalPolicy: .after(.now + 1.0))
+                await currentActivity.end(dismissalPolicy: .immediate)
             }
         }
         

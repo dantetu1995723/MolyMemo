@@ -52,7 +52,8 @@ struct StartMeetingRecordingIntent: AppIntent {
         // 新流程：快捷指令启动后进入聊天室插入“开始录音”气泡，不再跳转会议纪要页
         defaults?.set(false, forKey: RecordingIPC.Key.shouldNavigateToMeeting)
         defaults?.set(true, forKey: RecordingIPC.Key.shouldNavigateToChatRoom)
-        defaults?.set(true, forKey: RecordingIPC.Key.autoMinimize)
+        // 不再自动“上滑进入灵动岛”（不主动 suspend App）
+        defaults?.set(false, forKey: RecordingIPC.Key.autoMinimize)
         // 快捷指令/Widget 场景：不在 UI 上展示实时转写（避免自动弹出“蓝色球/歌词滚动”转写界面）
         defaults?.set(false, forKey: RecordingIPC.Key.publishTranscriptionToUI)
         defaults?.set("start", forKey: RecordingIPC.Key.pendingCommand)

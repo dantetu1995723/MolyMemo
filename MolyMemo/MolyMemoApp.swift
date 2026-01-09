@@ -74,7 +74,6 @@ struct MolyMemoApp: App {
                     // 兼容旧字段 shouldNavigateToMeeting（旧逻辑会跳会议页）；现在统一走聊天室
                     let shouldNavigateToChatRoom = notification.userInfo?["shouldNavigateToChatRoom"] as? Bool
                         ?? true
-                    let autoMinimize = notification.userInfo?["autoMinimize"] as? Bool ?? true
                     let publishTranscriptionToUI = notification.userInfo?["publishTranscriptionToUI"] as? Bool ?? true
 
                     DispatchQueue.main.async {
@@ -96,15 +95,6 @@ struct MolyMemoApp: App {
 
                         if !LiveRecordingManager.shared.isRecording {
                             LiveRecordingManager.shared.startRecording(publishTranscriptionToUI: publishTranscriptionToUI)
-                        }
-
-                        // 等待气泡渲染并稳定后，再自动挂后台（延长到1.5秒，确保用户看清气泡）
-                        if autoMinimize {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                                if LiveRecordingManager.shared.isRecording {
-                                    UIControl().sendAction(#selector(URLSessionTask.suspend), to: UIApplication.shared, for: nil)
-                                }
-                            }
                         }
                     }
                 }
@@ -448,13 +438,6 @@ struct MolyMemoApp: App {
                 if !LiveRecordingManager.shared.isRecording {
                     // Widget/快捷指令触发：默认不向 UI 发布实时转写
                     LiveRecordingManager.shared.startRecording(publishTranscriptionToUI: false)
-                }
-
-                // URL 触发默认也缩回灵动岛，保持一致体验
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                    if LiveRecordingManager.shared.isRecording {
-                        UIControl().sendAction(#selector(URLSessionTask.suspend), to: UIApplication.shared, for: nil)
-                    }
                 }
             }
         } else if url.host == "start-recording" || url.path == "/start-recording" {

@@ -115,9 +115,8 @@ struct MeetingRecordingLiveActivity: Widget {
                     Spacer()
                     
                     if context.state.isRecording {
-                        Text(formatDuration(context.state.duration))
-                            .font(.system(size: 16, weight: .bold))
-                            .monospacedDigit()
+                        Text("录音中")
+                            .font(.system(size: 14, weight: .bold))
                             .foregroundColor(.black)
                     }
                 }
@@ -145,9 +144,8 @@ struct MeetingRecordingLiveActivity: Widget {
                         
                         // 中：计时器或完成文字
                         if context.state.isRecording {
-                            Text(formatDuration(context.state.duration))
-                                .font(.system(size: 44, weight: .bold, design: .rounded))
-                                .monospacedDigit()
+                            Text("录音中")
+                                .font(.system(size: 32, weight: .bold))
                                 .foregroundColor(.white)
                         } else {
                             Text("完成录音")
@@ -186,11 +184,9 @@ struct MeetingRecordingLiveActivity: Widget {
                     .font(.system(size: 12, weight: .bold))
                     .foregroundColor(.white)
             } compactTrailing: {
-                // 紧凑模式右侧：数字计时
                 if context.state.isRecording {
-                    Text(formatDuration(context.state.duration))
+                    Text("录音")
                         .font(.system(size: 12, weight: .bold))
-                        .monospacedDigit()
                         .foregroundColor(.white)
                 } else {
                     Image(systemName: "checkmark")
@@ -204,12 +200,6 @@ struct MeetingRecordingLiveActivity: Widget {
                     .foregroundColor(.white)
             }
         }
-    }
-    
-    private func formatDuration(_ duration: TimeInterval) -> String {
-        let minutes = Int(duration) / 60
-        let seconds = Int(duration) % 60
-        return String(format: "%02d:%02d", minutes, seconds)
     }
 }
 
