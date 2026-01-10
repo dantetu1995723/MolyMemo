@@ -579,14 +579,165 @@ struct ImageGallery: Identifiable {
     }
 }
 
+// ===== 聊天图片 Hero 预览状态（从缩略图放大）=====
+struct ImageHeroPreviewState: Identifiable, Equatable {
+    let id: UUID
+    let image: UIImage
+    /// 缩略图在全局坐标中的位置（用于开场/退场动画）
+    let sourceRect: CGRect
+    
+    init(image: UIImage, sourceRect: CGRect) {
+        self.id = UUID()
+        self.image = image
+        self.sourceRect = sourceRect
+    }
+    
+    static func == (lhs: ImageHeroPreviewState, rhs: ImageHeroPreviewState) -> Bool {
+        lhs.id == rhs.id
+    }
+}
+
+// ===== Hero 预览浮层：从 sourceRect 放大到全屏，再进入可交互模式 =====
+struct HeroImageOverlay: View {
+    let image: UIImage
+    let sourceRect: CGRect
+    let onDismiss: () -> Void
+    
+    // 用 scale/offset 动画代替 frame 动画，GPU 加速更流畅
+    @State private var animProgress: CGFloat = 0.0  // 0=缩略图位置, 1=全屏
+    @State private var backgroundOpacity: Double = 0.0
+    @State private var showInteractive: Bool = false
+    @State private var isDismissing: Bool = false
+    
+    var body: some View {
+        GeometryReader { proxy in
+            let screenSize = proxy.size
+            
+            // 计算缩略图和全屏的参数
+            let thumbCenter = CGPoint(x: sourceRect.midX, y: sourceRect.midY)
+            let screenCenter = CGPoint(x: screenSize.width / 2, y: screenSize.height / 2)
+            let scaleX = sourceRect.width / screenSize.width
+            let scaleY = sourceRect.height / screenSize.height
+            let thumbScale = max(scaleX, scaleY)  // 保持宽高比
+            
+            // 插值计算当前 scale 和 offset
+            let currentScale = thumbScale + (1.0 - thumbScale) * animProgress
+            let currentOffsetX = (thumbCenter.x - screenCenter.x) * (1.0 - animProgress)
+            let currentOffsetY = (thumbCenter.y - screenCenter.y) * (1.0 - animProgress)
+            
+            ZStack {
+                Color.black
+                    .opacity(backgroundOpacity)
+                    .ignoresSafeArea()
+                
+                // 交互层（动画完成后显示）
+                if showInteractive && !isDismissing {
+                    FullScreenImageView(
+                        image: image,
+                        onTapDismiss: { beginHeroDismiss() },
+                        onSwipeDismiss: { beginFadeDismiss() }
+                    )
+                    .transition(.opacity)
+                }
+                
+                // 动画层：用 transform 动画更流畅
+                if !showInteractive || isDismissing {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: screenSize.width, height: screenSize.height)
+                        .clipped()
+                        .scaleEffect(currentScale)
+                        .offset(x: currentOffsetX, y: currentOffsetY)
+                        .allowsHitTesting(false)
+                }
+            }
+            .frame(width: screenSize.width, height: screenSize.height)
+            .ignoresSafeArea()
+            .onAppear {
+                // 初始状态：缩略图位置
+                animProgress = 0.0
+                backgroundOpacity = 0.0
+                showInteractive = false
+                isDismissing = false
+                
+                // 快速流畅的展开动画
+                withAnimation(.easeOut(duration: 0.25)) {
+                    animProgress = 1.0
+                    backgroundOpacity = 1.0
+                }
+                
+                // 动画结束后切到交互层，避免手势影响“几何动画”
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.26) {
+                    showInteractive = true
+                }
+            }
+        }
+    }
+    
+    /// 点击退出：执行缩回缩略图的 Hero 动画
+    private func beginHeroDismiss() {
+        guard !isDismissing else { return }
+        isDismissing = true
+        showInteractive = false
+        
+        withAnimation(.easeIn(duration: 0.22)) {
+            animProgress = 0.0
+            backgroundOpacity = 0.0
+        }
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.24) {
+            onDismiss()
+        }
+    }
+    
+    /// 滑动退出：直接淡出
+    private func beginFadeDismiss() {
+        guard !isDismissing else { return }
+        isDismissing = true
+        
+        withAnimation(.easeOut(duration: 0.18)) {
+            backgroundOpacity = 0.0
+        }
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.20) {
+            onDismiss()
+        }
+    }
+}
+
 // ===== 全屏图片预览（单张） =====
 struct FullScreenImageView: View {
     let image: UIImage
-    let onDismiss: () -> Void
+    var namespace: Namespace.ID? = nil
+    var matchId: String? = nil
+    /// 点击退出（会触发 Hero 缩回动画）
+    let onTapDismiss: () -> Void
+    /// 滑动退出（直接淡出，不做缩回）
+    let onSwipeDismiss: () -> Void
+    
+    /// 兼容旧调用者：同时指定 tap/swipe 回调为同一个
+    init(image: UIImage, namespace: Namespace.ID? = nil, matchId: String? = nil, onDismiss: @escaping () -> Void) {
+        self.image = image
+        self.namespace = namespace
+        self.matchId = matchId
+        self.onTapDismiss = onDismiss
+        self.onSwipeDismiss = onDismiss
+    }
+    
+    /// 新调用者：分别指定 tap/swipe 回调
+    init(image: UIImage, onTapDismiss: @escaping () -> Void, onSwipeDismiss: @escaping () -> Void) {
+        self.image = image
+        self.namespace = nil
+        self.matchId = nil
+        self.onTapDismiss = onTapDismiss
+        self.onSwipeDismiss = onSwipeDismiss
+    }
+    
     @State private var scale: CGFloat = 1.0
     @State private var lastScale: CGFloat = 1.0
     @State private var dragOffset: CGSize = .zero
-    @State private var opacity: Double = 1.0
+    @State private var opacity: Double = 0.0 // 默认透明，动画进入时变 1.0
     
     var body: some View {
         ZStack {
@@ -594,63 +745,82 @@ struct FullScreenImageView: View {
                 .ignoresSafeArea()
                 .opacity(opacity)
             
-            Image(uiImage: image)
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .scaleEffect(scale)
-                .offset(dragOffset)
-                .gesture(
-                    // 同时支持缩放和拖拽
-                    SimultaneousGesture(
-                        MagnificationGesture()
-                            .onChanged { value in
-                                scale = lastScale * value
-                            }
-                            .onEnded { _ in
-                                lastScale = scale
-                                if scale < 1.0 {
-                                    withAnimation(.spring()) {
-                                        scale = 1.0
-                                        lastScale = 1.0
-                                    }
-                                } else if scale > 3.0 {
-                                    withAnimation(.spring()) {
-                                        scale = 3.0
-                                        lastScale = 3.0
-                                    }
+            GeometryReader { proxy in
+                let img = Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: proxy.size.width, height: proxy.size.height)
+                    .contentShape(Rectangle())
+                
+                if let ns = namespace, let mid = matchId {
+                    img
+                        .matchedGeometryEffect(id: mid, in: ns, isSource: false)
+                        .scaleEffect(scale)
+                        .offset(dragOffset)
+                        .clipped()
+                } else {
+                    img
+                        .scaleEffect(scale)
+                        .offset(dragOffset)
+                        .clipped()
+                }
+            }
+            .ignoresSafeArea()
+            .gesture(
+                SimultaneousGesture(
+                    MagnificationGesture()
+                        .onChanged { value in
+                            scale = lastScale * value
+                        }
+                        .onEnded { _ in
+                            lastScale = scale
+                            if scale < 1.0 {
+                                withAnimation(.spring()) {
+                                    scale = 1.0
+                                    lastScale = 1.0
                                 }
-                            },
-                        DragGesture()
-                            .onChanged { value in
-                                // 只有在未缩放或缩放为1时才允许拖拽关闭
-                                if scale <= 1.0 {
-                                    dragOffset = value.translation
-                                    // 根据拖拽距离调整透明度
-                                    let dragDistance = abs(value.translation.height)
-                                    opacity = max(0.3, 1.0 - dragDistance / 300.0)
-                                }
-                            }
-                            .onEnded { value in
-                                // 如果向下拖拽超过100点，则关闭
-                                if value.translation.height > 100 && scale <= 1.0 {
-                                    HapticFeedback.light()
-                                    onDismiss()
-                                } else {
-                                    // 否则恢复原状
-                                    withAnimation(.spring()) {
-                                        dragOffset = .zero
-                                        opacity = 1.0
-                                    }
+                            } else if scale > 3.0 {
+                                withAnimation(.spring()) {
+                                    scale = 3.0
+                                    lastScale = 3.0
                                 }
                             }
-                    )
+                        },
+                    DragGesture()
+                        .onChanged { value in
+                            if scale <= 1.0 {
+                                dragOffset = value.translation
+                                let dragDistance = abs(value.translation.height)
+                                opacity = max(0.3, 1.0 - dragDistance / 300.0)
+                            }
+                        }
+                        .onEnded { value in
+                            if abs(value.translation.height) > 80 && scale <= 1.0 {
+                                // 达到关闭阈值：调用滑动退出（不做缩回动画）
+                                HapticFeedback.light()
+                                onSwipeDismiss()
+                            } else {
+                                // 未达到阈值：快速复位
+                                withAnimation(.easeOut(duration: 0.18)) {
+                                    dragOffset = .zero
+                                    opacity = 1.0
+                                }
+                            }
+                        }
                 )
+            )
+        }
+        // ✅ 关键：强制预览层撑满父容器，否则在外层 ZStack(alignment: .bottom) 下会出现“贴底/不居中”的视觉偏差
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onAppear {
+            withAnimation(.easeIn(duration: 0.2)) {
+                opacity = 1.0
+            }
         }
         .onTapGesture {
-            // 单击关闭（如果未缩放且未拖拽）
             if scale <= 1.0 && dragOffset == .zero {
                 HapticFeedback.light()
-                onDismiss()
+                onTapDismiss()
             }
         }
     }
@@ -843,12 +1013,17 @@ private struct SingleImageView: View {
     let onDismiss: () -> Void
     
     var body: some View {
-        Image(uiImage: image)
-            .resizable()
-            .aspectRatio(contentMode: .fit)
-            .scaleEffect(scale)
-            .offset(dragOffset)
-            .gesture(
+        GeometryReader { proxy in
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFill() // ✅ 默认铺满屏幕，去掉左右黑边
+                .frame(width: proxy.size.width, height: proxy.size.height)
+                .scaleEffect(scale)
+                .offset(dragOffset)
+                .clipped()
+        }
+        .ignoresSafeArea()
+        .gesture(
                 // 同时支持缩放和拖拽
                 SimultaneousGesture(
                     MagnificationGesture()

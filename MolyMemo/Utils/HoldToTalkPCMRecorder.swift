@@ -141,6 +141,16 @@ final class HoldToTalkPCMRecorder: ObservableObject {
         return discard ? Data() : bytes
     }
 
+    /// 录音过程中取出当前已缓存的 PCM bytes，并清空内部缓存（用于流式发送）。
+    /// - Returns: 16k/16bit/mono PCM bytes（Int16 little-endian）
+    func drainPCMBytes() -> Data {
+        audioQueue.sync {
+            let out = pcmData
+            pcmData = Data()
+            return out
+        }
+    }
+
     // MARK: - Helpers
 
     private func requestMicPermission() async -> Bool {

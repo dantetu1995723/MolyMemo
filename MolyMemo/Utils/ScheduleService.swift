@@ -151,6 +151,27 @@ enum ScheduleService {
         request.setValue("", forHTTPHeaderField: "X-Country")
 #endif
     }
+
+    // MARK: - Exposed helpers (给 WS/其它 schedule 相关服务复用)
+
+    static func resolvedBaseURLForNetworking() throws -> String {
+        try resolvedBaseURL()
+    }
+
+    static func currentSessionIdForNetworking() throws -> String {
+        guard let sid = currentSessionId(), !sid.isEmpty else {
+            throw ScheduleServiceError.missingSessionId
+        }
+        return sid
+    }
+
+    static func applyCommonHeadersForNetworking(to request: inout URLRequest) throws {
+        try applyCommonHeaders(to: &request)
+    }
+
+    static func parseScheduleEventFromServerDict(_ dict: [String: Any], keepLocalId: UUID?) -> ScheduleEvent? {
+        parseEventDict(dict, keepLocalId: keepLocalId)
+    }
     
     private static func maskedSessionId(_ s: String) -> String {
         let t = s.trimmingCharacters(in: .whitespacesAndNewlines)

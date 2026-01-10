@@ -157,6 +157,28 @@ enum ContactService {
         request.setValue("", forHTTPHeaderField: "X-Country")
 #endif
     }
+
+    // MARK: - Exposed helpers（给 WS/其它 contact 相关服务复用）
+
+    static func resolvedBaseURLForNetworking() throws -> String {
+        try resolvedBaseURL()
+    }
+
+    static func currentSessionIdForNetworking() throws -> String {
+        guard let sid = currentSessionId(), !sid.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw ContactServiceError.missingSessionId
+        }
+        return sid
+    }
+
+    static func applyCommonHeadersForNetworking(to request: inout URLRequest) throws {
+        try applyCommonHeaders(to: &request)
+    }
+
+    /// 供 WebSocket update_result 复用：把后端 contact dict 解析成 ContactCard
+    static func parseContactCardFromServerDict(_ dict: [String: Any], keepLocalId: UUID?) -> ContactCard? {
+        parseContactCard(dict, keepLocalId: keepLocalId)
+    }
     
     private static func maskedSessionId(_ s: String) -> String {
         let t = s.trimmingCharacters(in: .whitespacesAndNewlines)

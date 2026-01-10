@@ -87,6 +87,8 @@ private struct BlueArcView: View {
             }
             .opacity(isExiting ? 0 : 1)
             .offset(y: isExiting ? height * 0.4 : 0)
+            // 蓝色弧退场要“丝滑”，不要跟随 TimelineView 的逐帧刷新卡顿
+            .animation(.easeInOut(duration: 0.22), value: isExiting)
         }
     }
 }
@@ -95,6 +97,8 @@ struct VoiceRecordingOverlay: View {
     @Binding var isRecording: Bool
     @Binding var isCanceling: Bool
     var isExiting: Bool = false
+    /// 仅蓝色弧退场（松手进入识别/后端处理阶段时使用）；不影响主卡片/文字展示。
+    var isBlueArcExiting: Bool = false
     var onExitComplete: (() -> Void)? = nil
     var audioPower: CGFloat
     var transcript: String
@@ -113,7 +117,11 @@ struct VoiceRecordingOverlay: View {
                 .ignoresSafeArea()
             
             // 2. 底部蓝色弧
-            BlueArcView(power: smoothedPower, isCanceling: isCanceling, isExiting: isExiting)
+            BlueArcView(
+                power: smoothedPower,
+                isCanceling: isCanceling,
+                isExiting: (isExiting || isBlueArcExiting)
+            )
             
             // 3. 录音主界面
             if showMainUI {

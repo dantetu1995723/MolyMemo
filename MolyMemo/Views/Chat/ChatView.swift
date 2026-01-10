@@ -14,6 +14,7 @@ struct ChatView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var allContacts: [Contact]
     @Binding var showModuleContainer: Bool
+    @Binding var imageHeroPreview: ImageHeroPreviewState?
     
     // MARK: - Input ViewModel
     @StateObject private var inputViewModel = ChatInputViewModel()
@@ -79,6 +80,14 @@ struct ChatView: View {
     @State private var todayScheduleIsLoading: Bool = false
     @State private var todayScheduleErrorText: String? = nil
     @State private var isTodayScheduleExpanded: Bool = false
+
+    init(
+        showModuleContainer: Binding<Bool>,
+        imageHeroPreview: Binding<ImageHeroPreviewState?> = .constant(nil)
+    ) {
+        self._showModuleContainer = showModuleContainer
+        self._imageHeroPreview = imageHeroPreview
+    }
 
     // MARK: - Helpers (Segment aggregation)
     /// 当用户在卡片里删除/编辑时，同步把 segments 展平回写到 message 的聚合字段（用于复制/详情页逻辑复用）
@@ -619,8 +628,14 @@ struct ChatView: View {
             // 消息列表
             ForEach(appState.chatMessages) { message in
                 if message.role == .user {
-                    UserBubble(message: message)
-                        .id(message.id)
+                    UserBubble(
+                        message: message,
+                        onOpenImage: { image, rect in
+                            HapticFeedback.light()
+                            imageHeroPreview = ImageHeroPreviewState(image: image, sourceRect: rect)
+                        }
+                    )
+                    .id(message.id)
                 } else {
                     let latestAgentId = appState.chatMessages.last(where: { $0.role == .agent })?.id
                     let isLatestAgentMessage = (latestAgentId != nil && message.id == latestAgentId)
@@ -1036,7 +1051,7 @@ struct TypewriterBubble: View {
     @State private var displayedText: String = ""
     @State private var isCompleted: Bool = false
     @State private var timer: Timer?
-    
+
     var body: some View {
         Group {
             if isAI {
@@ -1048,7 +1063,10 @@ struct TypewriterBubble: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: ScreenMetrics.width * 0.85, alignment: .leading)
             } else {
-                UserBubble(message: ChatMessage(role: .user, content: displayedText))
+                UserBubble(
+                    message: ChatMessage(role: .user, content: displayedText),
+                    onOpenImage: { _, _ in }
+                )
             }
         }
         .onAppear {
@@ -1319,14 +1337,9 @@ struct AIBubble: View {
 // 标准用户气泡
 struct UserBubble: View {
     let message: ChatMessage
+    let onOpenImage: (UIImage, CGRect) -> Void
     
     private let messageImageSize: CGFloat = 120
-    
-    private struct ImagePreviewItem: Identifiable {
-        let id = UUID()
-        let image: UIImage
-    }
-    @State private var previewItem: ImagePreviewItem? = nil
     
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
@@ -1334,18 +1347,14 @@ struct UserBubble: View {
             
             VStack(alignment: .trailing, spacing: 8) {
                 if !message.images.isEmpty {
-                    ForEach(Array(message.images.enumerated()), id: \.offset) { _, image in
-                        Image(uiImage: image)
-                            .resizable()
-                            .scaledToFill()
-                            .frame(width: messageImageSize, height: messageImageSize)
-                            .cornerRadius(12)
-                            .clipped()
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                HapticFeedback.light()
-                                previewItem = ImagePreviewItem(image: image)
+                    ForEach(Array(message.images.enumerated()), id: \.offset) { index, image in
+                        ChatImageThumbnail(
+                            image: image,
+                            size: messageImageSize,
+                            onTap: { rect in
+                                onOpenImage(image, rect)
                             }
+                        )
                     }
                 }
                 
@@ -1364,32 +1373,33 @@ struct UserBubble: View {
             }
             .frame(maxWidth: ScreenMetrics.width * 0.80, alignment: .trailing)
         }
-        .fullScreenCover(item: $previewItem) { item in
-            FullscreenImagePreview(image: item.image)
-        }
     }
 }
 
-private struct FullscreenImagePreview: View {
+// 移除了不再使用的 FullscreenImagePreview，改用 SharedComponents 里的 FullScreenImageView
+
+private struct ChatImageThumbnail: View {
     let image: UIImage
+    let size: CGFloat
+    let onTap: (CGRect) -> Void
     
-    @Environment(\.dismiss) private var dismiss
+    @State private var rect: CGRect = .zero
     
     var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
-            
-            Image(uiImage: image)
-                .resizable()
-                .scaledToFill()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .clipped()
-                .ignoresSafeArea()
-        }
-        .onTapGesture { dismiss() }
+        Image(uiImage: image)
+            .resizable()
+            .scaledToFill()
+            .frame(width: size, height: size)
+            .cornerRadius(12)
+            .clipped()
+            .contentShape(Rectangle())
+            .getRect($rect)
+            .onTapGesture {
+                // 这里的 rect 是 global 坐标；用于 Hero 动画
+                onTap(rect)
+            }
     }
 }
-
 
 // 操作按钮组件
 struct ActionButton: View {

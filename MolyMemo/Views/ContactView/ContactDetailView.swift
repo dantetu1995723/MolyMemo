@@ -137,16 +137,25 @@ struct ContactDetailView: View {
         return !isSubmitting && !isLoadingDetail && didApplyRemoteDetailOnce
     }
     
-    // 语音输入相关
-    @StateObject private var speechRecognizer = SpeechRecognizer()
+    // 语音输入相关（与“日程详情语音更新”同链路：PCM -> WS -> update_result）
+    @StateObject private var pcmRecorder = HoldToTalkPCMRecorder()
     @State private var isRecording = false
+    @State private var isCapturingAudio = false
     @State private var isAnimatingRecordingExit = false
     @State private var isCanceling = false
     @State private var audioPower: CGFloat = 0.0
     @State private var recordingTranscript: String = ""
+    @State private var isBlueArcExiting: Bool = false
     @State private var buttonFrame: CGRect = .zero
     @State private var isPressing = false
     @State private var pressStartTime: Date?
+    @State private var voiceSession: ContactVoiceUpdateService.Session? = nil
+    @State private var voiceSendTask: Task<Void, Never>? = nil
+    @State private var voiceReceiveTask: Task<Void, Never>? = nil
+    @State private var voiceDoneTimeoutTask: Task<Void, Never>? = nil
+    @State private var didSendAudioRecordDone: Bool = false
+    /// 用于“超时续命”：只要服务端仍在回消息，就不要过早退出
+    @State private var lastVoiceServerEventAt: Date? = nil
     
     private let silenceGate: Float = 0.12
     
@@ -449,7 +458,7 @@ struct ContactDetailView: View {
                 HStack(spacing: 8) {
                     Image(systemName: isRecording ? "mic.fill" : "mic")
                         .foregroundColor(isRecording ? .red : .gray)
-                    Text(isRecording ? "正在听..." : "长按可语音编辑")
+                    Text(isRecording ? (isCapturingAudio ? "正在听..." : "正在分析...") : "长按可语音编辑")
                         .foregroundColor(Color(hex: "666666"))
                 }
             }
@@ -467,6 +476,7 @@ struct ContactDetailView: View {
                     isRecording: $isRecording,
                     isCanceling: $isCanceling,
                     isExiting: isAnimatingRecordingExit,
+                    isBlueArcExiting: isBlueArcExiting,
                     onExitComplete: {
                         finishRecordingOverlayDismissal()
                     },
@@ -481,13 +491,15 @@ struct ContactDetailView: View {
         .coordinateSpace(name: "ContactDetailViewSpace")
         // 与“日程详情”一致：全屏背景，避免键盘弹出时底部露出系统默认白底
         .background(bgColor.ignoresSafeArea())
-        .onAppear { speechRecognizer.requestAuthorization() }
-        .onReceive(speechRecognizer.$audioLevel) { self.audioPower = mapAudioLevelToPower($0) }
+        .onReceive(pcmRecorder.$audioLevel) { self.audioPower = mapAudioLevelToPower($0) }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
             isKeyboardVisible = true
         }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
             isKeyboardVisible = false
+        }
+        .onDisappear {
+            stopVoiceAndDismissOverlayImmediately()
         }
         .navigationBarHidden(true)
         .onAppear { syncDraftFromContactIfNeeded(force: true) }
@@ -584,25 +596,345 @@ struct ContactDetailView: View {
         }
     }
     
-    // Voice logic
-    private func handleDragChanged(_ value: DragGesture.Value) {
-        if !isPressing { isPressing = true; pressStartTime = Date()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { if isPressing, let s = pressStartTime, Date().timeIntervalSince(s) >= 0.3 { if !isRecording { HapticFeedback.medium(); startVoiceInput() } } }
-        }
-        if isRecording { if value.translation.height < -50 { if !isCanceling { withAnimation { isCanceling = true } } } else { if isCanceling { withAnimation { isCanceling = false } } } }
+    // MARK: - Voice (WS streaming update)
+
+    private func dismissKeyboard() {
+        isNotesFocused = false
+#if canImport(UIKit)
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+#endif
     }
-    private func handleDragEnded(_ value: DragGesture.Value) { isPressing = false; pressStartTime = nil; if isRecording { stopVoiceInput() } }
-    private func mapAudioLevelToPower(_ level: Float) -> CGFloat { let c = max(0, min(level, 1)); guard c >= silenceGate else { return 0 }; return CGFloat(pow((c - silenceGate) / max(0.0001, 1 - silenceGate), 0.6)) }
-    private func startVoiceInput() { isAnimatingRecordingExit = false; isRecording = true; isCanceling = false; recordingTranscript = "正在聆听..."; speechRecognizer.startRecording { t in let tr = t.trimmingCharacters(in: .whitespacesAndNewlines); self.recordingTranscript = tr.isEmpty ? "正在聆听..." : tr } }
-    private func stopVoiceInput() { speechRecognizer.stopRecording(); if !isCanceling { let t = recordingTranscript.trimmingCharacters(in: .whitespacesAndNewlines); if !t.isEmpty, t != "正在聆听..." { parseVoiceCommand(voiceText: t) } }; audioPower = 0; withAnimation(.easeInOut(duration: 0.2)) { isAnimatingRecordingExit = true } }
-    private func finishRecordingOverlayDismissal() { isRecording = false; isAnimatingRecordingExit = false; isCanceling = false; audioPower = 0 }
-    
-    private func parseVoiceCommand(voiceText: String) {
-        Task {
-            // TODO: 调用相关的语音解析逻辑更新联系人信息
-            // 这里可以复用类似 TodoVoiceParser 的逻辑，或者为联系人单独写一个
-            HapticFeedback.success()
+
+    private func handleDragChanged(_ value: DragGesture.Value) {
+        if !isPressing {
+            isPressing = true
+            pressStartTime = Date()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                if isPressing, let s = pressStartTime, Date().timeIntervalSince(s) >= 0.3 {
+                    if !isRecording {
+                        HapticFeedback.medium()
+                        startVoiceInput()
+                    }
+                }
+            }
         }
+        if isRecording {
+            if value.translation.height < -50 {
+                if !isCanceling { withAnimation { isCanceling = true } }
+            } else {
+                if isCanceling { withAnimation { isCanceling = false } }
+            }
+        }
+    }
+
+    private func handleDragEnded(_ value: DragGesture.Value) {
+        isPressing = false
+        pressStartTime = nil
+        if isRecording { stopVoiceInput() }
+    }
+
+    private func mapAudioLevelToPower(_ level: Float) -> CGFloat {
+        let c = max(0, min(level, 1))
+        guard c >= silenceGate else { return 0 }
+        return CGFloat(pow((c - silenceGate) / max(0.0001, 1 - silenceGate), 0.6))
+    }
+
+    private func startVoiceInput() {
+        dismissKeyboard()
+
+        isAnimatingRecordingExit = false
+        isRecording = true
+        isCapturingAudio = true
+        isCanceling = false
+        isBlueArcExiting = false
+        recordingTranscript = "正在连接..."
+        didSendAudioRecordDone = false
+        lastVoiceServerEventAt = nil
+        voiceDoneTimeoutTask?.cancel()
+        voiceDoneTimeoutTask = nil
+
+        // 清理旧任务/连接
+        voiceSendTask?.cancel()
+        voiceSendTask = nil
+        voiceReceiveTask?.cancel()
+        voiceReceiveTask = nil
+        Task { await voiceSession?.close() }
+        voiceSession = nil
+
+        Task {
+            do {
+                try await pcmRecorder.start()
+
+                let rid = (contact.remoteId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !rid.isEmpty else {
+                    await MainActor.run {
+                        alertMessage = "语音编辑失败：后端未返回联系人 id，无法进行语音更新。"
+                        stopVoiceAndDismissOverlayImmediately()
+                    }
+                    return
+                }
+
+                let session = try ContactVoiceUpdateService.makeSession(contactId: rid, keepLocalId: contact.id)
+                session.start()
+                await MainActor.run {
+                    self.voiceSession = session
+                    self.recordingTranscript = "正在聆听..."
+                    self.lastVoiceServerEventAt = Date()
+                }
+
+                try await session.sendWavHeaderOnce()
+                startVoiceStreamingTasks(session: session)
+            } catch {
+                await MainActor.run {
+                    alertMessage = "语音启动失败：\(error.localizedDescription)"
+                    stopVoiceAndDismissOverlayImmediately()
+                }
+            }
+        }
+    }
+
+    private func stopVoiceInput() {
+        isCapturingAudio = false
+
+        // 停止录音，并拿到最后一段 PCM
+        let finalPCM = pcmRecorder.stop(discard: isCanceling)
+
+        // 停止“拉取 PCM”任务（接下来只做收尾/等待后端处理）
+        voiceSendTask?.cancel()
+        voiceSendTask = nil
+
+        let session = voiceSession
+
+        if isCanceling {
+            recordingTranscript = "已取消"
+            Task {
+                do { try await session?.sendCancel() } catch {}
+                await session?.close()
+                await MainActor.run {
+                    stopVoiceAndDismissOverlayImmediately()
+                }
+            }
+            return
+        }
+
+        // 正常结束：补发尾巴 PCM + done，然后等待 update_result 再退场
+        recordingTranscript = "正在分析语音内容..."
+        withAnimation(.easeInOut(duration: 0.22)) { isBlueArcExiting = true }
+
+        if let session {
+            didSendAudioRecordDone = true
+            Task.detached(priority: .userInitiated) {
+                do {
+                    if !finalPCM.isEmpty {
+                        try await session.sendPCMChunk(finalPCM)
+                    }
+                    try await session.sendAudioRecordDone()
+                } catch {
+                    // 发送失败：让 receive loop/timeout 收口
+                }
+            }
+        } else {
+            // 没连上：直接退出，避免卡住
+            withAnimation(.easeInOut(duration: 0.2)) { isAnimatingRecordingExit = true }
+        }
+
+        // 兜底超时：避免后端无响应导致 overlay 永不退出
+        // 人脉更新通常需要 LLM 分析 + 写库，可能比日程更慢；这里给更长时间，并支持“收到消息自动续命”。
+        armVoiceDoneTimeout()
+    }
+
+    private func finishRecordingOverlayDismissal() {
+        isRecording = false
+        isAnimatingRecordingExit = false
+        isCanceling = false
+        isCapturingAudio = false
+        audioPower = 0
+        isBlueArcExiting = false
+
+        didSendAudioRecordDone = false
+
+        voiceDoneTimeoutTask?.cancel()
+        voiceDoneTimeoutTask = nil
+
+        voiceSendTask?.cancel()
+        voiceSendTask = nil
+        voiceReceiveTask?.cancel()
+        voiceReceiveTask = nil
+        Task { await voiceSession?.close() }
+        voiceSession = nil
+    }
+
+    private func stopVoiceAndDismissOverlayImmediately() {
+        _ = pcmRecorder.stop(discard: true)
+        isCapturingAudio = false
+
+        voiceSendTask?.cancel()
+        voiceSendTask = nil
+        voiceReceiveTask?.cancel()
+        voiceReceiveTask = nil
+        voiceDoneTimeoutTask?.cancel()
+        voiceDoneTimeoutTask = nil
+
+        Task { await voiceSession?.close() }
+        voiceSession = nil
+
+        audioPower = 0
+        lastVoiceServerEventAt = nil
+        withAnimation(.easeInOut(duration: 0.2)) { isAnimatingRecordingExit = true }
+    }
+
+    /// 超时逻辑：松手后最多等待 40s；如果中途服务端仍在回消息（asr/processing），则续命。
+    private func armVoiceDoneTimeout(maxWaitSeconds: Int = 40) {
+        voiceDoneTimeoutTask?.cancel()
+        voiceDoneTimeoutTask = Task { @MainActor in
+            let start = Date()
+            while true {
+                try? await Task.sleep(nanoseconds: 700_000_000) // 0.7s
+                guard isRecording || isAnimatingRecordingExit else { return }
+
+                // 若服务端仍在发消息，按“最近一次消息时间”续命；否则按 start 计时。
+                let anchor = lastVoiceServerEventAt ?? start
+                let elapsed = Date().timeIntervalSince(anchor)
+                if elapsed >= Double(maxWaitSeconds) {
+                    alertMessage = "语音更新超时，请稍后重试。"
+                    stopVoiceAndDismissOverlayImmediately()
+                    return
+                }
+            }
+        }
+    }
+
+    private func startVoiceStreamingTasks(session: ContactVoiceUpdateService.Session) {
+        // 1) 发送循环：定时 drain PCM，并发送到 WS
+        voiceSendTask?.cancel()
+        voiceSendTask = Task.detached(priority: .userInitiated) { [pcmRecorder] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 120_000_000) // 120ms
+                let chunk = pcmRecorder.drainPCMBytes()
+                if chunk.isEmpty { continue }
+                do {
+                    try await session.sendPCMChunk(chunk)
+                } catch {
+                    // 发送失败：等待 receive loop/timeout 收口
+                }
+            }
+        }
+
+        // 2) 接收循环：实时更新 transcript；收到 update_result 才应用并退场
+        voiceReceiveTask?.cancel()
+        voiceReceiveTask = Task.detached(priority: .userInitiated) {
+            while !Task.isCancelled {
+                do {
+                    let ev = try await session.receiveEvent()
+                    await MainActor.run {
+                        handleVoiceUpdateEvent(ev)
+                    }
+                    switch ev {
+                    case .updateResult, .cancelled, .error:
+                        await session.close()
+                        return
+                    case .asrResult, .processing:
+                        break
+                    }
+                } catch {
+                    await MainActor.run {
+                        alertMessage = "语音更新失败：\(error.localizedDescription)"
+                        stopVoiceAndDismissOverlayImmediately()
+                    }
+                    await session.close()
+                    return
+                }
+            }
+            await session.close()
+        }
+    }
+
+    @MainActor
+    private func handleVoiceUpdateEvent(_ ev: ContactVoiceUpdateService.Event) {
+        // 只要服务端回了消息，就续命（避免后端处理稍慢导致“固定 12s 必超时”）
+        lastVoiceServerEventAt = Date()
+        if didSendAudioRecordDone {
+            // 松手后才需要等待 update_result；此时服务端的 asr/processing 属于“仍在处理”信号
+            armVoiceDoneTimeout()
+        }
+
+        switch ev {
+        case let .asrResult(text, isFinal: _):
+            let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            recordingTranscript = t.isEmpty ? (isCapturingAudio ? "正在聆听..." : "正在分析语音内容...") : t
+        case let .processing(message):
+            let m = (message ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            recordingTranscript = m.isEmpty ? "正在分析语音内容..." : m
+        case let .updateResult(contact: updated, message: msg):
+            applyVoiceUpdatedContactCard(updated, message: msg)
+
+            let m = (msg ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            recordingTranscript = m.isEmpty ? "已更新" : m
+            HapticFeedback.success()
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                withAnimation(.easeInOut(duration: 0.2)) { isAnimatingRecordingExit = true }
+            }
+        case let .cancelled(message: msg):
+            let m = (msg ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            recordingTranscript = m.isEmpty ? "已取消" : m
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                withAnimation(.easeInOut(duration: 0.2)) { isAnimatingRecordingExit = true }
+            }
+        case let .error(code: _, message: msg):
+            alertMessage = "语音更新失败：\(msg)"
+            stopVoiceAndDismissOverlayImmediately()
+        }
+    }
+
+    @MainActor
+    private func applyVoiceUpdatedContactCard(_ updated: ContactCard, message: String?) {
+        // 1) 回写工具箱本地联系人模型（以 update_result 为真相）
+        func norm(_ s: String?) -> String? {
+            let v = (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            return v.isEmpty ? nil : v
+        }
+
+        let rid = (updated.remoteId ?? contact.remoteId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !rid.isEmpty { contact.remoteId = rid }
+
+        contact.name = updated.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        contact.company = norm(updated.company)
+        contact.identity = norm(updated.title)
+        contact.phoneNumber = norm(updated.phone)
+        contact.email = norm(updated.email)
+        contact.industry = norm(updated.industry)
+        contact.location = norm(updated.location)
+        contact.gender = norm(updated.gender)
+        contact.birthday = norm(updated.birthday)
+        // 备注：优先 notes；impression 若后端有且 notes 为空，也可兜底显示在备注（保持与其它链路一致）
+        let notes = norm(updated.notes)
+        let impression = norm(updated.impression)
+        contact.notes = notes ?? impression
+
+        contact.lastModified = Date()
+        try? modelContext.save()
+
+        // 2) 立刻覆盖草稿（语音更新是显式操作）
+        editedName = contact.name
+        editedCompany = contact.company ?? ""
+        editedIdentity = contact.identity ?? ""
+        editedPhone = contact.phoneNumber ?? ""
+        editedEmail = contact.email ?? ""
+        editedIndustry = contact.industry ?? ""
+        editedLocation = contact.location ?? ""
+        editedBirthday = contact.birthday ?? ""
+        editedBirthdayDate = parseBirthday(editedBirthday)
+        editedGender = normalizedGenderValue(contact.gender ?? "")
+        editedNotes = contact.notes ?? ""
+
+        didInitDraft = true
+        didApplyRemoteDetailOnce = true
+        hasUserEdited = true
+
+        // 3) 同步到聊天历史（旧卡废弃 + 新卡生成）
+        let reason = (message ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        appState.commitContactCardRevision(updated: updated, modelContext: modelContext, reasonText: reason)
     }
     
     // MARK: - 后端详情/删除

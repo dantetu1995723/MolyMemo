@@ -8,21 +8,23 @@ struct ContentView: View {
     @EnvironmentObject var authStore: AuthStore
     @Environment(\.modelContext) private var modelContext
     @State private var showModuleContainer = false
+    @State private var imageHeroPreview: ImageHeroPreviewState? = nil
     
     var body: some View {
-        Group {
-            if authStore.isLoggedIn {
-                NavigationStack {
-                    // 直接进入对话界面（首次引导在对话中完成）
-                    ChatView(showModuleContainer: $showModuleContainer)
-                        .environmentObject(appState)
-                        .statusBar(hidden: false)
-                        .navigationDestination(isPresented: $showModuleContainer) {
-                            ModuleContainerView()
-                                .environmentObject(appState)
-                        }
-                }
-                .sheet(isPresented: $appState.showSettings) {
+        ZStack {
+            Group {
+                if authStore.isLoggedIn {
+                    NavigationStack {
+                        // 直接进入对话界面（首次引导在对话中完成）
+                        ChatView(showModuleContainer: $showModuleContainer, imageHeroPreview: $imageHeroPreview)
+                            .environmentObject(appState)
+                            .statusBar(hidden: false)
+                            .navigationDestination(isPresented: $showModuleContainer) {
+                                ModuleContainerView()
+                                    .environmentObject(appState)
+                            }
+                    }
+                    .sheet(isPresented: $appState.showSettings) {
                     SettingsView()
                         .presentationDragIndicator(.visible)
                         .presentationDetents([.height(340)])
@@ -43,10 +45,19 @@ struct ContentView: View {
                 .onReceive(NotificationCenter.default.publisher(for: .yyPendingScreenshot)) { _ in
                     appState.processPendingScreenshotIfNeeded(modelContext: modelContext)
                 }
-            } else {
-                LoginView()
+                } else {
+                    LoginView()
+                }
+            }
+            
+            // ✅ 全屏图片预览浮层：放到最外层 ZStack，确保覆盖所有 UI（包括输入框）
+            if let hero = imageHeroPreview {
+                HeroImageOverlay(image: hero.image, sourceRect: hero.sourceRect) {
+                    imageHeroPreview = nil
+                }
             }
         }
+        .ignoresSafeArea()
     }
 }
 

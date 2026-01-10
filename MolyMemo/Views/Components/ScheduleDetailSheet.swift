@@ -81,15 +81,22 @@ struct ScheduleDetailSheet: View {
     }
     
     // 语音输入相关
-    @StateObject private var speechRecognizer = SpeechRecognizer()
+    @StateObject private var pcmRecorder = HoldToTalkPCMRecorder()
     @State private var isRecording = false
+    @State private var isCapturingAudio = false
     @State private var isAnimatingRecordingExit = false
     @State private var isCanceling = false
     @State private var audioPower: CGFloat = 0.0
     @State private var recordingTranscript: String = ""
+    @State private var isBlueArcExiting: Bool = false
     @State private var buttonFrame: CGRect = .zero
     @State private var isPressing = false
     @State private var pressStartTime: Date?
+    @State private var voiceSession: ScheduleVoiceUpdateService.Session? = nil
+    @State private var voiceSendTask: Task<Void, Never>? = nil
+    @State private var voiceReceiveTask: Task<Void, Never>? = nil
+    @State private var voiceDoneTimeoutTask: Task<Void, Never>? = nil
+    @State private var didSendAudioRecordDone: Bool = false
 
     // 键盘状态：用于避免“语音编辑”按钮在编辑备注时被键盘顶上来
     @State private var isKeyboardVisible: Bool = false
@@ -529,7 +536,7 @@ struct ScheduleDetailSheet: View {
                 HStack(spacing: 8) {
                     Image(systemName: isRecording ? "mic.fill" : "mic")
                         .foregroundColor(isRecording ? .red : .gray)
-                    Text(isRecording ? "正在听..." : "长按可语音编辑")
+                    Text(isRecording ? (isCapturingAudio ? "正在听..." : "正在分析...") : "长按可语音编辑")
                         .foregroundColor(Color(hex: "666666"))
                 }
             }
@@ -547,6 +554,7 @@ struct ScheduleDetailSheet: View {
                     isRecording: $isRecording,
                     isCanceling: $isCanceling,
                     isExiting: isAnimatingRecordingExit,
+                    isBlueArcExiting: isBlueArcExiting,
                     onExitComplete: {
                         finishRecordingOverlayDismissal()
                     },
@@ -648,7 +656,6 @@ struct ScheduleDetailSheet: View {
         } message: {
             Text(alertMessage ?? "")
         }
-        .onAppear { speechRecognizer.requestAuthorization() }
         .onAppear {
             // 与数据模型对齐：后端 full_day -> isFullDay
             uiAllDay = editedEvent.isFullDay
@@ -659,7 +666,7 @@ struct ScheduleDetailSheet: View {
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
             isKeyboardVisible = false
         }
-        .onReceive(speechRecognizer.$audioLevel) { self.audioPower = mapAudioLevelToPower($0) }
+        .onReceive(pcmRecorder.$audioLevel) { self.audioPower = mapAudioLevelToPower($0) }
         // 远端详情覆盖 event 时：如果用户还没动过编辑，就同步草稿，避免“看起来没改但其实草稿和最新值不一致”
         .onChange(of: event) { _, newValue in
             guard !isSubmitting else { return }
@@ -739,53 +746,229 @@ struct ScheduleDetailSheet: View {
     private func startVoiceInput() {
         isAnimatingRecordingExit = false
         isRecording = true
+        isCapturingAudio = true
         isCanceling = false
-        recordingTranscript = "正在聆听..."
-        speechRecognizer.startRecording { t in
-            let tr = t.trimmingCharacters(in: .whitespacesAndNewlines)
-            self.recordingTranscript = tr.isEmpty ? "正在聆听..." : tr
+        isBlueArcExiting = false
+        recordingTranscript = "正在连接..."
+        didSendAudioRecordDone = false
+        voiceDoneTimeoutTask?.cancel()
+        voiceDoneTimeoutTask = nil
+
+        // 清理旧任务/连接
+        voiceSendTask?.cancel()
+        voiceSendTask = nil
+        voiceReceiveTask?.cancel()
+        voiceReceiveTask = nil
+        Task { await voiceSession?.close() }
+        voiceSession = nil
+
+        Task {
+            do {
+                try await pcmRecorder.start()
+
+                let rid = (editedEvent.remoteId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !rid.isEmpty else {
+                    await MainActor.run {
+                        alertMessage = "语音编辑失败：后端未返回日程 id，无法进行语音更新。"
+                        stopVoiceAndDismissOverlayImmediately()
+                    }
+                    return
+                }
+
+                let session = try ScheduleVoiceUpdateService.makeSession(scheduleId: rid, keepLocalId: editedEvent.id)
+                session.start()
+                await MainActor.run {
+                    self.voiceSession = session
+                    self.recordingTranscript = "正在聆听..."
+                }
+
+                try await session.sendWavHeaderOnce()
+                startVoiceStreamingTasks(session: session)
+            } catch {
+                await MainActor.run {
+                    alertMessage = "语音启动失败：\(error.localizedDescription)"
+                    stopVoiceAndDismissOverlayImmediately()
+                }
+            }
         }
     }
     
     private func stopVoiceInput() {
-        speechRecognizer.stopRecording()
-        if !isCanceling {
-            let t = recordingTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !t.isEmpty, t != "正在聆听..." {
-                parseVoiceCommand(voiceText: t)
+        isCapturingAudio = false
+
+        // 停止录音，并拿到最后一段 PCM
+        let finalPCM = pcmRecorder.stop(discard: isCanceling)
+
+        // 停止“拉取 PCM”任务（接下来只做收尾/等待后端处理）
+        voiceSendTask?.cancel()
+        voiceSendTask = nil
+
+        let session = voiceSession
+
+        if isCanceling {
+            recordingTranscript = "已取消"
+            Task {
+                do {
+                    try await session?.sendCancel()
+                } catch {}
+                await session?.close()
+                await MainActor.run {
+                    stopVoiceAndDismissOverlayImmediately()
+                }
+            }
+            return
+        }
+
+        // 正常结束：补发尾巴 PCM + done，然后等待 update_result 再退场
+        recordingTranscript = "正在分析语音内容..."
+        withAnimation(.easeInOut(duration: 0.22)) { isBlueArcExiting = true }
+
+        if let session {
+            didSendAudioRecordDone = true
+            Task.detached(priority: .userInitiated) {
+                do {
+                    if !finalPCM.isEmpty {
+                        try await session.sendPCMChunk(finalPCM)
+                    }
+                    try await session.sendAudioRecordDone()
+                } catch {
+                    // 发送失败：让 receive loop/timeout 收口
+                }
+            }
+        } else {
+            // 没连上：直接退出，避免卡住
+            withAnimation(.easeInOut(duration: 0.2)) { isAnimatingRecordingExit = true }
+        }
+
+        // 兜底超时：避免后端无响应导致 overlay 永不退出
+        voiceDoneTimeoutTask?.cancel()
+        voiceDoneTimeoutTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 40_000_000_000)
+            if isRecording || isAnimatingRecordingExit {
+                alertMessage = "语音更新超时，请稍后重试。"
+                stopVoiceAndDismissOverlayImmediately()
             }
         }
-        audioPower = 0
-        withAnimation(.easeInOut(duration: 0.2)) { isAnimatingRecordingExit = true }
     }
     
     private func finishRecordingOverlayDismissal() {
         isRecording = false
         isAnimatingRecordingExit = false
         isCanceling = false
+        isCapturingAudio = false
         audioPower = 0
+        isBlueArcExiting = false
+
+        didSendAudioRecordDone = false
+
+        voiceDoneTimeoutTask?.cancel()
+        voiceDoneTimeoutTask = nil
+
+        voiceSendTask?.cancel()
+        voiceSendTask = nil
+        voiceReceiveTask?.cancel()
+        voiceReceiveTask = nil
+        Task { await voiceSession?.close() }
+        voiceSession = nil
     }
-    
-    private func parseVoiceCommand(voiceText: String) {
-        Task {
-            do {
-                let r = try await TodoVoiceParser.parseVoiceCommand(
-                    voiceText: voiceText,
-                    existingTitle: editedEvent.title,
-                    existingDescription: editedEvent.description,
-                    existingStartTime: editedEvent.startTime,
-                    existingEndTime: editedEvent.endTime,
-                    existingReminderTime: editedEvent.startTime.addingTimeInterval(-1800),
-                    existingSyncToCalendar: true
-                )
-                await MainActor.run {
-                    if let t = r.title { editedEvent.title = t }
-                    if let d = r.taskDescription { editedEvent.description = d }
-                    if let s = r.startTime { editedEvent.startTime = s }
-                    if let e = r.endTime { editedEvent.endTime = e }
-                    HapticFeedback.success()
+
+    private func stopVoiceAndDismissOverlayImmediately() {
+        _ = pcmRecorder.stop(discard: true)
+        isCapturingAudio = false
+
+        voiceSendTask?.cancel()
+        voiceSendTask = nil
+        voiceReceiveTask?.cancel()
+        voiceReceiveTask = nil
+        voiceDoneTimeoutTask?.cancel()
+        voiceDoneTimeoutTask = nil
+
+        Task { await voiceSession?.close() }
+        voiceSession = nil
+
+        audioPower = 0
+        withAnimation(.easeInOut(duration: 0.2)) { isAnimatingRecordingExit = true }
+    }
+
+    private func startVoiceStreamingTasks(session: ScheduleVoiceUpdateService.Session) {
+        // 1) 发送循环：定时 drain PCM，并发送到 WS
+        voiceSendTask?.cancel()
+        voiceSendTask = Task.detached(priority: .userInitiated) { [pcmRecorder] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 120_000_000) // 120ms
+                let chunk = pcmRecorder.drainPCMBytes()
+                if chunk.isEmpty { continue }
+                do {
+                    try await session.sendPCMChunk(chunk)
+                } catch {
+                    // 发送失败：等待 receive loop/timeout 收口
                 }
-            } catch {}
+            }
+        }
+
+        // 2) 接收循环：实时更新 transcript；收到 update_result 才应用并退场
+        voiceReceiveTask?.cancel()
+        voiceReceiveTask = Task.detached(priority: .userInitiated) {
+            while !Task.isCancelled {
+                do {
+                    let ev = try await session.receiveEvent()
+                    await MainActor.run {
+                        handleVoiceUpdateEvent(ev)
+                    }
+                    switch ev {
+                    case .updateResult, .cancelled, .error:
+                        await session.close()
+                        return
+                    case .asrResult, .processing:
+                        break
+                    }
+                } catch {
+                    await MainActor.run {
+                        alertMessage = "语音更新失败：\(error.localizedDescription)"
+                        stopVoiceAndDismissOverlayImmediately()
+                    }
+                    await session.close()
+                    return
+                }
+            }
+            await session.close()
+        }
+    }
+
+    @MainActor
+    private func handleVoiceUpdateEvent(_ ev: ScheduleVoiceUpdateService.Event) {
+        switch ev {
+        case let .asrResult(text, isFinal: _):
+            let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            recordingTranscript = t.isEmpty ? (isCapturingAudio ? "正在聆听..." : "正在分析语音内容...") : t
+        case let .processing(message):
+            let m = (message ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            recordingTranscript = m.isEmpty ? "正在分析语音内容..." : m
+        case let .updateResult(event: updated, message: msg):
+            editedEvent = updated
+            event = updated
+            onSave(updated)
+            hasUserEdited = true
+
+            if let m = msg?.trimmingCharacters(in: .whitespacesAndNewlines), !m.isEmpty {
+                recordingTranscript = m
+            } else {
+                recordingTranscript = "已更新"
+            }
+            HapticFeedback.success()
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                withAnimation(.easeInOut(duration: 0.2)) { isAnimatingRecordingExit = true }
+            }
+        case let .cancelled(message: msg):
+            let m = (msg ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            recordingTranscript = m.isEmpty ? "已取消" : m
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                withAnimation(.easeInOut(duration: 0.2)) { isAnimatingRecordingExit = true }
+            }
+        case let .error(code: _, message: msg):
+            alertMessage = "语音更新失败：\(msg)"
+            stopVoiceAndDismissOverlayImmediately()
         }
     }
     
