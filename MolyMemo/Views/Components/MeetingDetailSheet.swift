@@ -23,6 +23,18 @@ struct MeetingDetailSheet: View {
     @State private var isDeleting: Bool = false
     @State private var deleteAlertMessage: String? = nil
     
+    init(meeting: Binding<MeetingCard>) {
+        self._meeting = meeting
+        // 关键：详情页首帧渲染发生在 .task 拉取之前。如果 remoteId 已有但内容尚未回填，
+        // isLoading 默认为 false 会导致空态条件短暂成立，从而闪现“未录到有效内容”。
+        // 这里提前把 isLoading 置为 true，让加载过程稳定显示 loading/skeleton。
+        let m = meeting.wrappedValue
+        let hasRemoteId = (m.remoteId?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
+        let hasSummary = !m.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let hasTranscriptions = (m.transcriptions?.isEmpty == false)
+        self._isLoading = State(initialValue: hasRemoteId && !hasSummary && !hasTranscriptions)
+    }
+    
     var body: some View {
         let canPlay = playback.canPlay(meeting: meeting)
         let isCurrent = playback.isCurrent(meeting: meeting)
@@ -30,14 +42,15 @@ struct MeetingDetailSheet: View {
         let isDownloading = isCurrent && playback.isDownloading
         
         let trimmedSummary = meeting.summary.trimmingCharacters(in: .whitespacesAndNewlines)
-        let hasAnyTextContent = !trimmedSummary.isEmpty || (meeting.transcriptions?.isEmpty == false)
+        let minutesIsEmpty = trimmedSummary.isEmpty && ((meeting.transcriptions?.isEmpty) != false)
         let hasAnyAudioRef: Bool = {
             let lp = (meeting.audioPath ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             let ru = (meeting.audioRemoteURL ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             return !lp.isEmpty || !ru.isEmpty
         }()
-        // “没录到音”的判定：既没有可用音频引用，也没有任何文本内容，且不在生成中
-        let showNoValidContentTip = (!meeting.isGenerating) && (!hasAnyAudioRef) && (!hasAnyTextContent)
+        // 空态只应在“会议纪要确实为空”时出现；加载中/生成中不要出现
+        let showNoValidContentTip = (!isLoading) && (!meeting.isGenerating) && minutesIsEmpty
+        let shouldShowFloatingPlayer = hasAnyAudioRef || canPlay
 
         // 🔍 调试：播放器时长 vs 后端时长
         let backendDuration = meeting.duration ?? 0
@@ -318,7 +331,7 @@ struct MeetingDetailSheet: View {
             }
             
             // 5. 悬浮播放控制模块
-            if !showNoValidContentTip {
+            if shouldShowFloatingPlayer {
                 VStack(spacing: 0) {
                     Spacer()
                     
