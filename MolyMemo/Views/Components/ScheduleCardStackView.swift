@@ -148,15 +148,15 @@ struct ScheduleCardStackView: View {
             }
              // 长按：打开胶囊菜单（更快；适当放宽可移动距离，避免“手抖”导致长按反复失败体感变慢）
              .onLongPressGesture(
-                minimumDuration: 0.12,
-                maximumDistance: 20,
+                minimumDuration: 0.08,
+                maximumDistance: 28,
                 perform: {
                     guard !events[index].isObsolete else { return } // 🚫 废弃卡片不触发菜单
                     guard index == currentIndex else { return }
                     guard !showMenu else { return }
                     lastMenuOpenedAt = CACurrentMediaTime()
                     HapticFeedback.selection()
-                    withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                    withAnimation(.spring(response: 0.26, dampingFraction: 0.82)) {
                         showMenu = true
                     }
                 },
@@ -540,7 +540,7 @@ struct CardCapsuleMenuView: View {
                 }
                 .frame(width: computedDropdownWidth, alignment: .leading)
                 // 注意：先定 frame 再 glassEffect，否则 glassEffect 可能按未设定尺寸渲染，导致宽度看起来“不生效”
-                .glassEffect(in: .rect(cornerRadius: dropdownCornerRadius))
+                .yy_glassEffectCompat(cornerRadius: dropdownCornerRadius)
                 // 与胶囊轻微重叠，看起来像从“重新识别”按钮处弹出
                 .offset(y: dropdownOverlapY)
                 // 左对齐胶囊；出现锚点对准“重新识别”按钮位置，让它从那里自然弹出
@@ -722,33 +722,13 @@ struct ScheduleCardView: View {
         }
         
         // 2) 如果是 ISO 时间戳（比如 2026-01-06T09:50:00），转换成“开始前X”样式，避免直接把原始值展示出来
-        if let reminderDate = parseReminderDate(v) {
+        if let reminderDate = ScheduleReminderTime.parseAbsoluteDate(v) {
             let delta = reminderDate.timeIntervalSince(event.startTime) // <0 表示开始前提醒
             return reminderTextFromDelta(delta)
         }
         
         // 3) 兜底：不要直接展示原始字符串，避免出现图二这种 ISO 输出
         return "日程已设置提醒"
-    }
-    
-    private func parseReminderDate(_ raw: String) -> Date? {
-        // ISO8601（带时区）
-        let iso = ISO8601DateFormatter()
-        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let d = iso.date(from: raw) { return d }
-        
-        let isoNoFraction = ISO8601DateFormatter()
-        isoNoFraction.formatOptions = [.withInternetDateTime]
-        if let d = isoNoFraction.date(from: raw) { return d }
-        
-        // 常见无时区格式：2026-01-06T09:50:00
-        let df = DateFormatter()
-        df.locale = Locale(identifier: "en_US_POSIX")
-        df.timeZone = .current
-        df.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
-        if let d = df.date(from: raw) { return d }
-        
-        return nil
     }
     
     private func reminderTextFromDelta(_ delta: TimeInterval) -> String {
@@ -804,7 +784,7 @@ struct ConditionalCapsuleBackground: ViewModifier {
     func body(content: Content) -> some View {
         // 默认保持磨砂胶囊质感；展开下拉时“变灰但仍玻璃透明”，并增强轮廓避免与背景同色糊在一起
         content
-            .glassEffect(in: .capsule)
+            .yy_glassEffectCompatCapsule()
             .overlay {
                 if showRescanMenu {
                     Capsule()

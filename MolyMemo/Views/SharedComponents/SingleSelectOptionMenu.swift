@@ -70,7 +70,7 @@ struct SingleSelectOptionMenu: View {
             // 约 3.5 行高度：露半行提示“可滚动”
             .frame(maxHeight: Self.maxHeight(optionCount: options.count))
         }
-        .glassEffect(in: .rect(cornerRadius: 24))
+        .yy_glassEffectCompat(cornerRadius: 24)
     }
     
     private func isSelected(_ v: String) -> Bool {

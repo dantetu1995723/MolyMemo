@@ -73,15 +73,15 @@ struct ContactCardStackView: View {
                                 }
                                 // 长按：打开胶囊菜单（与日程一致）
                                 .onLongPressGesture(
-                                    minimumDuration: 0.12,
-                                    maximumDistance: 20,
+                                    minimumDuration: 0.08,
+                                    maximumDistance: 28,
                                     perform: {
                                         guard !contacts[index].isObsolete else { return } // 🚫 废弃卡片不触发菜单
                                         guard index == currentIndex else { return }
                                         guard !showMenu else { return }
                                         lastMenuOpenedAt = CACurrentMediaTime()
                                         HapticFeedback.selection()
-                                        withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                                        withAnimation(.spring(response: 0.26, dampingFraction: 0.82)) {
                                             showMenu = true
                                         }
                                     },

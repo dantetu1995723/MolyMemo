@@ -1,6 +1,9 @@
 import Foundation
 import EventKit
 import UserNotifications
+#if canImport(UIKit)
+import UIKit
+#endif
 
 // 日历和提醒管理器
 class CalendarManager {
@@ -54,10 +57,18 @@ class CalendarManager {
                     options: [.alert, .sound, .badge]
                 )
             }
+            // 兼容：provisional 也可用于投递通知（系统会以“静默/摘要”形式展示）
             return settings.authorizationStatus == .authorized
+            || settings.authorizationStatus == .provisional
+            || settings.authorizationStatus == .ephemeral
         } catch {
             return false
         }
+    }
+
+    /// 当前通知授权状态（用于 UI 做引导）
+    func notificationAuthorizationStatus() async -> UNAuthorizationStatus {
+        await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
     }
     
     // MARK: - 日历事件管理
@@ -158,6 +169,18 @@ class CalendarManager {
         body: String?,
         date: Date
     ) async -> Bool {
+        return await scheduleNotification(id: id, title: title, body: body, badge: nil, date: date)
+    }
+    
+    /// 创建本地通知（可选 badge）
+    @discardableResult
+    func scheduleNotification(
+        id: String,
+        title: String,
+        body: String?,
+        badge: NSNumber?,
+        date: Date
+    ) async -> Bool {
         // 请求权限
         let hasPermission = await requestNotificationPermission()
         guard hasPermission else {
@@ -171,6 +194,9 @@ class CalendarManager {
             content.body = body
         }
         content.sound = .default
+        if let badge {
+            content.badge = badge
+        }
         
         // 创建触发器
         let calendar = Calendar.current
@@ -209,6 +235,19 @@ class CalendarManager {
         cancelNotification(id: id)
         // 再创建新的
         return await scheduleNotification(id: id, title: title, body: body, date: date)
+    }
+    
+    /// 清空 App 图标红标（进入 App 后用）
+    func clearAppBadge() async {
+        if #available(iOS 16.0, *) {
+            try? await UNUserNotificationCenter.current().setBadgeCount(0)
+        } else {
+            #if canImport(UIKit)
+            await MainActor.run {
+                UIApplication.shared.applicationIconBadgeNumber = 0
+            }
+            #endif
+        }
     }
 }
 

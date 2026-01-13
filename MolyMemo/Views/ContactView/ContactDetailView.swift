@@ -162,6 +162,14 @@ struct ContactDetailView: View {
     // 键盘状态：用于避免“语音编辑”按钮被键盘顶上来（与日程详情一致）
     @State private var isKeyboardVisible: Bool = false
     @FocusState private var isNotesFocused: Bool
+
+    // MARK: - Debug logging (focus/keyboard)
+    private func dbg(_ msg: String) {
+#if DEBUG || targetEnvironment(simulator)
+        let ts = String(format: "%.3f", Date().timeIntervalSince1970)
+        print("🟩[ContactDetailView][\(ts)] \(msg)")
+#endif
+    }
     
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -402,36 +410,46 @@ struct ContactDetailView: View {
                                     .foregroundColor(iconColor)
                                     .frame(width: 24, alignment: .leading)
                                 
-                                Group {
-                                    if isNotesFocused {
-                                        TextField("添加备注", text: userEditedBinding($editedNotes), axis: .vertical)
-                                            .font(.system(size: 16))
-                                            .foregroundColor(primaryTextColor)
-                                            .lineLimit(4...10)
-                                            .lineSpacing(6)
-                                            .disabled(isSubmitting)
-                                            .focused($isNotesFocused)
-                                    } else {
+                                // ✅ 与日程详情一致的根治：
+                                // FocusState 只有在绑定的输入控件已存在于视图树中时，程序性设焦点才会生效。
+                                // 之前这里是「isNotesFocused 才创建 TextField」，会导致点击文本态时 focus 设不进去。
+                                // 现在改成：TextField 始终存在，用 overlay 展示 placeholder / LinkifiedText。
+                                ZStack(alignment: .topLeading) {
+                                    TextField("添加备注", text: userEditedBinding($editedNotes), axis: .vertical)
+                                        .font(.system(size: 16))
+                                        .foregroundColor(primaryTextColor)
+                                        .lineLimit(4...10)
+                                        .lineSpacing(6)
+                                        .disabled(isSubmitting)
+                                        .focused($isNotesFocused)
+                                        // 未聚焦时隐藏真实输入（由 overlay 展示更美观的文本/链接）
+                                        .opacity(isNotesFocused ? 1 : 0.01)
+                                    
+                                    if !isNotesFocused {
                                         let trimmed = editedNotes.trimmingCharacters(in: .whitespacesAndNewlines)
-                                        if trimmed.isEmpty {
-                                            Text("添加备注")
-                                                .font(.system(size: 16))
-                                                .foregroundColor(secondaryTextColor)
+                                        Group {
+                                            if trimmed.isEmpty {
+                                                Text("添加备注")
+                                                    .font(.system(size: 16))
+                                                    .foregroundColor(secondaryTextColor)
+                                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                            } else {
+                                                LinkifiedText(
+                                                    text: editedNotes,
+                                                    font: .system(size: 16),
+                                                    textColor: primaryTextColor,
+                                                    linkColor: .blue,
+                                                    lineSpacing: 6,
+                                                    lineLimit: 10
+                                                )
                                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                                .contentShape(Rectangle())
-                                                .onTapGesture { isNotesFocused = true }
-                                        } else {
-                                            LinkifiedText(
-                                                text: editedNotes,
-                                                font: .system(size: 16),
-                                                textColor: primaryTextColor,
-                                                linkColor: .blue,
-                                                lineSpacing: 6,
-                                                lineLimit: 10
-                                            )
-                                            .frame(maxWidth: .infinity, alignment: .leading)
-                                            .contentShape(Rectangle())
-                                            .onTapGesture { isNotesFocused = true }
+                                            }
+                                        }
+                                        .contentShape(Rectangle())
+                                        .onTapGesture {
+                                            dbg("notes overlay tapped. isNotesFocused(before)=\(isNotesFocused)")
+                                            isNotesFocused = true
+                                            dbg("notes overlay set focus -> true. isNotesFocused(now)=\(isNotesFocused)")
                                         }
                                     }
                                 }
@@ -494,9 +512,14 @@ struct ContactDetailView: View {
         .onReceive(pcmRecorder.$audioLevel) { self.audioPower = mapAudioLevelToPower($0) }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
             isKeyboardVisible = true
+            dbg("keyboardWillShow. isNotesFocused=\(isNotesFocused)")
         }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
             isKeyboardVisible = false
+            dbg("keyboardWillHide. isNotesFocused=\(isNotesFocused)")
+        }
+        .onChange(of: isNotesFocused) { _, newValue in
+            dbg("isNotesFocused changed -> \(newValue)")
         }
         .onDisappear {
             stopVoiceAndDismissOverlayImmediately()
@@ -599,10 +622,12 @@ struct ContactDetailView: View {
     // MARK: - Voice (WS streaming update)
 
     private func dismissKeyboard() {
+        dbg("dismissKeyboard() called. isNotesFocused(before)=\(isNotesFocused)")
         isNotesFocused = false
 #if canImport(UIKit)
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
 #endif
+        dbg("dismissKeyboard() done. isNotesFocused(after)=\(isNotesFocused)")
     }
 
     private func handleDragChanged(_ value: DragGesture.Value) {

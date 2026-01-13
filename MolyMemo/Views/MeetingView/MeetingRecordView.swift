@@ -463,7 +463,7 @@ struct MeetingRecordView: View {
                 return (!remoteId.isEmpty && rid == remoteId) || (!audioPath.isEmpty && lp == audioPath)
             }) {
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
-                    recordingItems.remove(at: idx)
+                    _ = recordingItems.remove(at: idx)
                 }
             }
         }
@@ -476,7 +476,6 @@ struct MeetingRecordView: View {
             let suppressChatCard = userInfo["suppressChatCard"] as? Bool ?? false
             guard suppressChatCard else { return }
 
-            let title = userInfo["title"] as? String ?? "会议录音"
             let date = userInfo["date"] as? Date ?? Date()
             let duration = userInfo["duration"] as? TimeInterval ?? 0
             let audioPath = (userInfo["audioPath"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -644,8 +643,8 @@ struct MeetingRecordView: View {
         guard let index = recordingItems.firstIndex(where: { $0.id == item.id }) else { return }
 
         // 先做 UI 乐观更新：立即从列表移除
-        _ = withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-            recordingItems.remove(at: index)
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+            _ = recordingItems.remove(at: index)
         }
 
         Task {

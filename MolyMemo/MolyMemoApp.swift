@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import UIKit
+import UserNotifications
 
 @main
 struct MolyMemoApp: App {
@@ -32,6 +33,9 @@ struct MolyMemoApp: App {
         RecordingDarwinObserver.shared.installIfNeeded()
         // 尽早安装 Darwin 聊天更新监听（快捷指令/AppIntent 后台写入聊天后，主App可即时刷新）
         ChatDarwinObserver.shared.installIfNeeded()
+
+        // 让前台也能展示通知横幅（否则前台默认不弹）
+        UNUserNotificationCenter.current().delegate = AppNotificationCenterDelegate.shared
     }
     
     var body: some Scene {
@@ -49,6 +53,11 @@ struct MolyMemoApp: App {
                     // 请求通知权限
                     Task {
                         _ = await CalendarManager.shared.requestNotificationPermission()
+                    }
+                    
+                    // 进入 App 时清空红标（避免一直挂着）
+                    Task {
+                        await CalendarManager.shared.clearAppBadge()
                     }
 
                     // 前置请求通讯录权限：仅首次（notDetermined）会弹窗

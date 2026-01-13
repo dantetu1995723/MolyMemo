@@ -1,4 +1,7 @@
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// 首页顶部"今日日程通知栏"（折叠/展开）
 /// - 折叠：展示一条（优先显示"当前时间之后最近的一条"，否则显示当天第一条）
@@ -11,6 +14,9 @@ struct TodayScheduleNotificationBar: View {
     @Binding var isExpanded: Bool
     
     var onTapRow: ((ScheduleEvent) -> Void)? = nil
+
+    // 通知权限状态（用于提示用户开启）
+    @State private var notificationAuthStatus: UNAuthorizationStatus? = nil
     
     // 主题色（与 ChatView 统一）
     private let primaryGray = Color(hex: "333333")
@@ -95,6 +101,10 @@ struct TodayScheduleNotificationBar: View {
                     
                     // 展开时的底部区域（footer + 收起按钮）
                     if isExpanded {
+                        if shouldShowNotificationPermissionHint {
+                            notificationPermissionHint
+                                .padding(.top, 10)
+                        }
                         footerView
                             .frame(maxWidth: .infinity) // 居中
                             .padding(.top, 16)
@@ -121,6 +131,14 @@ struct TodayScheduleNotificationBar: View {
                 .animation(.easeOut(duration: 0.2), value: isExpanded)
             } else {
                 EmptyView()
+            }
+        }
+        .task {
+            await refreshNotificationAuthStatus()
+        }
+        .onChange(of: isExpanded) { _, newValue in
+            if newValue {
+                Task { await refreshNotificationAuthStatus() }
             }
         }
     }
@@ -174,6 +192,64 @@ struct TodayScheduleNotificationBar: View {
             .font(.system(size: 14))
             .foregroundColor(Color(hex: "999999"))
     }
+
+    private var shouldShowNotificationPermissionHint: Bool {
+        // 只有“确实存在提醒”的情况下才提示，避免打扰
+        let hasReminder = events.contains { ev in
+            let raw = (ev.reminderTime ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            return !raw.isEmpty
+        }
+        guard hasReminder else { return false }
+        guard let s = notificationAuthStatus else { return false }
+        return !(s == .authorized || s == .provisional || s == .ephemeral)
+    }
+
+    private var notificationPermissionHint: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "bell.slash")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(Color(hex: "999999"))
+
+            Text("系统通知未开启，日程提醒不会弹出")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(Color(hex: "666666"))
+                .lineLimit(1)
+
+            Spacer(minLength: 0)
+
+            Button {
+                Task { await handleEnableNotificationsTap() }
+            } label: {
+                Text(enableButtonTitle)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(Color(hex: "333333"))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(Color.white, in: Capsule())
+                    .shadow(color: Color.black.opacity(0.04), radius: 4, x: 0, y: 1)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.white.opacity(0.95))
+                .shadow(color: Color.black.opacity(0.03), radius: 6, x: 0, y: 2)
+        )
+        .padding(.horizontal, 1)
+    }
+
+    private var enableButtonTitle: String {
+        switch notificationAuthStatus {
+        case .denied:
+            return "去设置"
+        case .notDetermined:
+            return "开启"
+        default:
+            return "开启"
+        }
+    }
     
     private var collapseButton: some View {
         Button(action: {
@@ -212,6 +288,35 @@ struct TodayScheduleNotificationBar: View {
         f.locale = Locale(identifier: "zh_CN")
         f.dateFormat = "HH:mm"
         return f.string(from: date)
+    }
+
+    // MARK: - Notification permission
+    private func refreshNotificationAuthStatus() async {
+        let status = await CalendarManager.shared.notificationAuthorizationStatus()
+        await MainActor.run {
+            notificationAuthStatus = status
+        }
+    }
+
+    @MainActor
+    private func handleEnableNotificationsTap() async {
+        let status = await CalendarManager.shared.notificationAuthorizationStatus()
+        notificationAuthStatus = status
+
+        switch status {
+        case .notDetermined:
+            _ = await CalendarManager.shared.requestNotificationPermission()
+            await refreshNotificationAuthStatus()
+        case .denied:
+            #if canImport(UIKit)
+            if let url = URL(string: UIApplication.openSettingsURLString) {
+                await UIApplication.shared.open(url)
+            }
+            #endif
+        default:
+            // 其它状态：不处理
+            break
+        }
     }
 }
 

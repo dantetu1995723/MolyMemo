@@ -105,7 +105,7 @@ enum ChatSendFlow {
         }
         
         withAnimation {
-            appState.chatMessages.remove(at: index)
+            _ = appState.chatMessages.remove(at: index)
         }
         
         // 从存储中删除

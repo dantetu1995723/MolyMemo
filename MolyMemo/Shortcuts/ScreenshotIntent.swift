@@ -1,7 +1,6 @@
 import AppIntents
 import ActivityKit
 import UIKit
-import UniformTypeIdentifiers
 
 private let yyPendingLogPrefix = "🧩 [PendingScreenshot]"
 
@@ -13,15 +12,7 @@ struct MollyScreenshotIntent: AppIntent {
 
     @Parameter(
         title: "截图",
-        description: "直接接收上一步“截屏/拍摄屏幕截图”的输出（不弹文件选择器）。",
-        supportedContentTypes: [
-            .image,
-            .png,
-            .jpeg,
-            .heic
-        ],
-        requestValueDialog: IntentDialog("请先在快捷指令里加「截屏」并把输出连接到这里"),
-        inputConnectionBehavior: .connectToPreviousIntentResult
+        description: "直接接收上一步“截屏/拍摄屏幕截图”的输出（不弹文件选择器）。"
     )
     var screenshot: IntentFile
 

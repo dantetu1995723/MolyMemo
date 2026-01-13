@@ -23,6 +23,100 @@ extension View {
     func getRect(_ rect: Binding<CGRect>) -> some View {
         self.modifier(GeometryGetter(rect: rect))
     }
+
+    /// iOS 26+ 使用系统 glassEffect；低版本降级为 Material + 细描边。
+    @ViewBuilder
+    func yy_glassEffectCompat(cornerRadius: CGFloat) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        if #available(iOS 26.0, *) {
+            self.glassEffect(in: shape)
+        } else {
+            // iOS26 以下：保持“透明白色”的玻璃质感（避免 ultraThinMaterial 在浅底上偏灰）
+            self
+                // 关键：确保装饰层不抢占点击命中（低版本 overlay 可能会“挡住”手势）
+                .contentShape(shape)
+                // 背景（底色 + 高光）：放在 background，避免“盖住文字”导致行间颜色看起来不一致
+                .background {
+                    ZStack {
+                        LinearGradient(
+                            gradient: Gradient(stops: [
+                                .init(color: Color.white.opacity(0.95), location: 0.0),
+                                .init(color: Color.white.opacity(0.86), location: 0.5),
+                                .init(color: Color.white.opacity(0.92), location: 1.0)
+                            ]),
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                        
+                        LinearGradient(
+                            gradient: Gradient(stops: [
+                                .init(color: Color.white.opacity(0.75), location: 0.0),
+                                .init(color: Color.white.opacity(0.28), location: 0.25),
+                                .init(color: Color.clear, location: 0.65)
+                            ]),
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    }
+                    .clipShape(shape)
+                    .allowsHitTesting(false)
+                }
+                .allowsHitTesting(true)
+                // 晶体边缘
+                .overlay(shape.stroke(Color.white.opacity(0.75), lineWidth: 0.9).allowsHitTesting(false))
+                .overlay(shape.stroke(Color.black.opacity(0.05), lineWidth: 0.6).allowsHitTesting(false))
+                // 轻阴影：贴近 glassEffect 的浮起感
+                .shadow(color: Color.white.opacity(0.50), radius: 6, x: 0, y: -2)
+                .shadow(color: Color.black.opacity(0.06), radius: 10, x: 0, y: 4)
+        }
+    }
+
+    /// iOS 26+ 使用系统 glassEffect；低版本降级为 Material + 细描边（胶囊形状）。
+    @ViewBuilder
+    func yy_glassEffectCompatCapsule() -> some View {
+        let shape = Capsule()
+        if #available(iOS 26.0, *) {
+            self.glassEffect(in: shape)
+        } else {
+            // iOS26 以下：保持“透明白色”的玻璃质感（避免 ultraThinMaterial 在浅底上偏灰）
+            self
+                // 关键：确保装饰层不抢占点击命中（低版本 overlay 可能会“挡住”手势）
+                .contentShape(shape)
+                // 背景（底色 + 高光）：放在 background，避免“盖住文字”导致行间颜色看起来不一致
+                .background {
+                    ZStack {
+                        LinearGradient(
+                            gradient: Gradient(stops: [
+                                .init(color: Color.white.opacity(0.95), location: 0.0),
+                                .init(color: Color.white.opacity(0.86), location: 0.5),
+                                .init(color: Color.white.opacity(0.92), location: 1.0)
+                            ]),
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                        
+                        LinearGradient(
+                            gradient: Gradient(stops: [
+                                .init(color: Color.white.opacity(0.75), location: 0.0),
+                                .init(color: Color.white.opacity(0.28), location: 0.25),
+                                .init(color: Color.clear, location: 0.65)
+                            ]),
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    }
+                    .clipShape(shape)
+                    .allowsHitTesting(false)
+                }
+                .allowsHitTesting(true)
+                // 晶体边缘
+                .overlay(shape.stroke(Color.white.opacity(0.75), lineWidth: 0.9).allowsHitTesting(false))
+                .overlay(shape.stroke(Color.black.opacity(0.05), lineWidth: 0.6).allowsHitTesting(false))
+                // 轻阴影：贴近 glassEffect 的浮起感
+                .shadow(color: Color.white.opacity(0.50), radius: 6, x: 0, y: -2)
+                .shadow(color: Color.black.opacity(0.06), radius: 10, x: 0, y: 4)
+        }
+    }
 }
 
 // MARK: - ===== 圆圆UI设计系统 =====
@@ -608,6 +702,8 @@ struct HeroImageOverlay: View {
     @State private var backgroundOpacity: Double = 0.0
     @State private var showInteractive: Bool = false
     @State private var isDismissing: Bool = false
+    /// 下滑退出时：以当前拖拽位置作为“缩回起点”
+    @State private var dismissExtraOffset: CGSize = .zero
     
     var body: some View {
         GeometryReader { proxy in
@@ -624,18 +720,29 @@ struct HeroImageOverlay: View {
             let currentScale = thumbScale + (1.0 - thumbScale) * animProgress
             let currentOffsetX = (thumbCenter.x - screenCenter.x) * (1.0 - animProgress)
             let currentOffsetY = (thumbCenter.y - screenCenter.y) * (1.0 - animProgress)
+            // 下滑关闭时，把“当前拖拽位移”叠加到全屏态，随后随 animProgress 一起收敛到 0
+            let extraOffsetX = dismissExtraOffset.width * animProgress
+            let extraOffsetY = dismissExtraOffset.height * animProgress
             
             ZStack {
-                Color.black
-                    .opacity(backgroundOpacity)
-                    .ignoresSafeArea()
+                // 动画阶段需要黑底；进入交互阶段后，让 FullScreenImageView 自己控制黑底透明度，
+                // 这样下滑时可以透出底下界面（类似小红书的效果）。
+                if !showInteractive || isDismissing {
+                    Color.black
+                        .opacity(backgroundOpacity)
+                        .ignoresSafeArea()
+                } else {
+                    Color.clear.ignoresSafeArea()
+                }
                 
                 // 交互层（动画完成后显示）
                 if showInteractive && !isDismissing {
                     FullScreenImageView(
                         image: image,
-                        onTapDismiss: { beginHeroDismiss() },
-                        onSwipeDismiss: { beginFadeDismiss() }
+                        onTapDismiss: { beginHeroDismiss(extraOffset: .zero) },
+                        onSwipeDismiss: { offset in
+                            beginHeroDismiss(extraOffset: offset)
+                        }
                     )
                     .transition(.opacity)
                 }
@@ -648,7 +755,7 @@ struct HeroImageOverlay: View {
                         .frame(width: screenSize.width, height: screenSize.height)
                         .clipped()
                         .scaleEffect(currentScale)
-                        .offset(x: currentOffsetX, y: currentOffsetY)
+                        .offset(x: currentOffsetX + extraOffsetX, y: currentOffsetY + extraOffsetY)
                         .allowsHitTesting(false)
                 }
             }
@@ -660,15 +767,16 @@ struct HeroImageOverlay: View {
                 backgroundOpacity = 0.0
                 showInteractive = false
                 isDismissing = false
+                dismissExtraOffset = .zero
                 
-                // 快速流畅的展开动画
-                withAnimation(.easeOut(duration: 0.25)) {
+                // 更快的展开动画（最小改动：仅调短时长）
+                withAnimation(.easeOut(duration: 0.18)) {
                     animProgress = 1.0
                     backgroundOpacity = 1.0
                 }
                 
                 // 动画结束后切到交互层，避免手势影响“几何动画”
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.26) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.19) {
                     showInteractive = true
                 }
             }
@@ -676,10 +784,11 @@ struct HeroImageOverlay: View {
     }
     
     /// 点击退出：执行缩回缩略图的 Hero 动画
-    private func beginHeroDismiss() {
+    private func beginHeroDismiss(extraOffset: CGSize) {
         guard !isDismissing else { return }
         isDismissing = true
         showInteractive = false
+        dismissExtraOffset = extraOffset
         
         withAnimation(.easeIn(duration: 0.22)) {
             animProgress = 0.0
@@ -687,20 +796,6 @@ struct HeroImageOverlay: View {
         }
         
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.24) {
-            onDismiss()
-        }
-    }
-    
-    /// 滑动退出：直接淡出
-    private func beginFadeDismiss() {
-        guard !isDismissing else { return }
-        isDismissing = true
-        
-        withAnimation(.easeOut(duration: 0.18)) {
-            backgroundOpacity = 0.0
-        }
-        
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.20) {
             onDismiss()
         }
     }
@@ -713,8 +808,8 @@ struct FullScreenImageView: View {
     var matchId: String? = nil
     /// 点击退出（会触发 Hero 缩回动画）
     let onTapDismiss: () -> Void
-    /// 滑动退出（直接淡出，不做缩回）
-    let onSwipeDismiss: () -> Void
+    /// 滑动退出：把“当前拖拽位移”传给外层，用于从拖拽位置缩回
+    let onSwipeDismiss: (CGSize) -> Void
     
     /// 兼容旧调用者：同时指定 tap/swipe 回调为同一个
     init(image: UIImage, namespace: Namespace.ID? = nil, matchId: String? = nil, onDismiss: @escaping () -> Void) {
@@ -722,11 +817,11 @@ struct FullScreenImageView: View {
         self.namespace = namespace
         self.matchId = matchId
         self.onTapDismiss = onDismiss
-        self.onSwipeDismiss = onDismiss
+        self.onSwipeDismiss = { _ in onDismiss() }
     }
     
     /// 新调用者：分别指定 tap/swipe 回调
-    init(image: UIImage, onTapDismiss: @escaping () -> Void, onSwipeDismiss: @escaping () -> Void) {
+    init(image: UIImage, onTapDismiss: @escaping () -> Void, onSwipeDismiss: @escaping (CGSize) -> Void) {
         self.image = image
         self.namespace = nil
         self.matchId = nil
@@ -737,7 +832,14 @@ struct FullScreenImageView: View {
     @State private var scale: CGFloat = 1.0
     @State private var lastScale: CGFloat = 1.0
     @State private var dragOffset: CGSize = .zero
-    @State private var opacity: Double = 0.0 // 默认透明，动画进入时变 1.0
+    // 默认不做“入场淡入”，避免 Hero 动画切到交互层时闪一下
+    @State private var opacity: Double = 1.0
+    /// 避免与系统“上滑回桌面/切后台”手势冲突：底部一段区域不响应拖拽关闭
+    @State private var dragStartY: CGFloat? = nil
+    private let bottomGestureExclusion: CGFloat = 80
+    
+    @State private var showSaveAlert = false
+    @State private var saveAlertMessage = ""
     
     var body: some View {
         ZStack {
@@ -789,16 +891,34 @@ struct FullScreenImageView: View {
                     DragGesture()
                         .onChanged { value in
                             if scale <= 1.0 {
+                                if dragStartY == nil { dragStartY = value.startLocation.y }
+                                if let startY = dragStartY, startY > (ScreenMetrics.height - bottomGestureExclusion) {
+                                    // 底部起手：大概率是系统上滑手势，忽略，避免图片被带着动
+                                    return
+                                }
+                                
+                                // 仅处理“垂直主导”的拖拽，避免和其它手势冲突
+                                let vertical = abs(value.translation.height)
+                                let horizontal = abs(value.translation.width)
+                                guard vertical > horizontal, vertical > 10 else { return }
+                                
                                 dragOffset = value.translation
-                                let dragDistance = abs(value.translation.height)
-                                opacity = max(0.3, 1.0 - dragDistance / 300.0)
+                                // 下滑时最低保留一点黑底（类似小红书的“透出但不全透”）
+                                opacity = max(0.3, 1.0 - vertical / 300.0)
                             }
                         }
                         .onEnded { value in
+                            defer { dragStartY = nil }
+                            if let startY = dragStartY, startY > (ScreenMetrics.height - bottomGestureExclusion) {
+                                // 系统手势：强制复位，避免留下偏移
+                                dragOffset = .zero
+                                opacity = 1.0
+                                return
+                            }
                             if abs(value.translation.height) > 80 && scale <= 1.0 {
                                 // 达到关闭阈值：调用滑动退出（不做缩回动画）
                                 HapticFeedback.light()
-                                onSwipeDismiss()
+                                onSwipeDismiss(dragOffset)
                             } else {
                                 // 未达到阈值：快速复位
                                 withAnimation(.easeOut(duration: 0.18)) {
@@ -809,19 +929,96 @@ struct FullScreenImageView: View {
                         }
                 )
             )
+            
+            // 底部下载按钮（胶囊）
+            VStack {
+                Spacer()
+                DownloadCapsuleButton(title: "下载图片", systemImage: "arrow.down.circle.fill") {
+                    saveImageToPhotoLibrary(image)
+                }
+                .padding(.bottom, 50)
+                .opacity(opacity) // 跟随背景一起变淡
+            }
         }
         // ✅ 关键：强制预览层撑满父容器，否则在外层 ZStack(alignment: .bottom) 下会出现“贴底/不居中”的视觉偏差
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onAppear {
-            withAnimation(.easeIn(duration: 0.2)) {
-                opacity = 1.0
-            }
+        // App 切到后台/多任务时，系统手势可能会把 drag gesture 的状态留在中间；这里兜底复位
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in
+            dragStartY = nil
+            dragOffset = .zero
+            opacity = 1.0
+        }
+        .alert("提示", isPresented: $showSaveAlert) {
+            Button("确定", role: .cancel) { }
+        } message: {
+            Text(saveAlertMessage)
         }
         .onTapGesture {
             if scale <= 1.0 && dragOffset == .zero {
                 HapticFeedback.light()
                 onTapDismiss()
             }
+        }
+    }
+    
+    private func saveImageToPhotoLibrary(_ image: UIImage) {
+        HapticFeedback.light()
+        PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
+            DispatchQueue.main.async {
+                switch status {
+                case .authorized, .limited:
+                    PHPhotoLibrary.shared().performChanges({
+                        PHAssetChangeRequest.creationRequestForAsset(from: image)
+                    }) { success, error in
+                        DispatchQueue.main.async {
+                            if success {
+                                HapticFeedback.success()
+                                saveAlertMessage = "图片已保存到相册"
+                            } else {
+                                HapticFeedback.error()
+                                saveAlertMessage = "保存失败：\(error?.localizedDescription ?? "未知错误")"
+                            }
+                            showSaveAlert = true
+                        }
+                    }
+                case .denied, .restricted:
+                    HapticFeedback.error()
+                    saveAlertMessage = "请在设置中允许访问相册"
+                    showSaveAlert = true
+                default:
+                    break
+                }
+            }
+        }
+    }
+}
+
+// MARK: - 通用下载胶囊按钮（复用样式）
+private struct DownloadCapsuleButton: View {
+    let title: String
+    let systemImage: String
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 18, weight: .semibold))
+                Text(title)
+                    .font(.system(size: 17, weight: .semibold))
+            }
+            .foregroundColor(.black.opacity(0.85))
+            .padding(.horizontal, 24)
+            .padding(.vertical, 14)
+            .background(
+                ZStack {
+                    Capsule()
+                        .fill(Color.white.opacity(0.95))
+                    Capsule()
+                        .stroke(Color.black.opacity(0.08), lineWidth: 1)
+                }
+            )
+            .shadow(color: .black.opacity(0.12), radius: 10, x: 0, y: 6)
         }
     }
 }
@@ -900,58 +1097,8 @@ struct FullScreenImageGallery: View {
                         .padding(.bottom, 12)
                     }
                     
-                    // 保存按钮（Liquid glass效果）- 灰白色调
-                    Button(action: {
+                    DownloadCapsuleButton(title: "保存到相册", systemImage: "arrow.down.circle.fill") {
                         saveCurrentImage()
-                    }) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "arrow.down.circle.fill")
-                                .font(.system(size: 18, weight: .semibold))
-                            Text("保存到相册")
-                                .font(.system(size: 17, weight: .semibold))
-                        }
-                        .foregroundColor(.white)
-                        .shadow(color: .black.opacity(0.8), radius: 0, x: 1, y: 1)
-                        .shadow(color: .black.opacity(0.8), radius: 0, x: -1, y: -1)
-                        .shadow(color: .black.opacity(0.8), radius: 0, x: 1, y: -1)
-                        .shadow(color: .black.opacity(0.8), radius: 0, x: -1, y: 1)
-                        .padding(.horizontal, 24)
-                        .padding(.vertical, 14)
-                        .background(
-                            ZStack {
-                                // 毛玻璃材质
-                                Capsule()
-                                    .fill(.ultraThinMaterial)
-                                
-                                // 灰色渐变叠加层
-                                Capsule()
-                                    .fill(
-                                        LinearGradient(
-                                            colors: [
-                                                Color(white: 0.4).opacity(0.7),
-                                                Color(white: 0.3).opacity(0.5)
-                                            ],
-                                            startPoint: .topLeading,
-                                            endPoint: .bottomTrailing
-                                        )
-                                    )
-                                
-                                // 高光效果
-                                Capsule()
-                                    .stroke(
-                                        LinearGradient(
-                                            colors: [
-                                                Color.white.opacity(0.6),
-                                                Color.white.opacity(0.2)
-                                            ],
-                                            startPoint: .top,
-                                            endPoint: .bottom
-                                        ),
-                                        lineWidth: 1.5
-                                    )
-                            }
-                        )
-                        .shadow(color: .black.opacity(0.3), radius: 10, x: 0, y: 5)
                     }
                     .padding(.bottom, 50)
                 }
@@ -1012,6 +1159,10 @@ private struct SingleImageView: View {
     @Binding var opacity: Double
     let onDismiss: () -> Void
     
+    /// 避免与系统上滑手势冲突：底部区域不响应拖拽关闭
+    @State private var dragStartY: CGFloat? = nil
+    private let bottomGestureExclusion: CGFloat = 80
+    
     var body: some View {
         GeometryReader { proxy in
             Image(uiImage: image)
@@ -1048,6 +1199,10 @@ private struct SingleImageView: View {
                         .onChanged { value in
                             // 只有在未缩放时才允许拖拽关闭
                             if scale <= 1.0 {
+                                if dragStartY == nil { dragStartY = value.startLocation.y }
+                                if let startY = dragStartY, startY > (ScreenMetrics.height - bottomGestureExclusion) {
+                                    return
+                                }
                                 let verticalDistance = abs(value.translation.height)
                                 let horizontalDistance = abs(value.translation.width)
                                 
@@ -1060,6 +1215,14 @@ private struct SingleImageView: View {
                             }
                         }
                         .onEnded { value in
+                            defer { dragStartY = nil }
+                            if let startY = dragStartY, startY > (ScreenMetrics.height - bottomGestureExclusion) {
+                                withAnimation(.easeOut(duration: 0.12)) {
+                                    dragOffset = .zero
+                                    opacity = 1.0
+                                }
+                                return
+                            }
                             // 如果向下拖拽超过100点，则关闭
                             if value.translation.height > 100 && scale <= 1.0 {
                                 HapticFeedback.light()

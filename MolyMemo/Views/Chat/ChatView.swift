@@ -525,6 +525,9 @@ struct ChatView: View {
                     todayScheduleIsLoading = false
                     todayScheduleErrorText = nil
                 }
+
+                // 同步系统通知：按提醒时间发送（仅今日日程、且未过期）
+                await TodayScheduleLocalNotificationScheduler.shared.sync(events: sorted)
                 
                 // 即使缓存新鲜，也后台静默刷新，确保数据及时更新
                 await refreshTodaySchedulesFromNetwork(base: base, forceRefresh: true, showError: false)
@@ -561,10 +564,20 @@ struct ChatView: View {
                 .sorted(by: { $0.startTime < $1.startTime })
             // ✅ 今日日程通知栏以后端为准：不补回“已删快照”，也不做前端置灰覆盖
             todayScheduleEvents = list
+            
+            // 同步系统通知：不要阻塞主线程
+            Task {
+                await TodayScheduleLocalNotificationScheduler.shared.sync(events: list)
+            }
         } catch {
             todayScheduleEvents = []
             if showError {
                 todayScheduleErrorText = error.localizedDescription
+            }
+            
+            // 拉取失败也需要清理“今日日程”通知，避免展示过期提醒
+            Task {
+                await TodayScheduleLocalNotificationScheduler.shared.sync(events: [])
             }
         }
     }

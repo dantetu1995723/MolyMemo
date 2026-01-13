@@ -29,6 +29,14 @@ struct ScheduleDetailSheet: View {
     // 行内编辑（标题/地点/备注）
     private enum FocusField: Hashable { case title, location, description }
     @FocusState private var focusedField: FocusField?
+
+    // MARK: - Debug logging (focus/keyboard)
+    private func dbg(_ msg: String) {
+#if DEBUG || targetEnvironment(simulator)
+        let ts = String(format: "%.3f", Date().timeIntervalSince1970)
+        print("🟦[ScheduleDetailSheet][\(ts)] \(msg)")
+#endif
+    }
     
     private struct ReminderOption: Identifiable, Hashable {
         let id = UUID()
@@ -110,9 +118,11 @@ struct ScheduleDetailSheet: View {
     private let iconColor = Color(hex: "CCCCCC")
 
     private func dismissKeyboard() {
+        dbg("dismissKeyboard() called. focusedField(before)=\(String(describing: focusedField))")
         focusedField = nil
         // 兜底：即便某些场景没走 FocusState，也强制收起键盘
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        dbg("dismissKeyboard() done. focusedField(after)=\(String(describing: focusedField))")
     }
 
     private var locationTextBinding: Binding<String> {
@@ -429,46 +439,57 @@ struct ScheduleDetailSheet: View {
                                     .foregroundColor(iconColor)
                                     .frame(width: 24)
                                 
-                                Group {
-                                    if focusedField == .description {
-                                        TextField("添加备注", text: $editedEvent.description, axis: .vertical)
-                                            .font(.system(size: 16))
-                                            .foregroundColor(primaryTextColor)
-                                            .lineLimit(4...10)
-                                            .lineSpacing(6)
-                                            .focused($focusedField, equals: .description)
-                                            // 多行 TextField 默认回车是“换行”，这里改成“完成并收起键盘”
-                                            .onChange(of: editedEvent.description) { _, newValue in
-                                                guard newValue.contains("\n") else { return }
-                                                let sanitized = newValue
-                                                    .replacingOccurrences(of: "\n", with: " ")
-                                                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                                                if editedEvent.description != sanitized {
-                                                    editedEvent.description = sanitized
-                                                }
-                                                dismissKeyboard()
+                                // ✅ 关键修复：
+                                // FocusState 只有在“对应 .focused(...) 的输入控件已在视图树中存在”时，程序性设焦点才会生效。
+                                // 之前这里是「focusedField == .description 才创建 TextField」，导致你点击时 TextField 还不存在，
+                                // SwiftUI 会直接丢弃 focusedField 的赋值（你日志里就是 set 后仍为 nil）。
+                                // 现在改成：TextField 始终存在，用 overlay 展示 placeholder / LinkifiedText。
+                                ZStack(alignment: .topLeading) {
+                                    TextField("添加备注", text: $editedEvent.description, axis: .vertical)
+                                        .font(.system(size: 16))
+                                        .foregroundColor(primaryTextColor)
+                                        .lineLimit(4...10)
+                                        .lineSpacing(6)
+                                        .focused($focusedField, equals: .description)
+                                        // 多行 TextField 默认回车是“换行”，这里改成“完成并收起键盘”
+                                        .onChange(of: editedEvent.description) { _, newValue in
+                                            guard newValue.contains("\n") else { return }
+                                            let sanitized = newValue
+                                                .replacingOccurrences(of: "\n", with: " ")
+                                                .trimmingCharacters(in: .whitespacesAndNewlines)
+                                            if editedEvent.description != sanitized {
+                                                editedEvent.description = sanitized
                                             }
-                                    } else {
+                                            dismissKeyboard()
+                                        }
+                                        // 未聚焦时隐藏真实输入（由 overlay 展示更美观的文本/链接）
+                                        .opacity(focusedField == .description ? 1 : 0.01)
+
+                                    if focusedField != .description {
                                         let trimmed = editedEvent.description.trimmingCharacters(in: .whitespacesAndNewlines)
-                                        if trimmed.isEmpty {
-                                            Text("添加备注")
-                                                .font(.system(size: 16))
-                                                .foregroundColor(secondaryTextColor)
+                                        Group {
+                                            if trimmed.isEmpty {
+                                                Text("添加备注")
+                                                    .font(.system(size: 16))
+                                                    .foregroundColor(secondaryTextColor)
+                                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                            } else {
+                                                LinkifiedText(
+                                                    text: editedEvent.description,
+                                                    font: .system(size: 16),
+                                                    textColor: primaryTextColor,
+                                                    linkColor: .blue,
+                                                    lineSpacing: 6,
+                                                    lineLimit: 10
+                                                )
                                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                                .contentShape(Rectangle())
-                                                .onTapGesture { focusedField = .description }
-                                        } else {
-                                            LinkifiedText(
-                                                text: editedEvent.description,
-                                                font: .system(size: 16),
-                                                textColor: primaryTextColor,
-                                                linkColor: .blue,
-                                                lineSpacing: 6,
-                                                lineLimit: 10
-                                            )
-                                            .frame(maxWidth: .infinity, alignment: .leading)
-                                            .contentShape(Rectangle())
-                                            .onTapGesture { focusedField = .description }
+                                            }
+                                        }
+                                        .contentShape(Rectangle())
+                                        .onTapGesture {
+                                            dbg("notes overlay tapped. focusedField(before)=\(String(describing: focusedField))")
+                                            focusedField = .description
+                                            dbg("notes overlay set focus -> .description. focusedField(now)=\(String(describing: focusedField))")
                                         }
                                     }
                                 }
@@ -478,9 +499,10 @@ struct ScheduleDetailSheet: View {
                             Spacer(minLength: 120)
                         }
                     }
-                    // 点击空白处时：取消焦点并收起键盘（标题/地点/备注通用）
-                    .contentShape(Rectangle())
-                    .onTapGesture { dismissKeyboard() }
+                    // ✅ 说明：
+                    // 这里如果把“点击收起键盘”的手势挂在内容容器上，会与“备注（未编辑态）点击 -> 程序性聚焦”打架，
+                    // 导致备注刚 focus 就被同一次点击清掉，从而无法弹出键盘。
+                    // 所以不在内容容器上全局监听点击；仅在确有需要的控件上显式 dismissKeyboard()。
                     
                     // 弹出式 DatePicker
                     if let type = activeDatePicker {
@@ -513,7 +535,7 @@ struct ScheduleDetailSheet: View {
                             .padding(.horizontal, 12)
                             .padding(.vertical, 6)
                         }
-                        .glassEffect(in: .rect(cornerRadius: 24))
+                        .yy_glassEffectCompat(cornerRadius: 24)
                         .padding(.horizontal, 20)
                         // 视觉微调：日历弹层与上方时间区域拉开一点距离，避免“挨得太紧”
                         .offset(y: 12)
@@ -657,14 +679,20 @@ struct ScheduleDetailSheet: View {
             Text(alertMessage ?? "")
         }
         .onAppear {
+            dbg("onAppear. initial focusedField=\(String(describing: focusedField))")
             // 与数据模型对齐：后端 full_day -> isFullDay
             uiAllDay = editedEvent.isFullDay
         }
+        .onChange(of: focusedField) { _, newValue in
+            dbg("focusedField changed -> \(String(describing: newValue))")
+        }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
             isKeyboardVisible = true
+            dbg("keyboardWillShow. focusedField=\(String(describing: focusedField))")
         }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
             isKeyboardVisible = false
+            dbg("keyboardWillHide. focusedField=\(String(describing: focusedField))")
         }
         .onReceive(pcmRecorder.$audioLevel) { self.audioPower = mapAudioLevelToPower($0) }
         // 远端详情覆盖 event 时：如果用户还没动过编辑，就同步草稿，避免“看起来没改但其实草稿和最新值不一致”

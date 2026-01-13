@@ -50,14 +50,14 @@ struct MeetingSummaryCardStackView: View {
                                 onOpenDetail?(meeting)
                             }
                             .onLongPressGesture(
-                                minimumDuration: 0.12,
-                                maximumDistance: 20,
+                                minimumDuration: 0.08,
+                                maximumDistance: 28,
                                 perform: {
                                     guard !meeting.isObsolete else { return } // 🚫 废弃卡片不触发菜单
                                     guard menuMeetingId == nil else { return }
                                     lastMenuOpenedAt = CACurrentMediaTime()
                                     HapticFeedback.selection()
-                                    withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                                    withAnimation(.spring(response: 0.26, dampingFraction: 0.82)) {
                                         menuMeetingId = meeting.id
                                     }
                                 },

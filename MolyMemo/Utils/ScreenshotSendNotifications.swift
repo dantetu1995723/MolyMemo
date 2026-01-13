@@ -11,8 +11,8 @@ enum ScreenshotSendNotifications {
     static func postSending(thumbnailRelativePath: String?) async {
         await post(
             id: sendingId,
-            title: "正在发送截图",
-            body: "已截屏，发送到圆圆中…",
+            title: "正在发送给MolyMemo",
+            body: "已截屏，发送到MolyMemo中…",
             thumbnailRelativePath: thumbnailRelativePath
         )
     }
@@ -21,7 +21,7 @@ enum ScreenshotSendNotifications {
         await post(
             id: resultId,
             title: success ? "截图已发送" : "截图发送失败",
-            body: success ? "已发送到圆圆聊天室" : "请稍后重试",
+            body: success ? "已发送到MolyMemo聊天室" : "请稍后重试",
             thumbnailRelativePath: thumbnailRelativePath
         )
     }
