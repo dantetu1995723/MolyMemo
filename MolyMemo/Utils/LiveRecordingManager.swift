@@ -10,6 +10,8 @@ class LiveRecordingManager: ObservableObject {
     static let shared = LiveRecordingManager()
     
     @Published var isRecording = false
+    /// 用户点击“开始录音”后到真正开始录音之间的过渡态，用来让 UI 立刻响应，避免主线程被初始化工作卡住
+    @Published var isStartingRecording = false
     @Published var isPaused = false
     @Published var recognizedText = ""
     @Published var recordingDuration: TimeInterval = 0
@@ -41,6 +43,22 @@ class LiveRecordingManager: ObservableObject {
         // 启动时清理所有残留的Live Activity
         cleanupStaleActivities()
     }
+
+    private func runOnMain(_ block: @escaping () -> Void) {
+        if Thread.isMainThread { block() } else { DispatchQueue.main.async(execute: block) }
+    }
+
+    private func hasMicrophonePermission() -> Bool {
+        if #available(iOS 17.0, *) {
+            return AVAudioApplication.shared.recordPermission == .granted
+        } else {
+            return AVAudioSession.sharedInstance().recordPermission == .granted
+        }
+    }
+
+    private func hasSpeechPermission() -> Bool {
+        SFSpeechRecognizer.authorizationStatus() == .authorized
+    }
     
     // 开始录音
     /// - Parameter publishTranscriptionToUI: 是否在 Live Activity / 灵动岛显示实时转写文本（默认 true）。
@@ -49,15 +67,29 @@ class LiveRecordingManager: ObservableObject {
         self.publishTranscriptionToUI = publishTranscriptionToUI
         self.suppressChatCardOnUpload = suppressChatCardOnUpload
         print("[RecordingFlow] 🎙️ startRecording publishToUI=\(publishTranscriptionToUI)")
+
+        // 先让 UI 进入“启动中”，避免用户感觉点了没反应
+        runOnMain { [weak self] in
+            guard let self else { return }
+            if self.isRecording { return }
+            self.isStartingRecording = true
+        }
         
-        // 请求权限
+        // 快路径：权限都已有时，不走系统弹窗链路，直接开始初始化
+        if hasMicrophonePermission(), hasSpeechPermission() {
+            setupRecordingAsync()
+            return
+        }
+
+        // 请求权限（可能触发系统弹窗）
         requestPermissions { [weak self] granted in
+            guard let self else { return }
             guard granted else {
                 print("[RecordingFlow] ❌ startRecording permission denied")
+                self.runOnMain { self.isStartingRecording = false }
                 return
             }
-            
-            self?.setupRecording()
+            self.setupRecordingAsync()
         }
     }
     
@@ -90,8 +122,16 @@ class LiveRecordingManager: ObservableObject {
         }
     }
     
-    private func setupRecording() {
-        // 配置音频会话 - 支持后台录音
+    /// 把耗时初始化尽量挪到后台，主线程只做“立刻刷新 UI”
+    private func setupRecordingAsync() {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else { return }
+            self.setupRecordingInBackground()
+        }
+    }
+
+    private func setupRecordingInBackground() {
+        // 配置音频会话 - 支持后台录音（放后台，避免主线程卡顿）
         let audioSession = AVAudioSession.sharedInstance()
         do {
             let options: AVAudioSession.CategoryOptions = [
@@ -103,16 +143,15 @@ class LiveRecordingManager: ObservableObject {
             try audioSession.setActive(true)
         } catch {
             print("[RecordingFlow] ❌ setupRecording audioSession failed -> \(error.localizedDescription)")
+            runOnMain { [weak self] in self?.isStartingRecording = false }
             return
         }
-        
+
         // 准备录音文件（统一存放在 MeetingRecordings 文件夹）
         let recordingsFolder = ensureRecordingsFolder()
-        audioURL = recordingsFolder.appendingPathComponent("meeting_\(Int(Date().timeIntervalSince1970)).m4a")
-        
-        guard let audioURL = audioURL else { return }
-        print("[RecordingFlow] 📁 recording file = \(audioURL.path)")
-        
+        let newAudioURL = recordingsFolder.appendingPathComponent("meeting_\(Int(Date().timeIntervalSince1970)).m4a")
+        print("[RecordingFlow] 📁 recording file = \(newAudioURL.path)")
+
         // 配置录音设置（m4a AAC 格式，高质量压缩）
         let settings: [String: Any] = [
             AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
@@ -121,34 +160,40 @@ class LiveRecordingManager: ObservableObject {
             AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
             AVEncoderBitRateKey: 128000
         ]
-        
+
         do {
-            // 创建录音器
-            audioRecorder = try AVAudioRecorder(url: audioURL, settings: settings)
-            audioRecorder?.record()
+            let recorder = try AVAudioRecorder(url: newAudioURL, settings: settings)
+            recorder.record()
             print("[RecordingFlow] ✅ AVAudioRecorder started (m4a/AAC 44.1k 1ch)")
-            
-            // 重置状态
-            isRecording = true
-            recognizedText = ""
-            recordingDuration = 0
-            
-            // 启动计时器 - 使用 common 模式确保后台继续运行
-            recordingTimer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
-                guard let self = self else { return }
-                self.recordingDuration += 0.5
-                // 不再用灵动岛展示计时：避免频繁刷新 Live Activity
+
+            // 主线程：立刻刷新 UI（按钮/列表）
+            runOnMain { [weak self] in
+                guard let self else { return }
+                self.audioURL = newAudioURL
+                self.audioRecorder = recorder
+                self.isRecording = true
+                self.isStartingRecording = false
+                self.isPaused = false
+                self.recognizedText = ""
+                self.recordingDuration = 0
+
+                // 启动计时器放主线程 runloop，避免后台 runloop 不运行
+                self.recordingTimer?.invalidate()
+                self.recordingTimer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
+                    guard let self else { return }
+                    self.recordingDuration += 0.5
+                }
+                RunLoop.main.add(self.recordingTimer!, forMode: .common)
             }
-            RunLoop.current.add(recordingTimer!, forMode: .common)
-            
-            // 启动实时语音识别
-            startSpeechRecognition()
-            
-            // 启动 Live Activity
-            startLiveActivity()
-            
+
+            // 语音识别/Live Activity 延后启动，优先让 UI 先“动起来”
+            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.15) { [weak self] in
+                self?.startSpeechRecognition()
+                self?.startLiveActivity()
+            }
         } catch {
             print("[RecordingFlow] ❌ AVAudioRecorder create/start failed -> \(error.localizedDescription)")
+            runOnMain { [weak self] in self?.isStartingRecording = false }
         }
     }
     
@@ -272,6 +317,7 @@ class LiveRecordingManager: ObservableObject {
         let finalDuration = recordingDuration
         let finalAudioURL = audioURL
 
+        isStartingRecording = false
         isRecording = false
         isPaused = false
 

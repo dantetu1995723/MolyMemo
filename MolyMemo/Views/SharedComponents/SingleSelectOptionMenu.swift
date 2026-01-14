@@ -22,6 +22,8 @@ struct SingleSelectOptionMenu: View {
         Self.rowHeight * min(CGFloat(optionCount), Self.maxVisibleRows)
     }
     
+    @State private var contentOpacity: Double = 0
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ScrollViewReader { proxy in
@@ -46,7 +48,7 @@ struct SingleSelectOptionMenu: View {
                                     }
                                 }
                                 .padding(.horizontal, 14)
-                        .frame(height: Self.rowHeight)
+                                .frame(height: Self.rowHeight)
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
@@ -58,17 +60,22 @@ struct SingleSelectOptionMenu: View {
                         }
                     }
                 }
-                // 打开时让滚动位置对齐到“已勾选项”附近
                 .onAppear {
                     let sel = (selectedValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !sel.isEmpty else { return }
                     DispatchQueue.main.async {
                         proxy.scrollTo(sel, anchor: .center)
                     }
+                    
+                    // 内容渐显，落后于背景变形
+                    withAnimation(.easeOut(duration: 0.2).delay(0.1)) {
+                        contentOpacity = 1.0
+                    }
                 }
             }
-            // 约 3.5 行高度：露半行提示“可滚动”
             .frame(maxHeight: Self.maxHeight(optionCount: options.count))
+            .opacity(contentOpacity)
+            .offset(y: (1.0 - contentOpacity) * 6)
         }
         .yy_glassEffectCompat(cornerRadius: 24)
     }

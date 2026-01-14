@@ -418,22 +418,23 @@ struct TodoListView: View {
             
             // 右上角月份下拉菜单（liquid glass）
             if showMonthPicker {
-                Color.black.opacity(0.001)
+                Color.black.opacity(0.06)
                     .ignoresSafeArea()
+                    .transition(.opacity)
                     .onTapGesture {
-                        withAnimation(.easeOut(duration: 0.18)) {
+                        withAnimation(.spring(duration: 0.4, bounce: 0.18)) {
                             showMonthPicker = false
                         }
                     }
                 
                 monthPickerMenu()
                     .frame(width: monthMenuWidth)
-                    .matchedGeometryEffect(id: "monthPickerMorph", in: monthPickerNamespace)
+                    .matchedGeometryEffect(id: "monthPickerMorph", in: monthPickerNamespace, isSource: showMonthPicker)
                     // 关键：ZStack 子视图默认居中；先对齐到左上角，再用 offset 以“同一坐标系”定位，避免位置飘
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     // “原位变形”：菜单覆盖/替换年月胶囊的位置
                     .offset(monthMenuOffset())
-                    .transition(.opacity.combined(with: .scale(scale: 0.985, anchor: .topTrailing)))
+                    .transition(.opacity)
                     .zIndex(999)
             }
         }
@@ -586,7 +587,7 @@ struct TodoListView: View {
     private func monthTitlePill() -> some View {
         Button {
             HapticFeedback.light()
-            withAnimation(.easeOut(duration: 0.18)) {
+            withAnimation(.spring(duration: 0.4, bounce: 0.18)) {
                 showMonthPicker.toggle()
             }
         } label: {
@@ -606,12 +607,22 @@ struct TodoListView: View {
             .frame(height: 34)
             .background(LiquidGlassCapsuleBackground())
             .accessibilityLabel(Text("选择月份，当前 \(monthTitle)"))
+            // 打开时让胶囊本体淡出（仅处理“视觉”，不影响菜单的变形动画）
+            .opacity(showMonthPicker ? 0 : 1)
+            .animation(.easeOut(duration: 0.12), value: showMonthPicker)
         }
-        .buttonStyle(.plain)
-        // 让“菜单”从这里原位变形出来：打开时隐藏胶囊本体，但保留几何供动画使用
-        .opacity(showMonthPicker ? 0 : 1)
-        .matchedGeometryEffect(id: "monthPickerMorph", in: monthPickerNamespace)
+        // 仅做“按下淡出”，去掉缩放按压，避免卡顿
+        .buttonStyle(FadeOnPressButtonStyle())
+        .matchedGeometryEffect(id: "monthPickerMorph", in: monthPickerNamespace, isSource: !showMonthPicker)
         .modifier(NamedFrameReporter(frame: $monthPillFrame, coordinateSpace: .named(monthPickerCoordSpace)))
+    }
+
+    private struct FadeOnPressButtonStyle: ButtonStyle {
+        func makeBody(configuration: Configuration) -> some View {
+            configuration.label
+                .opacity(configuration.isPressed ? 0.55 : 1.0)
+                .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+        }
     }
     
     private let monthMenuWidth: CGFloat = 200
@@ -633,7 +644,7 @@ struct TodoListView: View {
                         currentMonth = m
                     }
                 }
-                withAnimation(.easeOut(duration: 0.18)) {
+                withAnimation(.spring(duration: 0.4, bounce: 0.18)) {
                     showMonthPicker = false
                 }
             }

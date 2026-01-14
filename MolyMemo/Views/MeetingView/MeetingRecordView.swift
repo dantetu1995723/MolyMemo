@@ -193,6 +193,9 @@ struct MeetingRecordView: View {
     @State private var loadError: String?
     @State private var searchText: String = ""
 
+    /// 处理通知到达顺序的竞态：JobCreated 可能早于占位卡插入
+    @State private var pendingRemoteIdsByAudioPath: [String: String] = [:]
+
     // 删除提示
     @State private var showDeleteAlert: Bool = false
     @State private var deleteAlertMessage: String = ""
@@ -224,7 +227,7 @@ struct MeetingRecordView: View {
                     .font(.system(size: 18, weight: .medium, design: .rounded))
                     .foregroundColor(Color.black.opacity(0.55))
 
-                Text("点击右上角 + 开始新录音")
+                Text("点击右上角音浪开始新录音")
                     .font(.system(size: 14, weight: .regular, design: .rounded))
                     .foregroundColor(Color.black.opacity(0.35))
             }
@@ -371,17 +374,44 @@ struct MeetingRecordView: View {
                 themeColor: themeColor,
                 onBack: { dismiss() },
                 customTrailing: AnyView(
-                    Button(action: {
-                        HapticFeedback.light()
+                    Button {
                         if !recordingManager.isRecording {
                             // 会议记录页内发起：不要往聊天室插入“正在生成”卡片
                             recordingManager.startRecording(suppressChatCardOnUpload: true)
                         }
-                    }) {
-                        Image(systemName: "plus")
-                            .font(.system(size: 20, weight: .medium))
-                            .foregroundColor(.black.opacity(0.7))
+                    } label: {
+                        let isRecording = recordingManager.isRecording || recordingManager.isStartingRecording
+
+                        Group {
+                            if #available(iOS 17.0, *) {
+                                Image(systemName: "waveform")
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundColor(isRecording ? .white : themeColor.opacity(0.85))
+                                    .symbolEffect(.pulse, isActive: isRecording)
+                            } else {
+                                Image(systemName: "waveform")
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundColor(isRecording ? .white : themeColor.opacity(0.85))
+                                    .scaleEffect(isRecording ? 1.08 : 1.0)
+                                    .animation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true), value: isRecording)
+                            }
+                        }
+                        .frame(width: 34, height: 34)
+                        .background(
+                            Group {
+                                if isRecording {
+                                    Circle()
+                                        .fill(Color.black)
+                                        .shadow(color: Color.black.opacity(0.18), radius: 10, x: 0, y: 6)
+                                } else {
+                                    GlassButtonBackground()
+                                }
+                            }
+                        )
+                        .animation(.spring(response: 0.28, dampingFraction: 0.8), value: isRecording)
                     }
+                    .buttonStyle(.plain)
+                    .disabled(recordingManager.isRecording || recordingManager.isStartingRecording)
                 )
             )
         }
@@ -478,11 +508,11 @@ struct MeetingRecordView: View {
 
             let date = userInfo["date"] as? Date ?? Date()
             let duration = userInfo["duration"] as? TimeInterval ?? 0
-            let audioPath = (userInfo["audioPath"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let audioPath = Self.normalizeLocalAudioPath(userInfo["audioPath"] as? String ?? "")
             guard !audioPath.isEmpty else { return }
 
             // 去重：同一个 audioPath 的占位卡只插一次
-            if recordingItems.contains(where: { ($0.audioURL?.isFileURL == true) && ($0.audioURL?.path == audioPath) && ($0.status == "generating" || $0.status == "processing") }) {
+            if recordingItems.contains(where: { ($0.audioURL?.isFileURL == true) && ($0.audioURL?.standardizedFileURL.path == audioPath) && ($0.status == "generating" || $0.status == "processing") }) {
                 return
             }
 
@@ -497,6 +527,14 @@ struct MeetingRecordView: View {
             placeholder.status = "generating"
             placeholder.isFromRemote = false
 
+            // 如果 jobCreated 先到，这里补上 remoteId，避免后续“去重失败”导致双卡
+            if let rid = pendingRemoteIdsByAudioPath[audioPath]?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !rid.isEmpty {
+                placeholder.remoteId = rid
+                placeholder.status = "processing"
+                pendingRemoteIdsByAudioPath.removeValue(forKey: audioPath)
+            }
+
             withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
                 recordingItems.insert(placeholder, at: 0)
             }
@@ -507,13 +545,16 @@ struct MeetingRecordView: View {
                 .receive(on: RunLoop.main)
         ) { notification in
             guard let userInfo = notification.userInfo else { return }
-            let audioPath = (userInfo["audioPath"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let audioPath = Self.normalizeLocalAudioPath(userInfo["audioPath"] as? String ?? "")
             let remoteId = (userInfo["remoteId"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             guard !audioPath.isEmpty, !remoteId.isEmpty else { return }
 
-            if let idx = recordingItems.firstIndex(where: { ($0.audioURL?.isFileURL == true) && ($0.audioURL?.path == audioPath) }) {
+            if let idx = recordingItems.firstIndex(where: { ($0.audioURL?.isFileURL == true) && ($0.audioURL?.standardizedFileURL.path == audioPath) }) {
                 recordingItems[idx].remoteId = remoteId
                 recordingItems[idx].status = "processing"
+            } else {
+                // 竞态：占位卡尚未插入，先缓存，等插入时再补上
+                pendingRemoteIdsByAudioPath[audioPath] = remoteId
             }
         }
         // ✅ 生成完成：把占位卡立即更新成正常条目（无需等刷新）
@@ -522,7 +563,7 @@ struct MeetingRecordView: View {
                 .receive(on: RunLoop.main)
         ) { notification in
             guard let userInfo = notification.userInfo else { return }
-            let audioPath = (userInfo["audioPath"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let audioPath = Self.normalizeLocalAudioPath(userInfo["audioPath"] as? String ?? "")
             guard !audioPath.isEmpty else { return }
 
             let remoteId = (userInfo["remoteId"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -531,8 +572,14 @@ struct MeetingRecordView: View {
             let duration = userInfo["duration"] as? TimeInterval
             let summary = userInfo["summary"] as? String
 
-            if let idx = recordingItems.firstIndex(where: { ($0.audioURL?.isFileURL == true) && ($0.audioURL?.path == audioPath) }) {
-                if let rid = remoteId, !rid.isEmpty { recordingItems[idx].remoteId = rid }
+            let rid = (remoteId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if let idx = recordingItems.firstIndex(where: { item in
+                let itemRid = (item.remoteId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                if !rid.isEmpty, itemRid == rid { return true }
+                let lp = (item.audioURL?.isFileURL == true) ? (item.audioURL?.standardizedFileURL.path ?? "") : ""
+                return !audioPath.isEmpty && lp == audioPath
+            }) {
+                if !rid.isEmpty { recordingItems[idx].remoteId = rid }
                 if let t = title, !t.isEmpty { recordingItems[idx].title = t }
                 if let d = date { recordingItems[idx].createdAt = d }
                 if let du = duration { recordingItems[idx].duration = du }
@@ -566,7 +613,7 @@ struct MeetingRecordView: View {
 
             guard let idx = recordingItems.firstIndex(where: { item in
                 let sameRid = (!rid.isEmpty) && (item.remoteId?.trimmingCharacters(in: .whitespacesAndNewlines) == rid)
-                let sameLocalPath = (!lp.isEmpty) && (item.audioURL?.isFileURL == true) && (item.audioURL?.path == lp)
+                let sameLocalPath = (!lp.isEmpty) && (item.audioURL?.isFileURL == true) && (item.audioURL?.standardizedFileURL.path == lp)
                 return sameRid || sameLocalPath
             }) else { return }
 
@@ -582,6 +629,17 @@ struct MeetingRecordView: View {
     }
     
     // MARK: - 录音控制方法
+
+    /// 规范化本地音频路径（兼容 "file://..." 与普通 path）
+    private static func normalizeLocalAudioPath(_ raw: String) -> String {
+        let s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !s.isEmpty else { return "" }
+        if let u = URL(string: s), u.isFileURL {
+            return u.standardizedFileURL.path
+        }
+        // 兜底：当作本地路径
+        return URL(fileURLWithPath: s).standardizedFileURL.path
+    }
     
     private func loadRecordingsFromMeetings() {
         // 使用异步任务从后端加载
