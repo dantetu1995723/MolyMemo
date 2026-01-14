@@ -105,7 +105,7 @@ struct ResumeMeetingRecordingIntent: AppIntent {
 // 停止会议录音 Intent
 struct StopMeetingRecordingIntent: AppIntent {
     static var title: LocalizedStringResource = "停止录音"
-    static var description = IntentDescription("停止录音并保存到会议纪要")
+    static var description = IntentDescription("停止录音并保存到会议记录")
     static var openAppWhenRun: Bool = false  // 后台执行即可：录音正在进行时主App必然存活（后台音频），无需拉起前台
     
     @MainActor

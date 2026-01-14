@@ -28,6 +28,28 @@ final class HoldToTalkPCMRecorder: ObservableObject {
     private var pcmData = Data()
     private var bytesPerFrame: Int = 2 // int16 mono
 
+    // MARK: - Main-thread publishing helpers
+    // SwiftUI 要求 @Published 的变更必须在主线程发布，否则会出现紫色运行时报警。
+    private func publishIsRecording(_ value: Bool) {
+        if Thread.isMainThread {
+            isRecording = value
+        } else {
+            DispatchQueue.main.sync {
+                self.isRecording = value
+            }
+        }
+    }
+
+    private func publishAudioLevel(_ value: Float) {
+        if Thread.isMainThread {
+            audioLevel = value
+        } else {
+            DispatchQueue.main.sync {
+                self.audioLevel = value
+            }
+        }
+    }
+
     func start() async throws {
         if isRecording {
             _ = stop(discard: false)
@@ -39,7 +61,8 @@ final class HoldToTalkPCMRecorder: ObservableObject {
         try configureAudioSessionForRecording()
 
         pcmData = Data()
-        audioLevel = 0
+        // @Published 更新回到主线程，避免 SwiftUI 报警
+        publishAudioLevel(0)
 
         let inputNode = engine.inputNode
         let bus = 0
@@ -60,7 +83,7 @@ final class HoldToTalkPCMRecorder: ObservableObject {
             throw RecorderError.cannotCreateConverter
         }
 
-        isRecording = true
+        publishIsRecording(true)
         print("[HoldToTalk] 🎙️ start PCM engine capture (in=\(inFormat.sampleRate)Hz ch=\(inFormat.channelCount))")
 
         // 捕获必要对象，避免在 @Sendable 闭包里直接触碰 main-actor 状态
@@ -99,7 +122,7 @@ final class HoldToTalkPCMRecorder: ObservableObject {
         do {
             try engine.start()
         } catch {
-            isRecording = false
+            publishIsRecording(false)
             throw RecorderError.engineStartFailed
         }
     }
@@ -107,8 +130,9 @@ final class HoldToTalkPCMRecorder: ObservableObject {
     /// - Returns: 16k/16bit/mono PCM bytes（Int16 little-endian）
     func stop(discard: Bool) -> Data {
         let wasRecording = isRecording
-        isRecording = false
-        audioLevel = 0
+        // 先把对外状态切回“非录音”，且必须在主线程发布（否则 SwiftUI 报警）
+        publishIsRecording(false)
+        publishAudioLevel(0)
 
         if engine.isRunning {
             engine.stop()

@@ -288,6 +288,13 @@ struct TodoListView: View {
     @State private var dragBeganAtTop: Bool? = nil
     @State private var didInitialize = false
     
+    // MARK: - 月份下拉选择（右上角）
+    @State private var showMonthPicker: Bool = false
+    @State private var monthPillFrame: CGRect = .zero
+    @State private var rootFrame: CGRect = .zero
+    @Namespace private var monthPickerNamespace
+    private let monthPickerCoordSpace: String = "TodoListView.MonthPickerCoordSpace"
+    
     // MARK: - 后端日程（/api/v1/schedules）
     @State private var remoteEvents: [ScheduleEvent] = []
     @State private var remoteIsLoading: Bool = false
@@ -340,8 +347,13 @@ struct TodoListView: View {
             ModuleBackgroundView(themeColor: themeColor)
             
             VStack(spacing: 0) {
-                // 顶部导航栏
-                calendarNavigationBar()
+                // 顶部导航栏（与「联系人」一致）
+                ModuleNavigationBar(
+                    title: "日程",
+                    themeColor: themeColor,
+                    onBack: { dismiss() },
+                    customTrailing: AnyView(monthTitlePill())
+                )
                 
                 // 星期标题行（固定在顶部）
                 weekdayHeader()
@@ -403,8 +415,32 @@ struct TodoListView: View {
                 }
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
+            
+            // 右上角月份下拉菜单（liquid glass）
+            if showMonthPicker {
+                Color.black.opacity(0.001)
+                    .ignoresSafeArea()
+                    .onTapGesture {
+                        withAnimation(.easeOut(duration: 0.18)) {
+                            showMonthPicker = false
+                        }
+                    }
+                
+                monthPickerMenu()
+                    .frame(width: monthMenuWidth)
+                    .matchedGeometryEffect(id: "monthPickerMorph", in: monthPickerNamespace)
+                    // 关键：ZStack 子视图默认居中；先对齐到左上角，再用 offset 以“同一坐标系”定位，避免位置飘
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    // “原位变形”：菜单覆盖/替换年月胶囊的位置
+                    .offset(monthMenuOffset())
+                    .transition(.opacity.combined(with: .scale(scale: 0.985, anchor: .topTrailing)))
+                    .zIndex(999)
+            }
         }
         .animation(.spring(response: 0.35, dampingFraction: 0.8), value: selectedTodo != nil)
+        // 关键修复：用同一 coordinateSpace 采集 frame，避免 global/local 坐标系混用导致“位置飘”
+        .coordinateSpace(name: monthPickerCoordSpace)
+        .modifier(NamedFrameReporter(frame: $rootFrame, coordinateSpace: .named(monthPickerCoordSpace)))
         .sheet(isPresented: $showAddSheet) {
             TodoEditView(defaultStartTime: selectedDate)
                 .presentationDragIndicator(.visible)
@@ -546,37 +582,111 @@ struct TodoListView: View {
         }
     }
     
-    // MARK: - 顶部导航栏
-    private func calendarNavigationBar() -> some View {
-        ZStack {
-            // 标题永远在容器几何中心（不受左侧按钮宽度影响）
-            Text(monthTitle)
-                .font(.system(size: 20, weight: .bold, design: .rounded))
-                .foregroundColor(.black.opacity(0.85))
-                // 预留两侧按钮区域，避免标题与返回按钮发生视觉重叠
-                .padding(.horizontal, 60)
-                .frame(maxWidth: .infinity, alignment: .center)
-            
-            HStack {
-                Button(action: { dismiss() }) {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundColor(.black.opacity(0.7))
-                        .frame(width: 44, height: 44, alignment: .center)
-                }
-                
-                Spacer()
+    // MARK: - 导航栏右侧：年月胶囊（自然融入背景）
+    private func monthTitlePill() -> some View {
+        Button {
+            HapticFeedback.light()
+            withAnimation(.easeOut(duration: 0.18)) {
+                showMonthPicker.toggle()
             }
+        } label: {
+            HStack(spacing: 6) {
+                Text(monthTitle)
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundColor(.black.opacity(0.62))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(themeColor.opacity(0.60))
+                    .opacity(0.6)
+            }
+            .padding(.horizontal, 12)
+            .frame(height: 34)
+            .background(LiquidGlassCapsuleBackground())
+            .accessibilityLabel(Text("选择月份，当前 \(monthTitle)"))
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 12)
-        .background(Color.white.opacity(0.01))
+        .buttonStyle(.plain)
+        // 让“菜单”从这里原位变形出来：打开时隐藏胶囊本体，但保留几何供动画使用
+        .opacity(showMonthPicker ? 0 : 1)
+        .matchedGeometryEffect(id: "monthPickerMorph", in: monthPickerNamespace)
+        .modifier(NamedFrameReporter(frame: $monthPillFrame, coordinateSpace: .named(monthPickerCoordSpace)))
+    }
+    
+    private let monthMenuWidth: CGFloat = 200
+    
+    private func monthPickerMenu() -> some View {
+        let months = monthsRange()
+        let map = Dictionary(uniqueKeysWithValues: months.map { (monthValue($0), $0) })
+        let options = months.map { m in
+            SingleSelectOptionMenu.Option(title: monthTitle(for: m), value: monthValue(m))
+        }
+        
+        return SingleSelectOptionMenu(
+            title: "选择月份",
+            options: options,
+            selectedValue: monthValue(currentMonth),
+            onSelect: { v in
+                if let m = map[v] {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                        currentMonth = m
+                    }
+                }
+                withAnimation(.easeOut(duration: 0.18)) {
+                    showMonthPicker = false
+                }
+            }
+        )
+    }
+    
+    private func monthMenuOffset() -> CGSize {
+        // 让菜单“覆盖触发胶囊的位置”，看起来像原位展开
+        let height = SingleSelectOptionMenu.maxHeight(optionCount: monthsRange().count)
+        return PopupMenuPositioning.coveringRowOffset(
+            for: monthPillFrame,
+            in: rootFrame,
+            menuWidth: monthMenuWidth,
+            menuHeight: height,
+            topPadding: 12,
+            bottomPadding: 16
+        )
+    }
+
+    // MARK: - 本地坐标系 frame 采集（避免 global/local 混用）
+    private struct NamedFrameReporter: ViewModifier {
+        @Binding var frame: CGRect
+        let coordinateSpace: CoordinateSpace
+
+        func body(content: Content) -> some View {
+            content.background(
+                GeometryReader { geo in
+                    Color.clear
+                        .onAppear { frame = geo.frame(in: coordinateSpace) }
+                        .onChange(of: geo.frame(in: coordinateSpace)) { _, newValue in
+                            frame = newValue
+                        }
+                }
+            )
+        }
+    }
+    
+    private func monthTitle(for month: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "yyyy年M月"
+        return formatter.string(from: month)
+    }
+    
+    private func monthValue(_ month: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "yyyy-MM"
+        return formatter.string(from: month)
     }
     
     private var monthTitle: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy年M月"
-        return formatter.string(from: currentMonth)
+        monthTitle(for: currentMonth)
     }
     
     // 星期标题行

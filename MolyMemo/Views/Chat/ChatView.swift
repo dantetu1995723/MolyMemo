@@ -1604,9 +1604,9 @@ struct MessageActionButtons: View {
             }
         }
         
-        // 如果有会议纪要卡片，添加卡片信息
+        // 如果有会议记录卡片，添加卡片信息
         if let meetings = message.meetings, !meetings.isEmpty {
-            textToCopy += "\n\n会议纪要：\n"
+            textToCopy += "\n\n会议记录：\n"
             for (index, meeting) in meetings.enumerated() {
                 textToCopy += "\n\(index + 1). \(meeting.title)\n"
                 textToCopy += "   时间：\(meeting.formattedDate)\n"

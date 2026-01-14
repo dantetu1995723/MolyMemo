@@ -948,6 +948,15 @@ class AppState: ObservableObject {
             return
         }
 
+        // ✅ 关键修复：
+        // 聊天历史是“进入聊天室时懒加载”（ChatView.onAppear 里：仅当 chatMessages 为空才加载）。
+        // 但快捷指令的 pending 截图会在 ChatView 出现前就调用本方法，先往 chatMessages 里追加新消息，
+        // 导致 ChatView 误以为“已有消息”而跳过历史加载，于是用户看到“历史没了”（其实是没加载进内存）。
+        // 这里在发送前先把最近历史拉进内存，保证 UI 能看到历史 + 新截图消息。
+        if chatMessages.isEmpty {
+            refreshChatMessagesFromStorageIfNeeded(modelContext: modelContext, limit: 120)
+        }
+
         let pending = PendingScreenshotQueue.listPendingRelativePaths(limit: 4)
         #if DEBUG
         #endif
@@ -2105,9 +2114,9 @@ class AppState: ObservableObject {
     // MARK: - Copy
     private enum MeetingCardCopy {
         /// demo / 真实流程统一：生成完成后的 AI 气泡文案
-        static let agentMessageReady = "已为您创建了一份会议纪要文件，长按可调整。"
+        static let agentMessageReady = "已为您创建了一份会议记录文件，长按可调整。"
         /// 真实录音生成中：避免出现“已生成”时态不一致
-        static let agentMessageGenerating = "正在生成会议纪要，请稍候..."
+        static let agentMessageGenerating = "正在生成会议记录，请稍候..."
     }
     
     /// 用户提示气泡：录音完成，正在生成录音卡片（用于“停止录音”后即时反馈）

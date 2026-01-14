@@ -4,7 +4,7 @@ import SwiftUI
 enum ModuleType: String, CaseIterable {
     case todo = "日程"
     case contact = "联系人"
-    case meeting = "会议纪要"
+    case meeting = "会议记录"
     
     var icon: String {
         switch self {
@@ -22,56 +22,42 @@ struct ModuleContainerView: View {
     @Environment(\.modelContext) private var modelContext
     @State private var selectedModule: ModuleType = .todo
     @State private var showAddSheet = false
-    @Namespace private var tabNamespace
     
     // 主题色 - 统一灰色
     private let themeColor = Color(white: 0.55)
     
-    // 深色版本（用于选中态）
-    private let accentColor = Color(white: 0.35)
-    
     var body: some View {
-        GeometryReader { geometry in
-            ZStack(alignment: .bottom) {
-                // 渐变背景
-                ModuleBackgroundView(themeColor: themeColor)
-                
-                // 内容区域
-                Group {
-                    switch selectedModule {
-                    case .todo:
-                        // 保留原有日历日程界面
-                        TodoListView(showAddSheet: $showAddSheet)
-                    case .contact:
-                        // 联系人模块：与「日程」一致，进入即从后端拉取列表；失败则展示本地缓存
-                        ContactListView()
-                    case .meeting:
-                        MeetingRecordView(showAddSheet: $showAddSheet)
-                    }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                
-                // 底部悬浮导航栏
-                liquidGlassTabBar()
+        // 内容区域
+        Group {
+            switch selectedModule {
+            case .todo:
+                // 保留原有日历日程界面
+                TodoListView(showAddSheet: $showAddSheet)
+            case .contact:
+                // 联系人模块
+                ContactListView()
+            case .meeting:
+                MeetingRecordView(showAddSheet: $showAddSheet)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(ModuleBackgroundView(themeColor: themeColor))
+        .safeAreaInset(edge: .bottom) {
+            modernTabBar()
+        }
+        .ignoresSafeArea(.keyboard)
     }
     
-    // MARK: - Liquid Glass 底部导航栏
-    private func liquidGlassTabBar() -> some View {
+    // MARK: - 现代铺满底部导航栏
+    private func modernTabBar() -> some View {
         HStack(spacing: 0) {
             ForEach(ModuleType.allCases, id: \.self) { module in
                 tabItem(for: module)
             }
         }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 4)
-        .background(liquidGlassBarBackground())
-        .clipShape(Capsule())
-        .padding(.horizontal, 16)
-        .padding(.bottom, 8)
-        .shadow(color: Color.black.opacity(0.06), radius: 16, x: 0, y: 6)
-        .shadow(color: Color.black.opacity(0.03), radius: 4, x: 0, y: 2)
+        .padding(.horizontal, 0)
+        // 让整体 Tab 栏背景也铺满底部安全区域
+        .background(.ultraThinMaterial)
     }
     
     // 单个标签项
@@ -80,152 +66,44 @@ struct ModuleContainerView: View {
         
         return Button(action: {
             HapticFeedback.light()
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
-                selectedModule = module
-            }
+            selectedModule = module
         }) {
-            VStack(spacing: 3) {
+            VStack(spacing: 4) {
                 Image(systemName: module.icon)
-                    .font(.system(size: 20, weight: isSelected ? .semibold : .regular))
-                    .symbolRenderingMode(.hierarchical)
+                    .font(.system(size: 26))
+                    .symbolVariant(isSelected ? .fill : .none)
                 
                 Text(module.rawValue)
-                    .font(.system(size: 11, weight: isSelected ? .semibold : .medium))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
+                    .font(.system(size: 13, weight: isSelected ? .bold : .medium))
             }
-            .foregroundColor(isSelected ? accentColor : .black.opacity(0.45))
+            .foregroundColor(isSelected ? .black : .black.opacity(0.45))
             .frame(maxWidth: .infinity)
-            .frame(height: 52)
-            .background(
-                Group {
+            .padding(.top, 12)
+            // 底部 padding 调成 0
+            .padding(.bottom, 0) 
+            .background {
+                ZStack {
                     if isSelected {
-                        liquidDropletBackground()
-                            .matchedGeometryEffect(id: "selectedTab", in: tabNamespace)
+                        Rectangle()
+                            .fill(Color.white.opacity(0.92))
+                            // 顶部一点点高光，让“提亮”更干净
+                            .overlay(
+                                LinearGradient(
+                                    colors: [Color.white.opacity(0.35), Color.clear],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
                     }
                 }
-            )
+                // 让选中背景向下延伸，填充系统的安全区域空隙
+                .padding(.bottom, -50)
+            }
+            .contentShape(Rectangle())
         }
-        .buttonStyle(TabItemButtonStyle())
-    }
-    
-    // MARK: - Liquid Glass 水滴选中效果
-    private func liquidDropletBackground() -> some View {
-        ZStack {
-            // 1. 水滴形状 - 主题色染色的玻璃
-            Capsule()
-                .fill(
-                    RadialGradient(
-                        gradient: Gradient(stops: [
-                            .init(color: themeColor.opacity(0.25), location: 0.0),
-                            .init(color: themeColor.opacity(0.12), location: 0.5),
-                            .init(color: themeColor.opacity(0.06), location: 1.0)
-                        ]),
-                        center: .center,
-                        startRadius: 0,
-                        endRadius: 70
-                    )
-                )
-            
-            // 2. 内部高光 - 水滴折射效果
-            Capsule()
-                .fill(
-                    LinearGradient(
-                        gradient: Gradient(stops: [
-                            .init(color: Color.white.opacity(0.5), location: 0.0),
-                            .init(color: Color.white.opacity(0.15), location: 0.3),
-                            .init(color: Color.clear, location: 0.6)
-                        ]),
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-                .scaleEffect(0.95)
-                .offset(y: -1)
-            
-            // 3. 底部阴影 - 水滴立体感
-            Capsule()
-                .fill(
-                    LinearGradient(
-                        gradient: Gradient(stops: [
-                            .init(color: Color.clear, location: 0.5),
-                            .init(color: accentColor.opacity(0.08), location: 0.8),
-                            .init(color: accentColor.opacity(0.15), location: 1.0)
-                        ]),
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-            
-            // 4. 边缘高光 - 水滴表面张力
-            Capsule()
-                .strokeBorder(
-                    LinearGradient(
-                        gradient: Gradient(stops: [
-                            .init(color: Color.white.opacity(0.7), location: 0.0),
-                            .init(color: Color.white.opacity(0.2), location: 0.3),
-                            .init(color: themeColor.opacity(0.2), location: 0.7),
-                            .init(color: Color.white.opacity(0.4), location: 1.0)
-                        ]),
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 1.0
-                )
-        }
-        .padding(.horizontal, 0)
-        .padding(.vertical, 0)
-    }
-    
-    // MARK: - Liquid Glass 导航栏背景
-    private func liquidGlassBarBackground() -> some View {
-        ZStack {
-            // 1. 超薄毛玻璃材质
-            Capsule()
-                .fill(.ultraThinMaterial)
-            
-            // 2. 主题色微染
-            Capsule()
-                .fill(themeColor.opacity(0.08))
-            
-            // 3. 内部柔和渐变 - 玻璃深度感
-            Capsule()
-                .fill(
-                    LinearGradient(
-                        gradient: Gradient(stops: [
-                            .init(color: Color.white.opacity(0.5), location: 0.0),
-                            .init(color: Color.white.opacity(0.2), location: 0.3),
-                            .init(color: Color.white.opacity(0.1), location: 1.0)
-                        ]),
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-            
-            // 4. 顶部高光线 - 玻璃边缘
-            Capsule()
-                .strokeBorder(
-                    LinearGradient(
-                        gradient: Gradient(stops: [
-                            .init(color: Color.white.opacity(0.8), location: 0.0),
-                            .init(color: Color.white.opacity(0.3), location: 0.5),
-                            .init(color: Color.white.opacity(0.5), location: 1.0)
-                        ]),
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 0.5
-                )
-        }
+        .buttonStyle(PlainButtonStyle())
     }
 }
 
-// 标签按钮样式
-private struct TabItemButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? 0.92 : 1.0)
-            .animation(.easeOut(duration: 0.15), value: configuration.isPressed)
-    }
-}
+// MARK: - 移除旧版 Liquid Glass 组件以简化架构
 

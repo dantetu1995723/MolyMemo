@@ -255,7 +255,7 @@ struct MeetingRecordView: View {
                                 VStack(spacing: 16) {
                                     ProgressView()
                                         .scaleEffect(1.2)
-                                    Text("正在加载会议纪要...")
+                                    Text("正在加载会议记录...")
                                         .font(.system(size: 14, weight: .medium, design: .rounded))
                                         .foregroundColor(Color.black.opacity(0.5))
                                 }
@@ -367,7 +367,7 @@ struct MeetingRecordView: View {
         }
         .safeAreaInset(edge: .top) {
             ModuleNavigationBar(
-                title: "会议纪要",
+                title: "会议记录",
                 themeColor: themeColor,
                 onBack: { dismiss() },
                 customTrailing: AnyView(
@@ -445,7 +445,7 @@ struct MeetingRecordView: View {
             }
         }
         .onChange(of: showAddSheet) { _, newValue in
-            // 新流程：不再在会议纪要页通过“加号/新增”触发录音
+            // 新流程：不再在会议记录页通过“加号/新增”触发录音
             if newValue {
                 showAddSheet = false
             }
@@ -492,7 +492,7 @@ struct MeetingRecordView: View {
                 createdAt: date,
                 duration: duration,
                 meetingSummary: nil,
-                title: "正在生成会议纪要…"
+                title: "正在生成会议记录…"
             )
             placeholder.status = "generating"
             placeholder.isFromRemote = false

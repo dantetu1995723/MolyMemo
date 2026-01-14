@@ -17,7 +17,7 @@ struct MeetingDetailSheet: View {
     // 用户手动滚动时，短暂抑制自动滚动（避免抢控制权）
     @State private var suppressAutoScrollUntil: Date = .distantPast
     
-    // 右上角“更多”-> 删除胶囊（与人脉/日程详情一致）
+    // 右上角“更多”-> 操作胶囊（保留 liquid glass 效果）
     @State private var showDeleteMenu: Bool = false
     @State private var deleteMenuAnchorFrame: CGRect = .zero
     @State private var isDeleting: Bool = false
@@ -89,7 +89,7 @@ struct MeetingDetailSheet: View {
                     
                     // 页眉标题和按钮
                     ZStack {
-                        Text("会议纪要")
+                        Text("会议记录")
                             .font(.system(size: 17, weight: .bold))
                             .foregroundColor(Color(hex: "333333"))
                         
@@ -234,7 +234,7 @@ struct MeetingDetailSheet: View {
                                                     .scaleEffect(0.95)
                                                 TimelineView(.periodic(from: .now, by: 0.5)) { context in
                                                     let tick = Int(context.date.timeIntervalSinceReferenceDate / 0.5) % 4
-                                                    Text("正在生成会议纪要" + String(repeating: "·", count: tick))
+                                                    Text("正在生成会议记录" + String(repeating: "·", count: tick))
                                                         .font(.system(size: 15, weight: .medium))
                                                         .foregroundColor(Color(hex: "777777"))
                                                 }
@@ -442,20 +442,34 @@ struct MeetingDetailSheet: View {
                     }
                     
                     if showDeleteMenu {
-                        TopDeletePillButton(title: isDeleting ? "正在删除…" : "删除录音") {
-                            withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) {
-                                showDeleteMenu = false
+                        MeetingMoreActionMenu(
+                            isRegenerating: meeting.isGenerating,
+                            isDeleting: isDeleting,
+                            onRegenerate: {
+                                withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) {
+                                    showDeleteMenu = false
+                                }
+                                HapticFeedback.medium()
+                                Task { @MainActor in
+                                    await triggerRegeneratePolling()
+                                }
+                            },
+                            onDelete: {
+                                withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) {
+                                    showDeleteMenu = false
+                                }
+                                HapticFeedback.medium()
+                                Task { await submitDelete() }
                             }
-                            HapticFeedback.medium()
-                            Task { await submitDelete() }
-                        }
-                        .frame(width: 200)
+                        )
+                        .frame(width: 220)
                         .offset(
-                            PopupMenuPositioning.rightAlignedCenterOffset(
-                                for: deleteMenuAnchorFrame,
+                            menuOffsetAligningFirstRow(
+                                anchorFrame: deleteMenuAnchorFrame,
                                 in: geo.frame(in: .global),
-                                width: 200,
-                                height: 52
+                                menuWidth: 220,
+                                menuHeight: MeetingMoreActionMenu.height,
+                                firstRowHeight: MeetingMoreActionMenu.rowHeight
                             )
                         )
                         .transition(.asymmetric(insertion: .scale(scale: 0.9, anchor: .topTrailing).combined(with: .opacity), removal: .scale(scale: 0.9, anchor: .topTrailing).combined(with: .opacity)))
@@ -550,6 +564,61 @@ struct MeetingDetailSheet: View {
         } catch {
             deleteAlertMessage = error.localizedDescription
         }
+    }
+
+    @MainActor
+    private func triggerRegeneratePolling() async {
+        // “重新生成”：不重新上传音频；仅重新轮询详情接口，拉取最新的 summary/meeting_details
+        let rid = (meeting.remoteId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !rid.isEmpty else {
+            loadError = "缺少会议ID，无法重新生成"
+            return
+        }
+
+        #if DEBUG || targetEnvironment(simulator)
+        let title = meeting.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let sumLen = meeting.summary.trimmingCharacters(in: .whitespacesAndNewlines).count
+        let tCount = meeting.transcriptions?.count ?? 0
+        let msg = "[MeetingDetailSheet][regenerate] tap rid=\(rid) title=\(title.isEmpty ? "nil" : title) sumLen=\(sumLen) transcriptions=\(tCount)"
+        print(msg)
+        #if DEBUG
+        AppGroupDebugLog.append(msg)
+        #endif
+        #endif
+        
+        pollingTask?.cancel()
+        pollingTask = nil
+        
+        // UI：进入生成中态
+        meeting.isGenerating = true
+        isLoading = true
+        loadError = nil
+        activeTranscriptId = nil
+        
+        // 清掉旧内容，避免“失败文案/旧摘要”误导用户
+        meeting.summary = ""
+        meeting.transcriptions = nil
+        
+        #if DEBUG || targetEnvironment(simulator)
+        let startMsg = "[MeetingDetailSheet][regenerate] start polling rid=\(rid)"
+        print(startMsg)
+        #if DEBUG
+        AppGroupDebugLog.append(startMsg)
+        #endif
+        #endif
+        
+        pollingTask = Task { await fetchDetailsWithPolling() }
+        await pollingTask?.value
+
+        #if DEBUG || targetEnvironment(simulator)
+        let newSumLen = meeting.summary.trimmingCharacters(in: .whitespacesAndNewlines).count
+        let newTCount = meeting.transcriptions?.count ?? 0
+        let endMsg = "[MeetingDetailSheet][regenerate] end polling rid=\(rid) isGenerating=\(meeting.isGenerating) isLoading=\(isLoading) sumLen=\(newSumLen) transcriptions=\(newTCount) loadError=\(loadError ?? "nil")"
+        print(endMsg)
+        #if DEBUG
+        AppGroupDebugLog.append(endMsg)
+        #endif
+        #endif
     }
 
     @MainActor
@@ -700,4 +769,84 @@ struct MeetingDetailSheet: View {
         // 当前时间在第一句之前：高亮第一句
         return transcriptions.first?.id
     }
+}
+
+// MARK: - More action menu (liquid glass)
+
+private struct MeetingMoreActionMenu: View {
+    let isRegenerating: Bool
+    let isDeleting: Bool
+    let onRegenerate: () -> Void
+    let onDelete: () -> Void
+    
+    static let rowHeight: CGFloat = 52
+    static let height: CGFloat = rowHeight * 2
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            Button(action: onRegenerate) {
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(Color(hex: "333333"))
+                    Text(isRegenerating ? "正在重新生成…" : "重新生成")
+                        .foregroundColor(Color(hex: "333333"))
+                        .font(.system(size: 15, weight: .medium))
+                    Spacer(minLength: 0)
+                }
+                .padding(.leading, 18)
+                .padding(.trailing, 16)
+                .frame(height: Self.rowHeight)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(isRegenerating || isDeleting)
+            .opacity((isRegenerating || isDeleting) ? 0.55 : 1.0)
+            
+            Divider()
+                .padding(.leading, 14)
+                .opacity(0.8)
+            
+            Button(action: onDelete) {
+                HStack(spacing: 8) {
+                    Image(systemName: "trash")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(Color(hex: "FF3B30"))
+                    Text(isDeleting ? "正在删除…" : "删除录音")
+                        .foregroundColor(Color(hex: "FF3B30"))
+                        .font(.system(size: 15, weight: .medium))
+                    Spacer(minLength: 0)
+                }
+                .padding(.leading, 18)
+                .padding(.trailing, 16)
+                .frame(height: Self.rowHeight)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(isDeleting)
+            .opacity(isDeleting ? 0.55 : 1.0)
+        }
+        .yy_glassEffectCompat(cornerRadius: 26)
+    }
+}
+
+/// 让“第一行菜单”与触发按钮处于同一水平线（更符合“导航栏同行”观感）。
+/// - 规则：菜单右对齐 anchor，且第一行的中心点对齐 anchor.midY。
+private func menuOffsetAligningFirstRow(
+    anchorFrame: CGRect,
+    in rootFrame: CGRect,
+    menuWidth: CGFloat,
+    menuHeight: CGFloat,
+    firstRowHeight: CGFloat,
+    topPadding: CGFloat = 10,
+    bottomPadding: CGFloat = 16
+) -> CGSize {
+    // x：右对齐到 anchor.maxX，并夹紧到屏幕内
+    let x = max(16, min(anchorFrame.maxX - rootFrame.minX - menuWidth, rootFrame.width - menuWidth - 16))
+    // y：让第一行中心对齐 anchor.midY
+    var y = (anchorFrame.midY - rootFrame.minY) - (firstRowHeight * 0.5)
+    // 夹紧，避免菜单跑出屏幕
+    y = max(topPadding, y)
+    y = min(y, rootFrame.height - menuHeight - bottomPadding)
+    return CGSize(width: x, height: y)
 }

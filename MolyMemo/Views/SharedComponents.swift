@@ -478,6 +478,62 @@ struct ModuleAddButton: View {
     }
 }
 
+// MARK: - 方形液态水珠标签背景 - 铺满一格直角版本
+struct LiquidSquareTabBackground: View {
+    var body: some View {
+        ZStack {
+            // 基础液态层 - 改为直角 Rectangle
+            Rectangle()
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.99),
+                            Color.white.opacity(0.94),
+                            Color.white.opacity(0.97)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+            
+            // 内部折射边缘 - 改为直角
+            Rectangle()
+                .stroke(
+                    LinearGradient(
+                        colors: [
+                            Color.white,
+                            Color.white.opacity(0.05),
+                            Color.white.opacity(0.15)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1.0
+                )
+            
+            // 液滴高光点
+            VStack {
+                HStack {
+                    Circle()
+                        .fill(Color.white.opacity(0.5))
+                        .frame(width: 5, height: 5)
+                        .blur(radius: 0.5)
+                        .padding(.leading, 10)
+                        .padding(.top, 10)
+                    Spacer()
+                }
+                Spacer()
+            }
+        }
+        .background {
+            // 直角投影
+            Rectangle()
+                .fill(Color.white.opacity(0.4))
+                .shadow(color: Color.black.opacity(0.03), radius: 6, x: 0, y: -2)
+        }
+    }
+}
+
 // MARK: - Tab选择器样式 - 灰色调
 struct ModuleTabButton: View {
     let title: String

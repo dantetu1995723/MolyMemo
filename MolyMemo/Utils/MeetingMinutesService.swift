@@ -500,17 +500,25 @@ class MeetingMinutesService {
         let item: MeetingMinutesItem
         if let direct = try? JSONDecoder().decode(MeetingMinutesItem.self, from: data) {
             // 注意：MeetingMinutesItem 字段全是可选，decode 很可能“成功但全是nil”。
-            // 如果 summary/status 都为空，则额外走一次宽松解析兜底。
+            // 另外：有些后端会返回 status，但把 summary 放在其它字段（如 meeting_minutes/minutes 等），
+            // 若仅以 “summary+status 都为空” 作为触发条件，会导致 summary 永远取不到，轮询直到超时。
             let directSummary = (direct.summary ?? direct.meetingSummary ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             let directStatus = (direct.status ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            if directSummary.isEmpty && directStatus.isEmpty {
+            if directSummary.isEmpty {
                 let loose = try parseDetailLoose(data: data, fallbackId: id)
-                // 用 loose 覆盖关键字段（其余字段保持 direct）
+                // 用 loose 补齐关键字段（其余字段保持 direct，避免把已解析出的字段覆盖成 nil）
                 item = MeetingMinutesItem(
                     id: direct.id ?? loose.id,
                     title: direct.title ?? loose.title,
-                    summary: direct.summary ?? loose.summary,
-                    meetingSummary: direct.meetingSummary ?? loose.meetingSummary,
+                    // summary/meetingSummary：优先拿到非空的那一个
+                    summary: {
+                        let s = (direct.summary ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                        return s.isEmpty ? loose.summary : direct.summary
+                    }(),
+                    meetingSummary: {
+                        let s = (direct.meetingSummary ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                        return s.isEmpty ? loose.meetingSummary : direct.meetingSummary
+                    }(),
                     date: direct.date ?? loose.date,
                     meetingDate: direct.meetingDate ?? loose.meetingDate,
                     duration: direct.duration ?? loose.duration,
@@ -518,7 +526,8 @@ class MeetingMinutesService {
                     audioPath: direct.audioPath ?? loose.audioPath,
                     transcriptions: direct.transcriptions ?? loose.transcriptions,
                     meetingDetails: direct.meetingDetails ?? loose.meetingDetails,
-                    status: direct.status ?? loose.status,
+                    // status：若 direct 已有值，保留；否则用 loose 补齐
+                    status: directStatus.isEmpty ? (direct.status ?? loose.status) : direct.status,
                     audioUrl: direct.audioUrl ?? loose.audioUrl,
                     createdAt: direct.createdAt ?? loose.createdAt,
                     updatedAt: direct.updatedAt ?? loose.updatedAt
@@ -744,11 +753,17 @@ class MeetingMinutesService {
         var attempt = 0
         var delayMs: UInt64 = 800
         var lastKey: String? = nil
+        var consecutiveErrors = 0
+        var firstErrorAt: Date? = nil
+        var lastError: Error? = nil
 
         while Date().timeIntervalSince(start) < timeoutSeconds {
             attempt += 1
             do {
                 let item = try await getMeetingMinutesDetail(id: id, verbose: attempt == 1)
+                consecutiveErrors = 0
+                firstErrorAt = nil
+                lastError = nil
                 let status = (item.status ?? "").lowercased()
                 let hasSummary = !((item.summary ?? item.meetingSummary) ?? "")
                     .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -768,12 +783,23 @@ class MeetingMinutesService {
                 }
             } catch {
                 // 轮询期间的偶发错误不立刻终止（例如网络波动），打印后继续
+                lastError = error
+                consecutiveErrors += 1
+                if firstErrorAt == nil { firstErrorAt = Date() }
+                
+                // 如果持续失败太久，直接把“真实错误”抛给上层，避免用户只看到 600 秒超时
+                if let firstErrorAt, consecutiveErrors >= 8, Date().timeIntervalSince(firstErrorAt) > 20 {
+                    throw error
+                }
             }
 
             try await Task.sleep(nanoseconds: delayMs * 1_000_000)
             delayMs = min(delayMs + 400, 2_500) // 0.8s -> 2.5s
         }
 
+        if let lastError {
+            throw MeetingMinutesError.serverError("等待会议纪要生成超时（\(Int(timeoutSeconds))秒）。最后一次错误：\(lastError.localizedDescription)")
+        }
         throw MeetingMinutesError.serverError("等待会议纪要生成超时（\(Int(timeoutSeconds))秒）")
     }
 
@@ -817,7 +843,7 @@ class MeetingMinutesService {
         let title = pickString(["title", "meeting_title", "name"])
         let status = pickString(["status", "state", "job_status", "processing_status"])
         let summary =
-            pickString(["summary", "meeting_summary", "content", "minutes"]) ??
+            pickString(["summary", "meeting_summary", "meeting_minutes", "meetingMinutes", "meeting_minutes_text", "minutes_text", "content", "minutes"]) ??
             pickNestedString(["minutes", "summary"]) ??
             pickNestedString(["result", "summary"]) ??
             pickNestedString(["data", "summary"])

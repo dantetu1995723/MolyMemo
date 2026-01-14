@@ -20,7 +20,7 @@ struct MeetingSummaryCardStackView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if meetings.isEmpty {
-                Text("无会议纪要")
+                Text("无会议记录")
                     .foregroundColor(.gray)
                     .frame(width: cardWidth, height: cardHeight)
                     .background(Color.white)
@@ -202,7 +202,7 @@ private struct MeetingCardFullLoadingView: View {
                 .scaleEffect(1.1)
                 .tint(Color(hex: "007AFF"))
             
-            LoadingDotsText(base: "正在生成会议纪要")
+            LoadingDotsText(base: "正在生成会议记录")
                 .font(.system(size: 14, weight: .medium))
                 .foregroundColor(Color(hex: "666666"))
             
@@ -217,7 +217,7 @@ private struct MeetingCardFullLoadingView: View {
             Spacer(minLength: 0)
         }
         .padding(.vertical, 10)
-        .accessibilityLabel("正在生成会议纪要")
+        .accessibilityLabel("正在生成会议记录")
     }
 }
 

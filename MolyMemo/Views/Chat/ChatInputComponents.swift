@@ -52,7 +52,7 @@ struct AttachmentPreview: View {
 
 // MARK: - Suggestion Bar
 struct SuggestionBar: View {
-    let suggestions: [String] = ["创建日程", "创建人脉", "创建报销"]
+    let suggestions: [String] = ["创建日程", "创建人脉"]
     let onSuggestionTap: ((String) -> Void)?
     
     init(onSuggestionTap: ((String) -> Void)? = nil) {

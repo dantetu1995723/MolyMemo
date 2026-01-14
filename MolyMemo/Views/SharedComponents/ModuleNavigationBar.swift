@@ -71,13 +71,8 @@ struct ModuleNavigationBar: View {
                 .foregroundColor(themeColor.opacity(0.85))
                 .frame(width: buttonSize, height: buttonSize)
                 .background(
-                    Circle()
-                        .fill(.ultraThinMaterial)
-                        .overlay(
-                            Circle()
-                                .strokeBorder(Color.white.opacity(0.45), lineWidth: 0.6)
-                        )
-                        .shadow(color: Color.black.opacity(0.06), radius: 6, x: 0, y: 2)
+                    // 白底 liquid glass（与其它模块按钮统一）
+                    GlassButtonBackground()
                 )
         }
         .buttonStyle(.plain)

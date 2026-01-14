@@ -32,6 +32,13 @@ final class BackendChatService {
         onError: @escaping (Error) -> Void
     ) async {
         do {
+            // ✅ 关键：聊天室是长连接流式接收（SSE/NDJSON）。
+            // App 切后台时如果没有后台执行额度，流式读取很容易被系统挂起/断掉。
+            // 这里为“正在进行中的请求”申请后台时间，避免退后台立刻中断。
+            // 注意：iOS 后台时间有限（通常几十秒），不保证长任务一定完成。
+            let bgToken = await MainActor.run { BackgroundTaskToken(name: "chatStream") }
+            defer { Task { @MainActor in bgToken.end() } }
+            
             guard let url = BackendChatConfig.endpointURL() else {
                 throw BackendChatError.invalidConfig("后端 baseURL/path 无效")
             }

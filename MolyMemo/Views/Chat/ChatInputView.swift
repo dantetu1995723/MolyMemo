@@ -137,6 +137,9 @@ struct ChatInputView: View {
         .onChange(of: isFocused) { _, focused in
             DebugProbe.log("ChatInputView.isFocused -> \(focused)")
             if focused {
+                // 关键兜底：聚焦输入框时，必须立刻终止“按住说话”的 tracking/预收音，
+                // 否则可能因为 hitTesting 关闭导致手势 ended 不可靠，进而出现麦克风占用（灵动岛橙点）。
+                forceEndHoldToTalk()
                 withAnimation { viewModel.showMenu = false }
             }
         }
@@ -295,6 +298,8 @@ struct ChatInputView: View {
                             TapGesture().onEnded {
                                 guard holdToTalkEnabled, !viewModel.isRecording else { return }
                                 DebugProbe.log("HoldToTalk overlay tap -> focus")
+                                // 兜底：即便 drag ended 未触发，也要先收回预收音/状态，再聚焦
+                                forceEndHoldToTalk()
                                 isFocused = true
                             }
                         )
@@ -313,12 +318,25 @@ struct ChatInputView: View {
                                         // 取消旧任务，启动新的“长按才触发录音”的任务
                                         pendingHoldToTalkTask?.cancel()
                                         pendingHoldToTalkTask = Task { @MainActor in
-                                            // 更丝滑：把长按阈值略微缩短，但仍保留“轻点聚焦”的容错空间
-                                            // 0.20s：体感更快，且仍不容易误触
-                                            try? await Task.sleep(nanoseconds: 200_000_000) // 0.20s
+                                            // 两段式：
+                                            // - 0.12s：仍在按住才开始“预收音”（避免轻点聚焦就点亮麦克风）
+                                            // - 0.20s：仍在按住才真正进入录音态并展示 overlay
+                                            try? await Task.sleep(nanoseconds: 120_000_000) // 0.12s
                                             guard !Task.isCancelled else { return }
-                                            // 如果这时仍在按住且没有明显移动，且仍满足“按住说话”条件，则开始收音并展示 overlay
                                             guard isPressing, !didMoveDuringPress else { return }
+                                            guard !viewModel.isRecording else { return }
+                                            guard !viewModel.isAgentTyping else { return }
+                                            guard !isFocused else { return }
+                                            guard viewModel.inputText.isEmpty, viewModel.selectedImage == nil else { return }
+                                            viewModel.beginHoldToTalkPreCaptureIfNeeded()
+
+                                            try? await Task.sleep(nanoseconds: 80_000_000) // +0.08s => 0.20s
+                                            guard !Task.isCancelled else { return }
+                                            guard isPressing, !didMoveDuringPress else {
+                                                // 轻点/抬手导致未进入录音：如果已经预收音了，确保收回
+                                                viewModel.stopHoldToTalkPreCaptureIfNeeded()
+                                                return
+                                            }
                                             guard !viewModel.isRecording else { return }
                                             guard !viewModel.isAgentTyping else { return }
                                             guard !isFocused else { return }
@@ -412,9 +430,8 @@ struct ChatInputView: View {
             didMoveDuringPress = false
             // 触感：按下给一个很轻的确认，不阻塞 UI（真正进入录音态会再给一次更明显的确认）
             HapticFeedback.selection()
-            // 关键：按下瞬间立刻开始“预收音/预转写”，避免长按阈值导致漏掉前半句
-            // overlay 仍由长按判定后再展示（避免轻点聚焦时 UI 闪一下）
-            viewModel.beginHoldToTalkPreCaptureIfNeeded()
+            // 注意：不要在按下瞬间就启用麦克风，否则“轻点聚焦”也会点亮系统橙点。
+            // 预收音改为在长按阈值附近（见 pendingHoldToTalkTask）再启动。
             return
         }
         
