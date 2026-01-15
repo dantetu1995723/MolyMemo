@@ -390,8 +390,9 @@ struct ContactEditView: View {
                 
                 try? modelContext.save()
                 
-                // 单向同步到系统通讯录：仅在“有手机号且尚未绑定 identifier”时尝试
-                triggerSystemContactSyncIfNeeded(for: existingContact)
+                // 系统通讯录同步：
+                // - 编辑=更新：以联系人为锚点更新，不在这里新建（避免手机号改动导致重复创建）
+                triggerSystemContactSyncIfNeeded(for: existingContact, allowCreate: false)
                 dismiss()
                 return
             }
@@ -411,50 +412,53 @@ struct ContactEditView: View {
             modelContext.insert(newContact)
             try? modelContext.save()
             
-            // 单向同步到系统通讯录：仅在“有手机号且尚未绑定 identifier”时尝试
-            triggerSystemContactSyncIfNeeded(for: newContact)
+            // 新建：允许创建到系统通讯录
+            triggerSystemContactSyncIfNeeded(for: newContact, allowCreate: true)
             dismiss()
         } catch {
             alertMessage = error.localizedDescription
         }
     }
     
-    private func triggerSystemContactSyncIfNeeded(for contact: Contact) {
+    private func triggerSystemContactSyncIfNeeded(for contact: Contact, allowCreate: Bool) {
         let phone = (contact.phoneNumber ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !phone.isEmpty else { return }
-        
         let linked = (contact.systemContactIdentifier ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard linked.isEmpty else { return }
+        
+        // 已绑定 identifier：允许无手机号也去更新；未绑定则至少需要手机号，避免仅按名字误匹配
+        if linked.isEmpty, phone.isEmpty { return }
         
         Task {
             let granted = await ContactsManager.shared.requestAccess()
             guard granted else { return }
-            
-            // 先尝试匹配已有系统联系人，匹配到就只记录 identifier，不创建新联系人
-            if let matched = try? await ContactsManager.shared.findMatchingSystemContact(name: contact.name, phoneNumber: contact.phoneNumber) {
-                let id = matched.identifier.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !id.isEmpty {
-                    await MainActor.run {
-                        contact.systemContactIdentifier = id
-                        try? modelContext.save()
-                    }
-                    return
-                }
-            }
-            
-            // 匹配不到：创建到系统通讯录
+
             do {
-                let result = try await ContactsManager.shared.syncToSystemContacts(contact: contact)
-                let id: String? = {
-                    switch result {
-                    case .success(let identifier): return identifier
-                    case .duplicate(let identifier): return identifier
+                if allowCreate {
+                    let result = try await ContactsManager.shared.syncToSystemContacts(contact: contact)
+                    let id: String? = {
+                        switch result {
+                        case .success(let identifier): return identifier
+                        case .duplicate(let identifier): return identifier
+                        }
+                    }()
+                    if let id, !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        await MainActor.run {
+                            if linked != id {
+                                contact.systemContactIdentifier = id
+                                try? modelContext.save()
+                            }
+                        }
                     }
-                }()
-                if let id, !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    await MainActor.run {
-                        contact.systemContactIdentifier = id
-                        try? modelContext.save()
+                } else {
+                    // 更新模式：不允许新建，找不到就跳过
+                    if let id = try await ContactsManager.shared.updateSystemContact(contact: contact),
+                       !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    {
+                        await MainActor.run {
+                            if linked != id {
+                                contact.systemContactIdentifier = id
+                                try? modelContext.save()
+                            }
+                        }
                     }
                 }
             } catch {

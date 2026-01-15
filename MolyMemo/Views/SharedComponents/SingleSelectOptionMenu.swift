@@ -55,18 +55,20 @@ struct SingleSelectOptionMenu: View {
                             .id(opt.id)
                             
                             if opt.id != options.last?.id {
-                                Divider().padding(.leading, 14)
+                                // 分割线左右都要内缩：避免右侧“顶到/压过”圆角边框
+                                Divider().padding(.horizontal, 14)
                             }
                         }
                     }
                 }
                 .onAppear {
                     let sel = (selectedValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !sel.isEmpty else { return }
-                    DispatchQueue.main.async {
-                        proxy.scrollTo(sel, anchor: .center)
+                    if !sel.isEmpty {
+                        DispatchQueue.main.async {
+                            proxy.scrollTo(sel, anchor: .center)
+                        }
                     }
-                    
+
                     // 内容渐显，落后于背景变形
                     withAnimation(.easeOut(duration: 0.2).delay(0.1)) {
                         contentOpacity = 1.0

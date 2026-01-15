@@ -1,5 +1,7 @@
 import SwiftUI
 import Combine
+import SwiftData
+import UIKit
 
 extension NSNotification.Name {
     static let dismissScheduleMenu = NSNotification.Name("DismissScheduleMenu")
@@ -13,6 +15,9 @@ struct ScheduleCardStackView: View {
     var onDeleteRequest: ((ScheduleEvent) -> Void)? = nil
     /// 单击卡片或点击编辑按钮打开详情
     var onOpenDetail: ((ScheduleEvent) -> Void)? = nil
+
+    @EnvironmentObject private var appState: AppState
+    @Environment(\.modelContext) private var modelContext
     
     @State private var currentIndex: Int = 0
     @State private var dragOffset: CGFloat = 0
@@ -194,6 +199,14 @@ struct ScheduleCardStackView: View {
                         },
                         onDismiss: {
                             withAnimation { showMenu = false }
+                        },
+                        onRescanAsSchedule: {
+                            let ev = events[index]
+                            triggerRescanCreateSchedule(from: ev)
+                        },
+                        onRescanAsContact: {
+                            let ev = events[index]
+                            triggerRescanCreateContact(from: ev)
                         }
                     )
                     // 让胶囊跟随卡片缩放后的左边缘（默认缩放 anchor 是中心，leading 会向左/右移动半个增量）
@@ -265,6 +278,47 @@ struct ScheduleCardStackView: View {
                 // 拉取失败也不重试（避免反复刷请求）；用户点进详情仍会再尝试
             }
         }
+    }
+
+    // MARK: - 重新识别：复用“创建日程/人脉”链路
+    private func triggerRescanCreateSchedule(from event: ScheduleEvent) {
+        let payload = rescanPayload(from: event)
+        let text = "创建日程\n\n\(payload)"
+        ChatSendFlow.send(appState: appState, modelContext: modelContext, text: text, images: [], includeHistory: true)
+    }
+
+    private func triggerRescanCreateContact(from event: ScheduleEvent) {
+        let payload = rescanPayload(from: event)
+        let text = "创建人脉\n\n\(payload)"
+        ChatSendFlow.send(appState: appState, modelContext: modelContext, text: text, images: [], includeHistory: true)
+    }
+
+    private func rescanPayload(from event: ScheduleEvent) -> String {
+        let title = event.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let desc = event.description.trimmingCharacters(in: .whitespacesAndNewlines)
+        let location = (event.location ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let category = (event.category ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let reminder = (event.reminderTime ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // 尽量用“用户可读”的时间，减少模型误读
+        let dateFormatter = DateFormatter()
+        dateFormatter.locale = Locale(identifier: "zh_CN")
+        dateFormatter.dateFormat = "yyyy-MM-dd EEEE"
+        let day = dateFormatter.string(from: event.startTime)
+
+        let timeFormatter = DateFormatter()
+        timeFormatter.dateFormat = "HH:mm"
+        let start = event.isFullDay ? "00:00" : timeFormatter.string(from: event.startTime)
+        let end = event.isFullDay ? "23:59" : timeFormatter.string(from: event.endTime)
+
+        var lines: [String] = []
+        if !title.isEmpty { lines.append("标题：\(title)") }
+        lines.append("时间：\(day) \(start) - \(end)")
+        if !location.isEmpty { lines.append("地点：\(location)") }
+        if !category.isEmpty { lines.append("分类：\(category)") }
+        if !reminder.isEmpty { lines.append("提醒：\(reminder)") }
+        if !desc.isEmpty { lines.append("描述：\(desc)") }
+        return lines.joined(separator: "\n")
     }
 }
 
@@ -410,6 +464,8 @@ struct CardCapsuleMenuView: View {
     var onEdit: () -> Void
     var onDelete: () -> Void
     var onDismiss: () -> Void
+    var onRescanAsSchedule: (() -> Void)? = nil
+    var onRescanAsContact: (() -> Void)? = nil
     
     @State private var showRescanMenu: Bool = false
     @State private var rescanSegmentFrame: CGRect = .zero
@@ -519,8 +575,12 @@ struct CardCapsuleMenuView: View {
                     Divider()
                         .padding(.horizontal, 16)
                     
-                    ForEach(["这是日程", "这是人脉", "这是发票"], id: \.self) { option in
-                        Text(option)
+                    let options: [(title: String, action: (() -> Void)?)] = [
+                        ("这是日程", onRescanAsSchedule),
+                        ("这是人脉", onRescanAsContact)
+                    ]
+                    ForEach(options, id: \.title) { item in
+                        Text(item.title)
                             .font(.system(size: 15))
                             .foregroundColor(Color(hex: "333333"))
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -531,9 +591,13 @@ struct CardCapsuleMenuView: View {
                                 withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
                                     showRescanMenu = false
                                 }
+                                // 先关闭菜单，再触发实际链路，避免手势/动画期间 UI 卡顿
                                 onDismiss()
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                                    item.action?()
+                                }
                             }
-                        if option != "这是发票" {
+                        if item.title != options.last?.title {
                             Divider().padding(.horizontal, 16)
                         }
                     }

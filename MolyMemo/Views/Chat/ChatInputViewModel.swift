@@ -37,10 +37,21 @@ class ChatInputViewModel: ObservableObject {
     var onStopGenerator: (() -> Void)?
     
     // MARK: - Internal
-    private let holdToTalkSpeechRecognizer = SpeechRecognizer()
+    private let holdToTalkRecorder = HoldToTalkPCMRecorder()
+    private var holdToTalkVoiceSession: ChatVoiceInputService.Session?
     private var holdToTalkGeneration: Int = 0
     private var holdToTalkASRTask: Task<Void, Never>?
     private var holdToTalkRecognizingWaveTask: Task<Void, Never>?
+    private var holdToTalkSendLoopTask: Task<Void, Never>?
+    private var holdToTalkReceiveLoopTask: Task<Void, Never>?
+    /// 预收音启动任务：用于“快速取消/结束”时阻止异步插入占位气泡
+    private var holdToTalkStartupTask: Task<Void, Never>?
+    private var holdToTalkPlaceholderMessageId: UUID?
+    private var holdToTalkLatestASRText: String = ""
+    private var holdToTalkLatestASRIsFinal: Bool = false
+    private var holdToTalkFinalTextContinuation: CheckedContinuation<String?, Never>?
+    /// PCM 发送缓冲：避免 WS 刚建立时 send() 失败导致前面音频丢失（漏字）
+    private var holdToTalkPCMBacklog: PCMBacklog?
     /// 松手后进入“识别中”阶段：忽略 recorder stop() 导致的音量归零，避免音浪瞬间静止产生卡顿感
     private var isHoldToTalkRecognizing: Bool = false
     private var cancellables = Set<AnyCancellable>()
@@ -63,10 +74,8 @@ class ChatInputViewModel: ObservableObject {
     // MARK: - Methods
     
     init() {
-        holdToTalkSpeechRecognizer.requestAuthorization()
-
-        // 用真实收音 level 驱动 UI（来自 SFSpeechRecognizer 的输入 buffer）
-        holdToTalkSpeechRecognizer.$audioLevel
+        // 用真实收音 level 驱动 UI（来自麦克风 PCM 采集）
+        holdToTalkRecorder.$audioLevel
             .receive(on: DispatchQueue.main)
             .sink { [weak self] level in
                 guard let self else { return }
@@ -188,13 +197,37 @@ class ChatInputViewModel: ObservableObject {
         holdToTalkASRTask = nil
         holdToTalkRecognizingWaveTask?.cancel()
         holdToTalkRecognizingWaveTask = nil
+        holdToTalkSendLoopTask?.cancel()
+        holdToTalkSendLoopTask = nil
+        holdToTalkStartupTask?.cancel()
+        holdToTalkStartupTask = nil
 
         // 取消：立即 stop + 退场（不进入识别态）
         guard shouldSend else {
-            holdToTalkSpeechRecognizer.stopRecording()
+            // 取消需要告知后端并释放麦克风
+            let placeholderId = holdToTalkPlaceholderMessageId
+            holdToTalkPlaceholderMessageId = nil
             holdToTalkLatestText = ""
+            holdToTalkLatestASRText = ""
+            holdToTalkLatestASRIsFinal = false
             recordingTranscript = ""
             isHoldToTalkRecognizing = false
+            holdToTalkFinalTextContinuation?.resume(returning: nil)
+            holdToTalkFinalTextContinuation = nil
+            holdToTalkReceiveLoopTask?.cancel()
+            holdToTalkReceiveLoopTask = nil
+            Task.detached { [weak self] in
+                guard let self else { return }
+                if let s = await MainActor.run(body: { self.holdToTalkVoiceSession }) {
+                    try? await s.sendCancel()
+                    await s.close()
+                }
+                _ = await MainActor.run { self.holdToTalkRecorder.stop(discard: true) }
+                await MainActor.run { self.holdToTalkVoiceSession = nil }
+            }
+            if let placeholderId {
+                onRemovePlaceholder?(placeholderId)
+            }
             beginHoldToTalkExit()
             return
         }
@@ -208,8 +241,8 @@ class ChatInputViewModel: ObservableObject {
             guard let self else { return }
             // 让 SwiftUI 先把“识别中…”渲染出来，再做 stop（AudioSession 归还/识别收尾可能会卡顿）
             await Task.yield()
-            // 停止本地语音识别并等待 final，尽量避免漏字
-            let text = await self.holdToTalkSpeechRecognizer.stopRecordingAndWaitForFinalText(timeoutSeconds: 1.2)
+            // 停止本地录音并通知后端结束；等待后端 asr_complete，尽量避免漏字
+            let text = await self.finishBackendHoldToTalkAndWaitForFinalText(genAtStop: genAtStop, timeoutSeconds: 2.5)
             guard !Task.isCancelled else { return }
 
             // 如果期间又开始了新一轮按住说话，就不要把旧结果发出去
@@ -223,21 +256,30 @@ class ChatInputViewModel: ObservableObject {
             // 只用 trim 判空；发送内容保持“原始文本”
             let rawText = text
             let isEffectivelyEmpty = rawText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            if !isEffectivelyEmpty {
-                self.recordingTranscript = ""
-                self.stopHoldToTalkRecognizingWave()
-                self.isHoldToTalkRecognizing = false
-                self.beginHoldToTalkExit()
-                // 让 UI 先完成一帧退场/布局，再发消息，避免“卡顿一下”
-                Task { @MainActor in
-                    await Task.yield()
-                    self.onSend?(rawText, nil)
+
+            let placeholderId = self.holdToTalkPlaceholderMessageId
+            self.holdToTalkPlaceholderMessageId = nil
+
+            self.recordingTranscript = ""
+            self.stopHoldToTalkRecognizingWave()
+            self.isHoldToTalkRecognizing = false
+            self.beginHoldToTalkExit()
+
+            // 让 UI 先完成一帧退场/布局，再更新占位消息并触发 AI，避免“卡顿一下”
+            Task { @MainActor in
+                await Task.yield()
+                if let placeholderId {
+                    if !isEffectivelyEmpty {
+                        self.onUpdateAndSend?(placeholderId, rawText)
+                    } else {
+                        self.onRemovePlaceholder?(placeholderId)
+                    }
+                } else {
+                    // 兜底：没有占位消息就直接走普通发送
+                    if !isEffectivelyEmpty {
+                        self.onSend?(rawText, nil)
+                    }
                 }
-            } else {
-                self.recordingTranscript = ""
-                self.stopHoldToTalkRecognizingWave()
-                self.isHoldToTalkRecognizing = false
-                self.beginHoldToTalkExit()
             }
         }
     }
@@ -337,19 +379,161 @@ class ChatInputViewModel: ObservableObject {
         recordingTranscript = "" // overlay 当前不展示 transcript，但留着调试
         audioPower = 0.0
         holdToTalkLatestText = ""
+        holdToTalkLatestASRText = ""
+        holdToTalkLatestASRIsFinal = false
+        holdToTalkFinalTextContinuation?.resume(returning: nil)
+        holdToTalkFinalTextContinuation = nil
 
         holdToTalkGeneration &+= 1
         let gen = holdToTalkGeneration
         holdToTalkASRTask?.cancel()
         holdToTalkASRTask = nil
+        holdToTalkSendLoopTask?.cancel()
+        holdToTalkSendLoopTask = nil
+        holdToTalkReceiveLoopTask?.cancel()
+        holdToTalkReceiveLoopTask = nil
+        holdToTalkStartupTask?.cancel()
+        holdToTalkStartupTask = nil
+        holdToTalkVoiceSession = nil
+        holdToTalkPlaceholderMessageId = nil
+        holdToTalkPCMBacklog = PCMBacklog()
 
         print("[HoldToTalk] press down -> start pre-capture (gen=\(gen))")
-        // 直接启动 iOS 本地语音识别（内部已用独立队列处理 AudioSession/Engine）
-        holdToTalkSpeechRecognizer.startRecording { [weak self] text in
+
+        // ✅ 改为后端语音流式识别：本地仅负责采集 PCM，转写由后端返回 asr_result/asr_complete
+        holdToTalkStartupTask = Task { [weak self] in
             guard let self else { return }
-            // 若这一轮已被新一轮替代，丢弃回调
-            guard self.holdToTalkGeneration == gen else { return }
-            self.holdToTalkLatestText = text
+            do {
+                // 1) 建立 WS
+                let session = try ChatVoiceInputService.makeSession(contactId: nil)
+                // 用户可能已经快速松手/取消：这时不要再继续，也不要插入占位气泡
+                let stillValidAfterConnect = await MainActor.run {
+                    self.holdToTalkGeneration == gen && self.isPreCapturingHoldToTalk && !self.isAgentTyping
+                }
+                guard stillValidAfterConnect, !Task.isCancelled else {
+                    await session.close()
+                    return
+                }
+                self.holdToTalkVoiceSession = session
+                session.start()
+
+                // 2) 开始录 PCM（包含麦克风权限请求与 AudioSession 配置）
+                try await self.holdToTalkRecorder.start()
+                let stillValidAfterRecorder = await MainActor.run {
+                    self.holdToTalkGeneration == gen && self.isPreCapturingHoldToTalk && !self.isAgentTyping
+                }
+                guard stillValidAfterRecorder, !Task.isCancelled else {
+                    await session.close()
+                    _ = self.holdToTalkRecorder.stop(discard: true)
+                    return
+                }
+
+                // 3) 仅在“仍处于预收音态”时插入占位气泡，避免滑动取消后残留“识别中...”
+                self.holdToTalkPlaceholderMessageId = self.onSendImmediate?()
+
+                // 4) 启动发送循环：持续 drain PCM bytes -> WS binary
+                let backlog = await MainActor.run { self.holdToTalkPCMBacklog }
+                self.holdToTalkSendLoopTask = Task.detached(priority: .userInitiated) { [weak self] in
+                    guard let self else { return }
+                    while !Task.isCancelled {
+                        // 若这一轮已被替代，停止
+                        let stillValid = await MainActor.run { self.holdToTalkGeneration == gen && self.isPreCapturingHoldToTalk }
+                        if !stillValid { break }
+
+                        // 1) 从录音器取出新增 PCM，先写入 backlog（无论 WS 是否已就绪）
+                        let drained = await MainActor.run { self.holdToTalkRecorder.drainPCMBytes() }
+                        if let backlog, !drained.isEmpty {
+                            await backlog.append(drained)
+                        }
+
+                        // 2) 尝试从 backlog flush 到 WS；失败不丢数据，留到下一轮重试
+                        guard let backlog else {
+                            try? await Task.sleep(nanoseconds: 30_000_000)
+                            continue
+                        }
+                        guard let s = await MainActor.run(body: { self.holdToTalkVoiceSession }) else {
+                            try? await Task.sleep(nanoseconds: 30_000_000)
+                            continue
+                        }
+
+                        // 每轮最多发一小批，避免长循环阻塞其它任务
+                        var sentBytesThisTick = 0
+                        while sentBytesThisTick < 24_576 { // ~24KB / tick
+                            guard let next = await backlog.peek(maxBytes: 4096), !next.isEmpty else { break }
+                            do {
+                                try await s.sendPCMChunk(next)
+                                await backlog.dropFirst(next.count)
+                                sentBytesThisTick += next.count
+                            } catch {
+                                // WS 还没 ready/暂时失败：不 drop，留给下次
+                                break
+                            }
+                        }
+
+                        try? await Task.sleep(nanoseconds: 30_000_000) // ~33fps，更快推送减少“录音态切换后延迟”
+                    }
+                }
+
+                // 5) 启动接收循环：实时接收 asr_result，并打印（“后台打印用户流式说话转的文字结果”）
+                self.holdToTalkReceiveLoopTask = Task.detached(priority: .userInitiated) { [weak self] in
+                    guard let self else { return }
+                    while !Task.isCancelled {
+                        let stillValid = await MainActor.run { self.holdToTalkGeneration == gen }
+                        if !stillValid { break }
+                        guard let s = await MainActor.run(body: { self.holdToTalkVoiceSession }) else { break }
+                        do {
+                            let ev = try await s.receiveEvent()
+                            await MainActor.run {
+                                // 若这一轮已被替代，丢弃
+                                guard self.holdToTalkGeneration == gen else { return }
+                                switch ev {
+                                case let .asrResult(text, isFinal):
+                                    self.holdToTalkLatestASRText = text
+                                    self.holdToTalkLatestASRIsFinal = isFinal
+                                    self.holdToTalkLatestText = text
+                                    // overlay 内如果展示 transcript，这里就会实时更新
+                                    self.recordingTranscript = text
+                                case let .asrComplete(text, _):
+                                    self.holdToTalkLatestASRText = text
+                                    self.holdToTalkLatestASRIsFinal = true
+                                    self.holdToTalkLatestText = text
+                                    self.recordingTranscript = text
+                                    self.holdToTalkFinalTextContinuation?.resume(returning: text)
+                                    self.holdToTalkFinalTextContinuation = nil
+                                case .cancelled, .stopped, .done:
+                                    // 不强行结束：交给 stop/cancel 流程关闭
+                                    break
+                                case let .error(_, message):
+                                    // 错误：兜底结束等待
+                                    self.holdToTalkFinalTextContinuation?.resume(returning: nil)
+                                    self.holdToTalkFinalTextContinuation = nil
+                                    self.recordingTranscript = message
+                                case .taskId, .other:
+                                    break
+                                }
+                            }
+                        } catch {
+                            // WS 断开/解析异常：结束接收循环
+                            break
+                        }
+                    }
+                }
+                await MainActor.run {
+                    // 启动成功后清空引用，避免下一轮误 cancel 旧任务
+                    if self.holdToTalkGeneration == gen {
+                        self.holdToTalkStartupTask = nil
+                    }
+                }
+            } catch {
+                // 启动失败：释放资源并清理占位消息
+                let placeholderId = self.holdToTalkPlaceholderMessageId
+                self.holdToTalkPlaceholderMessageId = nil
+                self.holdToTalkVoiceSession = nil
+                _ = self.holdToTalkRecorder.stop(discard: true)
+                if let placeholderId {
+                    self.onRemovePlaceholder?(placeholderId)
+                }
+            }
         }
     }
 
@@ -377,12 +561,43 @@ class ChatInputViewModel: ObservableObject {
         isPreCapturingHoldToTalk = false
         holdToTalkASRTask?.cancel()
         holdToTalkASRTask = nil
-        holdToTalkSpeechRecognizer.stopRecording()
+        holdToTalkSendLoopTask?.cancel()
+        holdToTalkSendLoopTask = nil
+        holdToTalkStartupTask?.cancel()
+        holdToTalkStartupTask = nil
+
+        let placeholderId = holdToTalkPlaceholderMessageId
+        holdToTalkPlaceholderMessageId = nil
+
         holdToTalkLatestText = ""
+        holdToTalkLatestASRText = ""
+        holdToTalkLatestASRIsFinal = false
         recordingTranscript = ""
         audioPower = 0.0
         isCanceling = false
-        print("[HoldToTalk] pre-capture stopped (no overlay) -> deleted file")
+
+        holdToTalkFinalTextContinuation?.resume(returning: nil)
+        holdToTalkFinalTextContinuation = nil
+
+        holdToTalkReceiveLoopTask?.cancel()
+        holdToTalkReceiveLoopTask = nil
+        holdToTalkPCMBacklog = nil
+
+        Task.detached { [weak self] in
+            guard let self else { return }
+            if let s = await MainActor.run(body: { self.holdToTalkVoiceSession }) {
+                try? await s.sendCancel()
+                await s.close()
+            }
+            _ = await MainActor.run { self.holdToTalkRecorder.stop(discard: true) }
+            await MainActor.run { self.holdToTalkVoiceSession = nil }
+        }
+
+        if let placeholderId {
+            onRemovePlaceholder?(placeholderId)
+        }
+
+        print("[HoldToTalk] pre-capture stopped (no overlay)")
     }
     
     func updateDragLocation(_ location: CGPoint, in bounds: CGRect) {
@@ -415,5 +630,131 @@ class ChatInputViewModel: ObservableObject {
         } else {
             inputText = inputText + text
         }
+    }
+}
+
+// MARK: - Backend hold-to-talk finalize
+
+private extension ChatInputViewModel {
+    func finishBackendHoldToTalkAndWaitForFinalText(genAtStop: Int, timeoutSeconds: Double) async -> String {
+        // 1) 停止本地 PCM 采集，把尾巴 drain 出来（避免最后一截丢字）
+        let remainingPCM = holdToTalkRecorder.stop(discard: false)
+
+        // 2) 通知后端：发送剩余 PCM + audio_record_done
+        if let session = holdToTalkVoiceSession {
+            do {
+                // 把最后一段也塞进 backlog，再统一 flush（避免 sendLoop 取消时丢在“已 drain 未发”的中间态）
+                if let backlog = holdToTalkPCMBacklog {
+                    await backlog.append(remainingPCM)
+                    try await flushPCMBacklog(backlog, session: session, maxChunkBytes: 4096)
+                } else {
+                    // 一次性发超大 data 可能导致 WS 分片/内存压力，这里做小分块
+                    try await sendPCMInChunks(remainingPCM, session: session, chunkSize: 4096)
+                }
+                try await session.sendAudioRecordDone(asrText: holdToTalkLatestASRText, isFinal: holdToTalkLatestASRIsFinal)
+            } catch {
+                // ignore：后续用本地缓存的 asr_result 兜底
+            }
+        }
+
+        // 3) 等待后端 asr_complete（超时就用最后一次 asr_result 兜底）
+        let finalFromServer = await waitForASRFinalText(gen: genAtStop, timeoutSeconds: timeoutSeconds)
+        let fallback = holdToTalkLatestASRText
+        let chosen = (finalFromServer ?? fallback).trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // 4) 关闭 WS
+        if let session = holdToTalkVoiceSession {
+            await session.close()
+        }
+        holdToTalkVoiceSession = nil
+        holdToTalkReceiveLoopTask?.cancel()
+        holdToTalkReceiveLoopTask = nil
+        holdToTalkPCMBacklog = nil
+
+        return chosen
+    }
+
+    func waitForASRFinalText(gen: Int, timeoutSeconds: Double) async -> String? {
+        // 若上一轮仍在等待，先清掉
+        holdToTalkFinalTextContinuation?.resume(returning: nil)
+        holdToTalkFinalTextContinuation = nil
+
+        return await withCheckedContinuation { cont in
+            // 当前轮不匹配则直接返回
+            guard holdToTalkGeneration == gen else {
+                cont.resume(returning: nil)
+                return
+            }
+            holdToTalkFinalTextContinuation = cont
+
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                try? await Task.sleep(nanoseconds: UInt64(max(0, timeoutSeconds) * 1_000_000_000))
+                // 仍在同一轮且还没被 resume：超时返回 nil
+                guard self.holdToTalkGeneration == gen else { return }
+                if let c = self.holdToTalkFinalTextContinuation {
+                    self.holdToTalkFinalTextContinuation = nil
+                    c.resume(returning: nil)
+                }
+            }
+        }
+    }
+
+    func sendPCMInChunks(_ data: Data, session: ChatVoiceInputService.Session, chunkSize: Int) async throws {
+        guard !data.isEmpty else { return }
+        let size = max(256, chunkSize)
+        var offset = 0
+        while offset < data.count {
+            let end = min(offset + size, data.count)
+            let sub = data.subdata(in: offset..<end)
+            try await session.sendPCMChunk(sub)
+            offset = end
+        }
+    }
+
+    func flushPCMBacklog(_ backlog: PCMBacklog, session: ChatVoiceInputService.Session, maxChunkBytes: Int) async throws {
+        let chunkSize = max(256, maxChunkBytes)
+        while true {
+            guard let next = await backlog.peek(maxBytes: chunkSize), !next.isEmpty else { break }
+            try await session.sendPCMChunk(next)
+            await backlog.dropFirst(next.count)
+        }
+    }
+}
+
+// MARK: - PCM backlog actor
+
+/// 线程安全的 PCM 待发送缓冲，解决 WS 初期 send() 失败导致的“前面漏字”。
+private actor PCMBacklog {
+    private var data = Data()
+
+    func append(_ bytes: Data) {
+        guard !bytes.isEmpty else { return }
+        data.append(bytes)
+        // 兜底上限：避免极端网络差导致内存无限增长（约 10 秒 32KB/s -> 320KB）
+        let cap = 512 * 1024
+        if data.count > cap {
+            // 保留最新部分（更贴近用户当前说话），同时防止 OOM
+            // 注意：Data 经过 slice/suffix 后 startIndex 可能不是 0；
+            // 这里强制生成“新的 Data”，避免后续用 Range(Int) 取子数据触发越界 trap。
+            data = Data(data.suffix(cap))
+        }
+    }
+
+    /// 取出头部一段（不移除）；若为空返回 nil。
+    func peek(maxBytes: Int) -> Data? {
+        guard !data.isEmpty else { return nil }
+        let n = max(0, maxBytes)
+        if n <= 0 { return nil }
+        let end = min(n, data.count)
+        // Data.startIndex 不一定是 0（尤其是 slice 后），必须用 Index 计算范围
+        let endIndex = data.index(data.startIndex, offsetBy: end)
+        return data.subdata(in: data.startIndex..<endIndex)
+    }
+
+    func dropFirst(_ count: Int) {
+        guard count > 0, !data.isEmpty else { return }
+        let n = min(count, data.count)
+        data.removeFirst(n)
     }
 }

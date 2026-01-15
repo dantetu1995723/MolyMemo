@@ -51,21 +51,24 @@ enum ScheduleVoiceUpdateService {
 
         func start() {
             task.resume()
-            debugLogOnce("[ScheduleVoiceUpdate] ✅ WS connected -> \(debugTag)")
+            debugLog("[ScheduleVoiceUpdate] ✅ WS connected -> \(debugTag)")
         }
 
         func close() async {
+            debugLog("[ScheduleVoiceUpdate] 🔌 WS closing...")
             task.cancel(with: .normalClosure, reason: nil)
             urlSession.invalidateAndCancel()
         }
 
         func sendWavHeaderOnce(sampleRate: Int = 16_000, channels: Int = 1, bitsPerSample: Int = 16) async throws {
             let header = Self.wavHeader(sampleRate: sampleRate, channels: channels, bitsPerSample: bitsPerSample, dataSize: 0)
+            debugLog("[ScheduleVoiceUpdate] 📤 client -> WAV header (\(header.count) bytes, sampleRate=\(sampleRate), channels=\(channels), bits=\(bitsPerSample))")
             try await sendBinary(header)
         }
 
         func sendPCMChunk(_ pcmBytes: Data) async throws {
             guard !pcmBytes.isEmpty else { return }
+            debugLog("[ScheduleVoiceUpdate] 📤 client -> PCM chunk (\(pcmBytes.count) bytes)")
             try await sendBinary(pcmBytes)
         }
 
@@ -73,30 +76,53 @@ enum ScheduleVoiceUpdateService {
             let payload: [String: Any] = ["action": "audio_record_done"]
             let data = try JSONSerialization.data(withJSONObject: payload, options: [])
             let text = String(data: data, encoding: .utf8) ?? #"{"action":"audio_record_done"}"#
+            debugLog("[ScheduleVoiceUpdate] 📤 client -> \(text)")
             try await sendText(text)
-            debugLogOnce("[ScheduleVoiceUpdate] 📩 client -> audio_record_done")
+        }
+
+        /// 正常结束录音：通知后端“音频发送完毕”，并可选携带客户端侧缓存的 asr_result（用于后端兜底解析）。
+        /// - Note: 服务端也可能会自行持久化 asr_result；这里携带是为了兼容“后端不保存/需要客户端回传最后转写”的实现。
+        func sendAudioRecordDone(asrText: String?, isFinal: Bool?) async throws {
+            var payload: [String: Any] = ["action": "audio_record_done"]
+
+            let t = (asrText ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !t.isEmpty {
+                payload["asr_result"] = [
+                    "text": t,
+                    "is_final": isFinal ?? true
+                ]
+            }
+
+            let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+            let text = String(data: data, encoding: .utf8) ?? #"{"action":"audio_record_done"}"#
+            debugLog("[ScheduleVoiceUpdate] 📤 client -> \(text)")
+            try await sendText(text)
         }
 
         func sendCancel() async throws {
             let payload: [String: Any] = ["action": "cancel"]
             let data = try JSONSerialization.data(withJSONObject: payload, options: [])
             let text = String(data: data, encoding: .utf8) ?? #"{"action":"cancel"}"#
+            debugLog("[ScheduleVoiceUpdate] 📤 client -> \(text)")
             try await sendText(text)
-            debugLogOnce("[ScheduleVoiceUpdate] 📩 client -> cancel")
         }
 
         func receiveEvent() async throws -> Event {
             let msg = try await task.receive()
             switch msg {
             case let .string(text):
+                debugLog("[ScheduleVoiceUpdate] 📥 RAW server message (string): \(text)")
                 return try Self.parseServerEvent(text: text, keepLocalId: keepLocalId)
             case let .data(data):
                 // 兼容：某些后端可能用 data 下发 JSON
                 if let text = String(data: data, encoding: .utf8) {
+                    debugLog("[ScheduleVoiceUpdate] 📥 RAW server message (data->string): \(text)")
                     return try Self.parseServerEvent(text: text, keepLocalId: keepLocalId)
                 }
+                debugLog("[ScheduleVoiceUpdate] ❌ RAW server message (binary, \(data.count) bytes) - cannot decode as UTF8")
                 throw ServiceError.invalidMessageShape
             @unknown default:
+                debugLog("[ScheduleVoiceUpdate] ❌ RAW server message (unknown type)")
                 throw ServiceError.invalidMessageShape
             }
         }
@@ -124,12 +150,15 @@ enum ScheduleVoiceUpdateService {
             case "asr_result":
                 let text = (dict["text"] as? String) ?? ""
                 let isFinal = (dict["is_final"] as? Bool) ?? false
+                debugLog("[ScheduleVoiceUpdate] 📥 server -> asr_result: \"\(text)\" (isFinal=\(isFinal))")
                 return .asrResult(text: text, isFinal: isFinal)
             case "processing":
                 let msg = dict["message"] as? String
+                debugLog("[ScheduleVoiceUpdate] 📥 server -> processing: \(msg ?? "(nil)")")
                 return .processing(message: msg)
             case "update_result":
-                debugLogUpdateResultOnce(rawJSONText: raw)
+                debugLog("[ScheduleVoiceUpdate] 📥 server -> update_result (raw json below):")
+                debugLogLong(raw)
                 let msg = dict["message"] as? String
                 let scheduleAny = dict["schedule"]
                 guard let scheduleDict = scheduleAny as? [String: Any] else {
@@ -140,11 +169,11 @@ enum ScheduleVoiceUpdateService {
                 }
                 return .updateResult(event: ev, message: msg)
             case "cancelled":
-                debugLogOnce("[ScheduleVoiceUpdate] ⚠️ server -> cancelled: \(raw)")
+                debugLog("[ScheduleVoiceUpdate] ⚠️ server -> cancelled: \(raw)")
                 let msg = dict["message"] as? String
                 return .cancelled(message: msg)
             case "error":
-                debugLogOnce("[ScheduleVoiceUpdate] ❌ server -> error: \(raw)")
+                debugLog("[ScheduleVoiceUpdate] ❌ server -> error: \(raw)")
                 let code: Int? = {
                     if let c = dict["code"] as? Int { return c }
                     if let c = dict["code"] as? Double { return Int(c) }
@@ -154,6 +183,7 @@ enum ScheduleVoiceUpdateService {
                 let msg = (dict["message"] as? String) ?? "未知错误"
                 return .error(code: code, message: msg)
             default:
+                debugLog("[ScheduleVoiceUpdate] ⚠️ server -> unknown type '\(type)': \(raw)")
                 throw ServiceError.invalidMessageShape
             }
         }
@@ -220,7 +250,7 @@ private extension FixedWidthInteger {
     }
 }
 
-// MARK: - Debug log (avoid repeated printing)
+// MARK: - Debug log
 
 private enum ScheduleVoiceUpdateDebugLog {
     static let key = "backend_chat_debug_schedule_voice_update_log"
@@ -232,24 +262,21 @@ private enum ScheduleVoiceUpdateDebugLog {
             return true
         }
         return UserDefaults.standard.bool(forKey: key)
+#elseif targetEnvironment(simulator)
+        // 模拟器也开
+        return true
 #else
         return false
 #endif
     }
 
-    private static var didPrintOnceKeys = Set<String>()
-    private static let lock = NSLock()
-
-    static func printOnce(_ key: String, _ message: String) {
+    static func log(_ message: String) {
         guard enabled else { return }
-        lock.lock()
-        defer { lock.unlock() }
-        guard !didPrintOnceKeys.contains(key) else { return }
-        didPrintOnceKeys.insert(key)
-        print(message)
+        let ts = String(format: "%.3f", Date().timeIntervalSince1970)
+        print("[\(ts)] \(message)")
     }
 
-    static func printLong(_ message: String, chunkSize: Int = 900) {
+    static func logLong(_ message: String, chunkSize: Int = 900) {
         guard enabled else { return }
         guard chunkSize > 0 else { return }
         if message.isEmpty { return }
@@ -263,14 +290,11 @@ private enum ScheduleVoiceUpdateDebugLog {
     }
 }
 
-private func debugLogOnce(_ message: String) {
-    // 按消息内容去重，避免同一条被多处重复触发
-    ScheduleVoiceUpdateDebugLog.printOnce(message, message)
+private func debugLog(_ message: String) {
+    ScheduleVoiceUpdateDebugLog.log(message)
 }
 
-private func debugLogUpdateResultOnce(rawJSONText: String) {
-    let header = "[ScheduleVoiceUpdate] ✅ server -> update_result (raw json):"
-    ScheduleVoiceUpdateDebugLog.printOnce(header, header)
-    ScheduleVoiceUpdateDebugLog.printLong(rawJSONText)
+private func debugLogLong(_ message: String) {
+    ScheduleVoiceUpdateDebugLog.logLong(message)
 }
 

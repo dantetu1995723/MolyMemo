@@ -96,6 +96,9 @@ struct ScheduleDetailSheet: View {
     @State private var isCanceling = false
     @State private var audioPower: CGFloat = 0.0
     @State private var recordingTranscript: String = ""
+    /// 缓存服务端推送的 asr_result（即便 UI 不展示，也需要在松手时回传后端做兜底解析）
+    @State private var lastASRText: String = ""
+    @State private var lastFinalASRText: String = ""
     @State private var isBlueArcExiting: Bool = false
     @State private var buttonFrame: CGRect = .zero
     @State private var isPressing = false
@@ -778,6 +781,8 @@ struct ScheduleDetailSheet: View {
         isCanceling = false
         isBlueArcExiting = false
         recordingTranscript = "正在连接..."
+        lastASRText = ""
+        lastFinalASRText = ""
         didSendAudioRecordDone = false
         voiceDoneTimeoutTask?.cancel()
         voiceDoneTimeoutTask = nil
@@ -853,12 +858,17 @@ struct ScheduleDetailSheet: View {
 
         if let session {
             didSendAudioRecordDone = true
+            let asrTextToSend = (lastFinalASRText.isEmpty ? lastASRText : lastFinalASRText).trimmingCharacters(in: .whitespacesAndNewlines)
+            let asrIsFinalToSend: Bool? = lastFinalASRText.isEmpty ? nil : true
             Task.detached(priority: .userInitiated) {
                 do {
                     if !finalPCM.isEmpty {
                         try await session.sendPCMChunk(finalPCM)
                     }
-                    try await session.sendAudioRecordDone()
+                    try await session.sendAudioRecordDone(
+                        asrText: asrTextToSend.isEmpty ? nil : asrTextToSend,
+                        isFinal: asrIsFinalToSend
+                    )
                 } catch {
                     // 发送失败：让 receive loop/timeout 收口
                 }
@@ -966,9 +976,14 @@ struct ScheduleDetailSheet: View {
     @MainActor
     private func handleVoiceUpdateEvent(_ ev: ScheduleVoiceUpdateService.Event) {
         switch ev {
-        case let .asrResult(text, isFinal: _):
+        case let .asrResult(text, isFinal):
             let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            recordingTranscript = t.isEmpty ? (isCapturingAudio ? "正在聆听..." : "正在分析语音内容...") : t
+            if !t.isEmpty {
+                lastASRText = t
+                if isFinal { lastFinalASRText = t }
+            }
+            // 需求：日程详情“长按语音编辑”时，音浪下方不展示实时转写，始终保持“正在聆听…”
+            recordingTranscript = isCapturingAudio ? "正在聆听..." : "正在分析语音内容..."
         case let .processing(message):
             let m = (message ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             recordingTranscript = m.isEmpty ? "正在分析语音内容..." : m

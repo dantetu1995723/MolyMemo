@@ -1,4 +1,6 @@
 import SwiftUI
+import SwiftData
+import UIKit
 
 struct MeetingSummaryCardStackView: View {
     @Binding var meetings: [MeetingCard]
@@ -16,6 +18,9 @@ struct MeetingSummaryCardStackView: View {
     @State private var menuMeetingId: UUID? = nil
     @State private var lastMenuOpenedAt: CFTimeInterval = 0
     @State private var pressingMeetingId: UUID? = nil
+
+    @EnvironmentObject private var appState: AppState
+    @Environment(\.modelContext) private var modelContext
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -86,6 +91,12 @@ struct MeetingSummaryCardStackView: View {
                                         },
                                         onDismiss: {
                                             withAnimation { menuMeetingId = nil }
+                                        },
+                                        onRescanAsSchedule: {
+                                            triggerRescanCreateSchedule(from: meeting)
+                                        },
+                                        onRescanAsContact: {
+                                            triggerRescanCreateContact(from: meeting)
                                         }
                                     )
                                     // 让胶囊跟随卡片缩放后的左边缘（默认缩放 anchor 是中心，leading 会向左/右移动半个增量）
@@ -106,6 +117,33 @@ struct MeetingSummaryCardStackView: View {
             }
             pressingMeetingId = nil
         }
+    }
+
+    // MARK: - 重新识别：复用“创建日程/人脉”链路
+    private func triggerRescanCreateSchedule(from meeting: MeetingCard) {
+        let payload = rescanPayload(from: meeting)
+        let text = "创建日程\n\n\(payload)"
+        ChatSendFlow.send(appState: appState, modelContext: modelContext, text: text, images: [], includeHistory: true)
+    }
+
+    private func triggerRescanCreateContact(from meeting: MeetingCard) {
+        let payload = rescanPayload(from: meeting)
+        let text = "创建人脉\n\n\(payload)"
+        ChatSendFlow.send(appState: appState, modelContext: modelContext, text: text, images: [], includeHistory: true)
+    }
+
+    private func rescanPayload(from meeting: MeetingCard) -> String {
+        let title = meeting.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let summary = meeting.summary.trimmingCharacters(in: .whitespacesAndNewlines)
+        let dateStr = meeting.formattedDate.trimmingCharacters(in: .whitespacesAndNewlines)
+        let dur = meeting.formattedDuration?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+        var lines: [String] = []
+        if !title.isEmpty { lines.append("会议标题：\(title)") }
+        if !dateStr.isEmpty { lines.append("时间：\(dateStr)") }
+        if !dur.isEmpty { lines.append("时长：\(dur)") }
+        if !summary.isEmpty { lines.append("纪要：\(summary)") }
+        return lines.joined(separator: "\n")
     }
 }
 

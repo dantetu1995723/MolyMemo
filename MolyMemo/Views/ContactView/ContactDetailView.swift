@@ -145,6 +145,9 @@ struct ContactDetailView: View {
     @State private var isCanceling = false
     @State private var audioPower: CGFloat = 0.0
     @State private var recordingTranscript: String = ""
+    /// 缓存服务端推送的 asr_result（即便 UI 不展示，也需要在松手时回传后端做兜底解析）
+    @State private var lastASRText: String = ""
+    @State private var lastFinalASRText: String = ""
     @State private var isBlueArcExiting: Bool = false
     @State private var buttonFrame: CGRect = .zero
     @State private var isPressing = false
@@ -422,6 +425,17 @@ struct ContactDetailView: View {
                                         .lineSpacing(6)
                                         .disabled(isSubmitting)
                                         .focused($isNotesFocused)
+                                        // 多行 TextField 默认回车是“换行”，这里改成“完成并收起键盘”（与日程详情一致）
+                                        .onChange(of: editedNotes) { _, newValue in
+                                            guard newValue.contains("\n") else { return }
+                                            let sanitized = newValue
+                                                .replacingOccurrences(of: "\n", with: " ")
+                                                .trimmingCharacters(in: .whitespacesAndNewlines)
+                                            if editedNotes != sanitized {
+                                                editedNotes = sanitized
+                                            }
+                                            dismissKeyboard()
+                                        }
                                         // 未聚焦时隐藏真实输入（由 overlay 展示更美观的文本/链接）
                                         .opacity(isNotesFocused ? 1 : 0.01)
                                     
@@ -673,6 +687,8 @@ struct ContactDetailView: View {
         isCanceling = false
         isBlueArcExiting = false
         recordingTranscript = "正在连接..."
+        lastASRText = ""
+        lastFinalASRText = ""
         didSendAudioRecordDone = false
         lastVoiceServerEventAt = nil
         voiceDoneTimeoutTask?.cancel()
@@ -748,12 +764,17 @@ struct ContactDetailView: View {
 
         if let session {
             didSendAudioRecordDone = true
+            let asrTextToSend = (lastFinalASRText.isEmpty ? lastASRText : lastFinalASRText).trimmingCharacters(in: .whitespacesAndNewlines)
+            let asrIsFinalToSend: Bool? = lastFinalASRText.isEmpty ? nil : true
             Task.detached(priority: .userInitiated) {
                 do {
                     if !finalPCM.isEmpty {
                         try await session.sendPCMChunk(finalPCM)
                     }
-                    try await session.sendAudioRecordDone()
+                    try await session.sendAudioRecordDone(
+                        asrText: asrTextToSend.isEmpty ? nil : asrTextToSend,
+                        isFinal: asrIsFinalToSend
+                    )
                 } catch {
                     // 发送失败：让 receive loop/timeout 收口
                 }
@@ -884,9 +905,14 @@ struct ContactDetailView: View {
         }
 
         switch ev {
-        case let .asrResult(text, isFinal: _):
+        case let .asrResult(text, isFinal):
             let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            recordingTranscript = t.isEmpty ? (isCapturingAudio ? "正在聆听..." : "正在分析语音内容...") : t
+            if !t.isEmpty {
+                lastASRText = t
+                if isFinal { lastFinalASRText = t }
+            }
+            // 需求：人脉详情“长按语音编辑”时，音浪下方不展示实时转写，始终保持“正在聆听…”
+            recordingTranscript = isCapturingAudio ? "正在聆听..." : "正在分析语音内容..."
         case let .processing(message):
             let m = (message ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             recordingTranscript = m.isEmpty ? "正在分析语音内容..." : m
@@ -1206,38 +1232,45 @@ struct ContactDetailView: View {
     
     private func triggerSystemContactSyncIfNeeded() {
         let phone = (contact.phoneNumber ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !phone.isEmpty else { return }
         let linked = (contact.systemContactIdentifier ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard linked.isEmpty else { return }
+        
+        // 规则：
+        // - 已绑定 identifier：允许无手机号也去更新（例如修改公司/备注等）
+        // - 未绑定 identifier：至少需要手机号才尝试匹配/创建（避免仅按名字误匹配）
+        if linked.isEmpty, phone.isEmpty {
+            dbg("syncSystemContact skip: no linkedId and no phone. name=\(contact.name)")
+            return
+        }
+        
+        dbg("syncSystemContact start: name=\(contact.name) phone=\(phone) linkedId=\(linked)")
         
         Task(priority: .utility) {
             let granted = await ContactsManager.shared.requestAccess()
-            guard granted else { return }
-           
-            // 先匹配已有联系人（避免重复创建）
-            if let matched = try? await ContactsManager.shared.findMatchingSystemContact(name: contact.name, phoneNumber: contact.phoneNumber) {
-                let id = matched.identifier.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !id.isEmpty {
-                    contact.systemContactIdentifier = id
-                    try? modelContext.save()
-                    return
-                }
+            if !granted {
+                await MainActor.run { dbg("syncSystemContact abort: permission denied") }
+                return
             }
             
             do {
-                let result = try await ContactsManager.shared.syncToSystemContacts(contact: contact)
-                let id: String? = {
-                    switch result {
-                    case .success(let identifier): return identifier
-                    case .duplicate(let identifier): return identifier
+                // 详情页“保存”属于更新：以联系人为锚点更新，不允许在这里新建系统联系人，避免重复创建。
+                let updatedId = try await ContactsManager.shared.updateSystemContact(contact: contact, source: "ContactDetailView.save")
+                let id = (updatedId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                
+                if id.isEmpty {
+                    await MainActor.run { dbg("syncSystemContact result: not found / not updated (id empty)") }
+                    return
+                }
+                
+                await MainActor.run {
+                    dbg("syncSystemContact result: updated id=\(id) (linkedId before=\(linked))")
+                    if linked != id {
+                        contact.systemContactIdentifier = id
+                        try? modelContext.save()
+                        dbg("syncSystemContact wrote back systemContactIdentifier=\(id)")
                     }
-                }()
-                if let id, !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    contact.systemContactIdentifier = id
-                    try? modelContext.save()
                 }
             } catch {
-                // 静默失败
+                await MainActor.run { dbg("syncSystemContact error: \(error.localizedDescription)") }
             }
         }
     }

@@ -1,5 +1,7 @@
 import SwiftUI
 import Combine
+import SwiftData
+import UIKit
 
 struct InvoiceCardStackView: View {
     @Binding var invoices: [InvoiceCard]
@@ -12,6 +14,9 @@ struct InvoiceCardStackView: View {
     @State private var menuInvoiceId: UUID? = nil
     @State private var lastMenuOpenedAt: CFTimeInterval = 0
     @State private var pressingInvoiceId: UUID? = nil
+
+    @EnvironmentObject private var appState: AppState
+    @Environment(\.modelContext) private var modelContext
     
     // Constants
     private let cardWidth: CGFloat = 300
@@ -93,6 +98,12 @@ struct InvoiceCardStackView: View {
                                         },
                                         onDismiss: {
                                             withAnimation { menuInvoiceId = nil }
+                                        },
+                                        onRescanAsSchedule: {
+                                            triggerRescanCreateSchedule(from: invoice)
+                                        },
+                                        onRescanAsContact: {
+                                            triggerRescanCreateContact(from: invoice)
                                         }
                                     )
                                     // 让胶囊跟随卡片缩放后的左边缘（默认缩放 anchor 是中心，leading 会向左/右移动半个增量）
@@ -124,6 +135,38 @@ struct InvoiceCardStackView: View {
             }
             pressingInvoiceId = nil
         }
+    }
+
+    // MARK: - 重新识别：复用“创建日程/人脉”链路
+    private func triggerRescanCreateSchedule(from invoice: InvoiceCard) {
+        let payload = rescanPayload(from: invoice)
+        let text = "创建日程\n\n\(payload)"
+        ChatSendFlow.send(appState: appState, modelContext: modelContext, text: text, images: [], includeHistory: true)
+    }
+
+    private func triggerRescanCreateContact(from invoice: InvoiceCard) {
+        let payload = rescanPayload(from: invoice)
+        let text = "创建人脉\n\n\(payload)"
+        ChatSendFlow.send(appState: appState, modelContext: modelContext, text: text, images: [], includeHistory: true)
+    }
+
+    private func rescanPayload(from invoice: InvoiceCard) -> String {
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        let dateStr = dateFormatter.string(from: invoice.date)
+
+        var lines: [String] = []
+        let merchant = invoice.merchantName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !merchant.isEmpty { lines.append("商户：\(merchant)") }
+        lines.append("金额：¥\(String(format: "%.2f", invoice.amount))")
+        let type = invoice.type.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !type.isEmpty { lines.append("类型：\(type)") }
+        let number = invoice.invoiceNumber.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !number.isEmpty { lines.append("发票号：\(number)") }
+        lines.append("日期：\(dateStr)")
+        let notes = (invoice.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !notes.isEmpty { lines.append("备注：\(notes)") }
+        return lines.joined(separator: "\n")
     }
 }
 

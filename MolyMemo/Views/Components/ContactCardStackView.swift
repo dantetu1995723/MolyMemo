@@ -1,6 +1,8 @@
 import SwiftUI
 import Combine
 import Foundation
+import SwiftData
+import UIKit
 
 struct ContactCardStackView: View {
     @Binding var contacts: [ContactCard]
@@ -17,6 +19,9 @@ struct ContactCardStackView: View {
     @State private var showMenu: Bool = false
     @State private var lastMenuOpenedAt: CFTimeInterval = 0
     @State private var isPressingCurrentCard: Bool = false
+
+    @EnvironmentObject private var appState: AppState
+    @Environment(\.modelContext) private var modelContext
     
     // Constants
     private let cardHeight: CGFloat = 220 // Adjusted height for contact card
@@ -123,6 +128,14 @@ struct ContactCardStackView: View {
                                             },
                                             onDismiss: {
                                                 withAnimation { showMenu = false }
+                                            },
+                                            onRescanAsSchedule: {
+                                                guard contacts.indices.contains(index) else { return }
+                                                triggerRescanCreateSchedule(from: contacts[index])
+                                            },
+                                            onRescanAsContact: {
+                                                guard contacts.indices.contains(index) else { return }
+                                                triggerRescanCreateContact(from: contacts[index])
                                             }
                                         )
                                         // 让胶囊跟随卡片缩放后的左边缘（默认缩放 anchor 是中心，leading 会向左/右移动半个增量）
@@ -223,6 +236,54 @@ struct ContactCardStackView: View {
         } else {
             return Double(contacts.count - relativeIndex)
         }
+    }
+
+    // MARK: - 重新识别：复用“创建日程/人脉”链路（优先带原始截图）
+    private func triggerRescanCreateSchedule(from card: ContactCard) {
+        let payload = rescanPayload(from: card)
+        let text = "创建日程\n\n\(payload)"
+        let images = rescanImages(from: card)
+        ChatSendFlow.send(appState: appState, modelContext: modelContext, text: text, images: images, includeHistory: true)
+    }
+
+    private func triggerRescanCreateContact(from card: ContactCard) {
+        let payload = rescanPayload(from: card)
+        let text = "创建人脉\n\n\(payload)"
+        let images = rescanImages(from: card)
+        ChatSendFlow.send(appState: appState, modelContext: modelContext, text: text, images: images, includeHistory: true)
+    }
+
+    private func rescanImages(from card: ContactCard) -> [UIImage] {
+        guard let data = card.rawImage, let img = UIImage(data: data) else { return [] }
+        return [img]
+    }
+
+    private func rescanPayload(from card: ContactCard) -> String {
+        func t(_ s: String?) -> String { (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
+        var lines: [String] = []
+        let name = t(card.name)
+        if !name.isEmpty { lines.append("姓名：\(name)") }
+        let en = t(card.englishName)
+        if !en.isEmpty { lines.append("英文名：\(en)") }
+        let company = t(card.company)
+        if !company.isEmpty { lines.append("公司：\(company)") }
+        let title = t(card.title)
+        if !title.isEmpty { lines.append("职位：\(title)") }
+        let phone = t(card.phone)
+        if !phone.isEmpty { lines.append("电话：\(phone)") }
+        let email = t(card.email)
+        if !email.isEmpty { lines.append("邮箱：\(email)") }
+        let location = t(card.location)
+        if !location.isEmpty { lines.append("地区：\(location)") }
+        let industry = t(card.industry)
+        if !industry.isEmpty { lines.append("行业：\(industry)") }
+        let rel = t(card.relationshipType)
+        if !rel.isEmpty { lines.append("关系：\(rel)") }
+        let notes = t(card.notes)
+        if !notes.isEmpty { lines.append("备注：\(notes)") }
+        let impression = t(card.impression)
+        if !impression.isEmpty { lines.append("印象：\(impression)") }
+        return lines.joined(separator: "\n")
     }
 }
 
