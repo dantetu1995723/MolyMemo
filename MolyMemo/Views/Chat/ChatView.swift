@@ -156,10 +156,8 @@ struct ChatView: View {
                         }
                         .safeAreaInset(edge: .top) {
                             // 动态计算占位高度：顶部安全区域 + 导航栏与提醒卡片的高度
-                            // 修正：此处不应重复叠加 safeAreaInsets.top，除非外层已忽略安全区。
-                            // 调整：由于外层现在忽略安全区，这里需要完整包含安全区 + 头部内容高度。
-                            // 减小该高度可以缩短顶部间距。
-                            Color.clear.frame(height: geometry.safeAreaInsets.top + 96)
+                            // 调整：紧凑布局后，高度从 96 减小到 84
+                            Color.clear.frame(height: geometry.safeAreaInsets.top + 84)
                         }
                         .safeAreaInset(edge: .bottom) {
                             Color.clear.frame(height: bottomAvoidHeight)
@@ -248,12 +246,12 @@ struct ChatView: View {
                         
                         headerView
                             .padding(.horizontal, 24)
-                            .padding(.top, 8)
-                            .padding(.bottom, 12)
+                            .padding(.top, 4)
+                            .padding(.bottom, 2)
                         
                         reminderCard
                             .padding(.horizontal, 24)
-                            .padding(.bottom, 8)
+                            .padding(.bottom, 10)
                     }
                     .background(backgroundGray)
                     .clipShape(RoundedCorner(radius: 24, corners: [.bottomLeft, .bottomRight]))
@@ -274,6 +272,7 @@ struct ChatView: View {
                         },
                         audioPower: inputViewModel.audioPower,
                         transcript: inputViewModel.recordingTranscript,
+                        showsTranscript: false,
                         inputFrame: inputViewModel.inputFrame,
                         toolboxFrame: inputViewModel.toolboxFrame
                     )
@@ -420,7 +419,8 @@ struct ChatView: View {
                 return ChatSendFlow.sendPlaceholder(
                     appState: appState,
                     modelContext: modelContext,
-                    placeholderText: "识别中..."
+                    // 语音输入：用户气泡会被 asr_result 实时更新，这里不需要“识别中...”占位文案
+                    placeholderText: ""
                 )
             }
             
@@ -432,6 +432,50 @@ struct ChatView: View {
                     messageId: messageId,
                     text: text
                 )
+            }
+
+            inputViewModel.onUpdatePlaceholderText = { messageId, text in
+                // 语音输入：仅更新用户气泡内容（实时转写），不触发 AI
+                ChatSendFlow.updatePlaceholderText(
+                    appState: appState,
+                    modelContext: modelContext,
+                    messageId: messageId,
+                    text: text
+                )
+            }
+
+            inputViewModel.onBeginVoiceAgentMessage = {
+                // 语音 WS：AI 回复与普通 chat 一致（占位 + 结构化流式回填）
+                let agentMsg = ChatMessage(role: .agent, content: "")
+                withAnimation {
+                    appState.chatMessages.append(agentMsg)
+                }
+                let mid = agentMsg.id
+                appState.isAgentTyping = true
+                appState.startStreaming(messageId: mid)
+                return mid
+            }
+
+            inputViewModel.onApplyVoiceAgentOutput = { agentMessageId, output in
+                appState.applyStructuredOutput(output, to: agentMessageId, modelContext: modelContext)
+            }
+
+            inputViewModel.onEndVoiceAgentMessage = { agentMessageId in
+                appState.completeStreaming(messageId: agentMessageId)
+                appState.isAgentTyping = false
+                if let completed = appState.chatMessages.first(where: { $0.id == agentMessageId }) {
+                    appState.saveMessageToStorage(completed, modelContext: modelContext)
+                }
+            }
+
+            inputViewModel.onVoiceAgentError = { agentMessageId, message in
+                if let mid = agentMessageId {
+                    appState.handleStreamingError(message, for: mid)
+                    if let failed = appState.chatMessages.first(where: { $0.id == mid }) {
+                        appState.saveMessageToStorage(failed, modelContext: modelContext)
+                    }
+                }
+                appState.isAgentTyping = false
             }
             
             inputViewModel.onRemovePlaceholder = { messageId in
@@ -449,6 +493,7 @@ struct ChatView: View {
             
             inputViewModel.onStopGenerator = {
                 appState.stopGeneration()
+                inputViewModel.stopVoiceAssistantIfNeeded()
             }
 
             // 首页通知栏：初始化今日日程
@@ -606,9 +651,13 @@ struct ChatView: View {
                     HapticFeedback.light()
                     appState.showSettings = true
                 }) {
-                    Image(systemName: "line.3.horizontal")
-                        .font(.system(size: 20, weight: .light))
+                    Image("setting")
+                        .renderingMode(.template)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 22, height: 22, alignment: .leading)
                         .foregroundColor(primaryGray)
+                        .frame(width: 44, height: 44, alignment: .leading)
                 }
                 
                 Spacer()
@@ -641,13 +690,14 @@ struct ChatView: View {
                         .stroke(Color.black.opacity(0.05), lineWidth: 1)
                 )
                 .matchedGeometryEffect(id: "chatSearchBg", in: chatSearchNamespace)
+
+            // 保留一个不占位的 matchedGeometry 锚点，避免与收起态的 icon 动画产生跳变
+            Color.clear
+                .frame(width: 0, height: 0)
+                .matchedGeometryEffect(id: "chatSearchIcon", in: chatSearchNamespace)
+                .allowsHitTesting(false)
             
             HStack(spacing: 10) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 18, weight: .light))
-                    .foregroundColor(primaryGray)
-                    .matchedGeometryEffect(id: "chatSearchIcon", in: chatSearchNamespace)
-                
                 TextField("搜索聊天记录", text: $chatSearchQuery)
                     .font(.system(size: 16, weight: .regular))
                     .foregroundColor(primaryGray)
@@ -694,7 +744,7 @@ struct ChatView: View {
             HapticFeedback.light()
             expandChatSearch()
         }) {
-            ZStack {
+            ZStack(alignment: .trailing) {
                 Capsule()
                     // 收缩态不显示白底，但保留 matchedGeometryEffect 的占位用于展开动画
                     .fill(Color.clear)
@@ -704,8 +754,9 @@ struct ChatView: View {
                     .font(.system(size: 20, weight: .light))
                     .foregroundColor(primaryGray)
                     .matchedGeometryEffect(id: "chatSearchIcon", in: chatSearchNamespace)
+                    .frame(width: 22, height: 22, alignment: .trailing)
             }
-            .frame(width: 40, height: 40)
+            .frame(width: 44, height: 44, alignment: .trailing)
         }
         .buttonStyle(.plain)
     }

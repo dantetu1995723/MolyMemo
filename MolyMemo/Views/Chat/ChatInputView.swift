@@ -209,7 +209,7 @@ struct ChatInputView: View {
                     }
                     .disabled(isLocked)
                     .opacity(isLocked ? 0.4 : 1)
-                    .padding(.leading, 8)
+                    .padding(.leading, 12)
                     .padding(.bottom, 10)
                 } else {
                     // 有图片时，左侧留出间距 (图中标注 12)
@@ -388,7 +388,7 @@ struct ChatInputView: View {
                         }
                         .frame(width: 32, height: 32)
                     }
-                    .padding(.trailing, 8)
+                    .padding(.trailing, 12)
                     .padding(.bottom, 10)
                 } else if !viewModel.inputText.isEmpty || viewModel.selectedImage != nil {
                     Button(action: {

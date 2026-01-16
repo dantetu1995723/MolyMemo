@@ -190,6 +190,23 @@ enum ChatSendFlow {
             )
         }
     }
+
+    /// 仅更新用户占位消息内容（不触发 AI）
+    static func updatePlaceholderText(
+        appState: AppState,
+        modelContext: ModelContext,
+        messageId: UUID,
+        text: String
+    ) {
+        guard let index = appState.chatMessages.firstIndex(where: { $0.id == messageId }) else { return }
+        var updated = appState.chatMessages[index]
+        // 保持“原始文本”，不做 trim；但避免重复赋值引发 UI 抖动
+        if updated.content != text {
+            updated.content = text
+            appState.chatMessages[index] = updated
+            appState.saveMessageToStorage(updated, modelContext: modelContext)
+        }
+    }
 }
 
 

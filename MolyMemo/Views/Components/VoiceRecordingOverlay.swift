@@ -102,6 +102,8 @@ struct VoiceRecordingOverlay: View {
     var onExitComplete: (() -> Void)? = nil
     var audioPower: CGFloat
     var transcript: String
+    /// 是否展示音浪下方的实时转写文本（聊天语音输入已在气泡内实时更新，所以应关闭）
+    var showsTranscript: Bool = true
     var inputFrame: CGRect
     var toolboxFrame: CGRect
     
@@ -131,7 +133,7 @@ struct VoiceRecordingOverlay: View {
                         VoiceWaveformView(audioPower: smoothedPower, isCanceling: isCanceling)
                         
                         // 提示文字
-                        Text(isCanceling ? "松手发送，上滑取消" : (transcript.isEmpty ? "松手发送，上滑取消" : transcript))
+                        Text(promptText)
                             .font(.system(size: 16, weight: .regular))
                             .foregroundColor(isCanceling ? Color(hex: "FF453A") : Color(hex: "333333").opacity(0.6))
                     }
@@ -182,5 +184,14 @@ struct VoiceRecordingOverlay: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.16) {
             onExitComplete?()
         }
+    }
+
+    private var promptText: String {
+        if isCanceling { return "松手发送，上滑取消" }
+        if showsTranscript {
+            let t = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+            return t.isEmpty ? "松手发送，上滑取消" : transcript
+        }
+        return "松手发送，上滑取消"
     }
 }

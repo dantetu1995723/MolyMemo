@@ -240,7 +240,8 @@ final class BackendChatService {
     }
 
     /// 把单个后端 json chunk 解析成“增量输出”（delta）：用于即时追加到 UI
-    private static func parseChunkDelta(_ chunk: [String: Any]) -> BackendChatStructuredOutput {
+    /// - 也被语音 WS（`/api/v1/chat/voice`）复用，用于把 assistant chunk 按普通 chat 逻辑回填到 UI。
+    static func parseChunkDelta(_ chunk: [String: Any]) -> BackendChatStructuredOutput {
         var out = BackendChatStructuredOutput()
         out.isDelta = true
 
