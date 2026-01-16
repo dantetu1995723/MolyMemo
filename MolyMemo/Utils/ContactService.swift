@@ -842,10 +842,26 @@ enum ContactService {
         request.httpMethod = "DELETE"
         try applyCommonHeaders(to: &request)
         debugPrintRequest(request, tag: "delete")
+
+#if DEBUG || targetEnvironment(simulator)
+        // ✅ 删除链路的“原始打印”强制开启（仅 DEBUG/模拟器）：
+        // - 避免为了看一次删除打开全局 debugLogFullResponse 导致列表刷屏
+        // - 格式对齐 BackendChat 的 reqId 打印，便于你对照前后端一致性
+        let reqId = UUID().uuidString
+        let method = request.httpMethod ?? "DELETE"
+        let urlString = request.url?.absoluteString ?? "(nil)"
+        print("[ContactService][reqId=\(reqId)][delete] \(method) \(urlString)")
+#endif
         
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
             debugPrintResponse(data: data, response: response, error: nil, tag: "delete")
+
+#if DEBUG || targetEnvironment(simulator)
+            let status = (response as? HTTPURLResponse)?.statusCode
+            let body = data.isEmpty ? "<empty>" : (String(data: data, encoding: .utf8) ?? "<non-utf8 body: \(data.count) bytes>")
+            print("[ContactService][reqId=\(reqId)][delete] status=\(status.map(String.init) ?? "(non-http)") body=\(body)")
+#endif
             
             guard let http = response as? HTTPURLResponse else { throw ContactServiceError.invalidResponse }
             if !(200...299).contains(http.statusCode) {
@@ -857,6 +873,9 @@ enum ContactService {
             await listCache.invalidateAll()
             await allPagesCache.invalidateAll()
         } catch {
+#if DEBUG || targetEnvironment(simulator)
+            print("[ContactService][reqId=\(reqId)][delete] error=\(error.localizedDescription)")
+#endif
             if debugLogsEnabled {
             }
             throw error

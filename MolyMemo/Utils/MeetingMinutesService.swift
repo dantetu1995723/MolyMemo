@@ -703,9 +703,6 @@ class MeetingMinutesService {
 
         let item = try await pollMeetingMinutesResult(id: job.id, timeoutSeconds: 600)
         let finalSummary = (item.summary ?? item.meetingSummary)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !finalSummary.isEmpty else {
-            throw MeetingMinutesError.emptyResult
-        }
 
         // 优先使用 meeting_details（你的样例），其次使用 transcriptions
         let transcriptions: [MeetingTranscription]? = {
@@ -739,7 +736,7 @@ class MeetingMinutesService {
             id: item.id,
             title: (resolvedTitle?.isEmpty == false) ? resolvedTitle : nil,
             date: resolvedDate,
-            summary: finalSummary,
+            summary: finalSummary, // 允许为空：由上层 UI 决定“暂无有效内容”的占位文案
             transcriptions: transcriptions,
             audioDuration: item.audioDuration,
             audioUrl: item.audioUrl
@@ -768,6 +765,14 @@ class MeetingMinutesService {
                 let hasSummary = !((item.summary ?? item.meetingSummary) ?? "")
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                     .isEmpty
+                let hasDetails = ((item.meetingDetails?.isEmpty == false) || (item.transcriptions?.isEmpty == false))
+                let looksDone = (
+                    status.contains("done")
+                    || status.contains("complete")
+                    || status.contains("completed")
+                    || status.contains("success")
+                    || status.contains("finished")
+                )
 
                 // 控制台降噪：只在状态/hasSummary 变化或每 12 次打印一次
                 let key = "\(status.isEmpty ? "nil" : status)|\(hasSummary)"
@@ -778,7 +783,17 @@ class MeetingMinutesService {
                 if status.contains("fail") || status.contains("error") {
                     throw MeetingMinutesError.serverError("后端任务失败（status=\(item.status ?? "nil")）")
                 }
-                if hasSummary && (status.isEmpty || status.contains("done") || status.contains("complete") || status.contains("success")) {
+                // ✅ 完成条件：
+                // - 有 summary：与历史一致，尽快返回
+                // - 有转写详情：即使 summary 为空也认为“有有效结果”，返回
+                // - 状态明确完成：即使 summary/details 都为空，也返回，让上层展示“暂无有效内容”的占位卡片
+                if hasSummary && (status.isEmpty || looksDone) {
+                    return item
+                }
+                if hasDetails && (status.isEmpty || looksDone) {
+                    return item
+                }
+                if looksDone {
                     return item
                 }
             } catch {

@@ -31,8 +31,10 @@ class LiveRecordingManager: ObservableObject {
 
     // Widget/快捷指令场景：可以只在后台做转写，但不把文本推到 UI（灵动岛/Live Activity）
     private var publishTranscriptionToUI: Bool = true
-    // 会议记录页内发起的录音：不需要往聊天室插入“生成中卡片”
-    private var suppressChatCardOnUpload: Bool = false
+    // 上传生成后，是否写入“聊天室会议卡片”（生成中 -> 完成/失败）
+    private var uploadToChat: Bool = true
+    // 上传生成后，是否通知会议列表页插入/更新“占位条目”
+    private var updateMeetingList: Bool = false
     
     // 保存 ModelContext 的回调
     var modelContextProvider: (() -> ModelContext?)?
@@ -62,10 +64,12 @@ class LiveRecordingManager: ObservableObject {
     
     // 开始录音
     /// - Parameter publishTranscriptionToUI: 是否在 Live Activity / 灵动岛显示实时转写文本（默认 true）。
-    /// - Parameter suppressChatCardOnUpload: 仅会议记录页使用：上传生成时不更新聊天室（默认 false）。
-    func startRecording(publishTranscriptionToUI: Bool = true, suppressChatCardOnUpload: Bool = false) {
+    /// - Parameter uploadToChat: 是否在聊天室生成会议卡片（默认 true）。
+    /// - Parameter updateMeetingList: 是否在会议列表页插入/更新占位条目（默认 false）。
+    func startRecording(publishTranscriptionToUI: Bool = true, uploadToChat: Bool = true, updateMeetingList: Bool = false) {
         self.publishTranscriptionToUI = publishTranscriptionToUI
-        self.suppressChatCardOnUpload = suppressChatCardOnUpload
+        self.uploadToChat = uploadToChat
+        self.updateMeetingList = updateMeetingList
         print("[RecordingFlow] 🎙️ startRecording publishToUI=\(publishTranscriptionToUI)")
 
         // 先让 UI 进入“启动中”，避免用户感觉点了没反应
@@ -311,10 +315,14 @@ class LiveRecordingManager: ObservableObject {
         guard isRecording else { 
             return 
         }
-        print("[RecordingFlow] 🛑 stopRecording duration=\(recordingDuration)s recognizedTextLen=\(recognizedText.count)")
+        // 注意：recordingDuration 是 UI 计时器驱动（0.5s 一跳），用于展示即可；
+        // 真实时长以 AVAudioRecorder.currentTime 为准，避免短录音被误判为 0/过短导致直接丢弃，从而“没有生成卡片”。
+        let recorderSeconds = audioRecorder?.currentTime ?? 0
+        let measuredDuration = max(recorderSeconds, recordingDuration)
+        print("[RecordingFlow] 🛑 stopRecording duration=\(measuredDuration)s (ui=\(recordingDuration)s, rec=\(recorderSeconds)s) recognizedTextLen=\(recognizedText.count)")
 
         // ⚡️ 关键：主线程只做“立刻切 UI + 立刻发通知”，重清理放后台，避免停止按钮点击后卡顿
-        let finalDuration = recordingDuration
+        let finalDuration = measuredDuration
         let finalAudioURL = audioURL
 
         isStartingRecording = false
@@ -325,26 +333,10 @@ class LiveRecordingManager: ObservableObject {
         audioRecorder?.stop()
         recordingTimer?.invalidate()
 
-        // 如果录音时间太短（小于 2 秒），则直接丢弃（但清理仍放后台）
-        if finalDuration < 2.0 {
-            print("[RecordingFlow] ⚠️ Recording too short (\(finalDuration)s), discarding.")
-            if let url = finalAudioURL {
-                try? FileManager.default.removeItem(at: url)
-            }
-            DispatchQueue.main.async { [weak self] in
-                self?.endLiveActivity()
-            }
-            // 后台清理语音识别 / AudioSession
-            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                self?.cleanupAfterStop()
-            }
-            return
-        }
-
-        // ✅ 立刻通知主 App 进入“上传/生成”流程（MeetingRecordView 会即时插入 loading 小卡片）
-        if let url = finalAudioURL {
-            postRecordingNeedsUpload(audioURL: url, duration: finalDuration)
-        }
+        // ✅ 立刻通知主 App 进入“上传/生成”流程：
+        // - 不再用“时长阈值”决定要不要生成卡片（用户停止就应生成：成功/失败都要给结果）
+        // - 若文件缺失/无效，也会发通知，让上层生成“失败卡片”而不是静默消失
+        postRecordingNeedsUpload(audioURL: finalAudioURL, duration: finalDuration)
 
         // 后台做耗时清理，避免阻塞 UI
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
@@ -380,19 +372,15 @@ class LiveRecordingManager: ObservableObject {
     /// 通知主App上传音频到后端生成会议纪要
     /// 注意：这里只发送通知，实际的后端调用由主App处理（因为Widget Extension无法访问MeetingMinutesService）
     private func uploadToBackend() {
-        guard let audioURL = audioURL else {
-            return
-        }
         postRecordingNeedsUpload(audioURL: audioURL, duration: recordingDuration)
-        
     }
 
-    private func postRecordingNeedsUpload(audioURL: URL, duration: TimeInterval) {
-        print("[RecordingFlow] ☁️ notify backend upload audioPath=\(audioURL.path)")
+    private func postRecordingNeedsUpload(audioURL: URL?, duration: TimeInterval) {
+        let audioPath = audioURL?.path ?? ""
+        print("[RecordingFlow] ☁️ notify backend upload audioPath=\(audioPath)")
 
         let title = "Moly录音 - \(formatDate(Date()))"
         let date = Date()
-        let audioPath = audioURL.path
 
         let meetingData: [String: Any] = [
             "title": title,
@@ -400,7 +388,11 @@ class LiveRecordingManager: ObservableObject {
             "duration": duration,
             "audioPath": audioPath,
             "needsBackendUpload": true,
-            "suppressChatCard": suppressChatCardOnUpload
+            // 新字段（更清晰）
+            "uploadToChat": uploadToChat,
+            "updateMeetingList": updateMeetingList,
+            // 旧字段：继续写入以兼容历史监听逻辑（含外部 Extension/老版本）
+            "suppressChatCard": !uploadToChat
         ]
 
         // NotificationCenter 的 publisher 默认在“发送线程”回调；为了避免 SwiftUI 状态在后台更新，强制在主线程发送

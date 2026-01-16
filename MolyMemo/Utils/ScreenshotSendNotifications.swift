@@ -18,8 +18,13 @@ enum ScreenshotSendNotifications {
     }
 
     static func postResult(success: Bool, thumbnailRelativePath: String?) async {
+        await postResult(success: success, thumbnailRelativePath: thumbnailRelativePath, id: resultId)
+    }
+
+    /// 发送“结果通知”（可自定义 identifier，用于多张截图时不互相覆盖）
+    static func postResult(success: Bool, thumbnailRelativePath: String?, id: String) async {
         await post(
-            id: resultId,
+            id: id,
             title: success ? "截图已发送" : "截图发送失败",
             body: success ? "已发送到MolyMemo聊天室" : "请稍后重试",
             thumbnailRelativePath: thumbnailRelativePath

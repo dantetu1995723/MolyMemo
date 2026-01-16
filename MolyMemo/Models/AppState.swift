@@ -516,6 +516,10 @@ struct ChatMessage: Identifiable, Equatable {
     var notes: String? = nil  // 临时存储数据（如待处理的报销信息）
     var isContactToolRunning: Bool = false // tool 中间态：用于联系人创建 loading
     var isScheduleToolRunning: Bool = false // tool 中间态：用于日程创建/更新 loading
+    /// 仅运行态：当联系人工具链路刚结束（contacts_create/contacts_update），允许“下一批联系人卡片”把本地 soft-delete 的联系人复活。
+    /// - 目的：支持“删了又创建同名联系人”时，聊天/工具箱不应继续划杠。
+    /// - 注意：不落盘，不参与 Equatable（避免 Date/状态抖动影响 UI diff）。
+    var reviveContactsForNextCards: Bool = false
     var showIntentSelection: Bool = false  // 是否显示意图选择器
     var isWrongClassification: Bool = false  // 是否是错误识别（用于"识别错了"按钮）
     var showReclassifyBubble: Bool = false  // 是否显示重新分类气泡
@@ -759,6 +763,13 @@ class AppState: ObservableObject {
     
     /// 统一：软删除一个联系人（聊天室卡片 + 工具箱联系人列表同步，按 id/remoteId 统一）
     func softDeleteContactCard(_ card: ContactCard, modelContext: ModelContext) async {
+        // ✅ 关键：删除可能发生在“用户还没打开聊天室 / chatMessages 仍为空”的场景。
+        // 此时仅修改内存数组不会影响落盘历史，导致“联系人列表删了，但聊天仍正常显示”。
+        // 这里先把最近一批聊天历史拉进内存，再做统一置灰并落库。
+        if chatMessages.isEmpty {
+            refreshChatMessagesFromStorageIfNeeded(modelContext: modelContext, limit: 200)
+        }
+
         // 1) 聊天历史：同实体卡片置灰划杠并落库
         markContactCardsAsObsoleteAndPersist(updated: card, modelContext: modelContext)
         
@@ -783,6 +794,148 @@ class AppState: ObservableObject {
             }
         }
         Task { await ContactService.invalidateContactCaches() }
+    }
+
+    // MARK: - 会议记录：删除同步（聊天室卡片 -> 工具箱列表 + 后端）
+
+    /// 统一：从聊天室删除一个会议卡片，同时同步：
+    /// - 聊天历史：移除所有同一会议（按 remoteId 优先，其次 audioPath）
+    /// - 工具箱会议列表：通过通知立即移除
+    /// - 后端：有 remoteId 则真实删除
+    ///
+    /// 设计目标：前后端一致、逻辑清晰；删除失败则回滚聊天室，避免“聊天室删了但工具箱/后端还在”。
+    @MainActor
+    func deleteMeetingCardEverywhere(_ meeting: MeetingCard, modelContext: ModelContext) async {
+        func trimmed(_ s: String?) -> String { (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
+
+        func normalizeLocalAudioPath(_ raw: String?) -> String {
+            let s = trimmed(raw)
+            guard !s.isEmpty else { return "" }
+            if let u = URL(string: s), u.isFileURL {
+                return u.standardizedFileURL.path
+            }
+            return URL(fileURLWithPath: s).standardizedFileURL.path
+        }
+
+        let rid = trimmed(meeting.remoteId)
+        let localPath = normalizeLocalAudioPath(meeting.audioPath)
+
+        func isSameMeeting(_ other: MeetingCard) -> Bool {
+            let otherRid = trimmed(other.remoteId)
+            if !rid.isEmpty, !otherRid.isEmpty {
+                return otherRid == rid
+            }
+            let otherPath = normalizeLocalAudioPath(other.audioPath)
+            if !localPath.isEmpty, !otherPath.isEmpty {
+                return otherPath == localPath
+            }
+            // 最后兜底：同一条消息内删除（按本地 UUID）
+            return other.id == meeting.id
+        }
+
+        func rebuildAggregatesFromSegments(_ segments: [ChatSegment], into message: inout ChatMessage) {
+            var schedules: [ScheduleEvent] = []
+            var contacts: [ContactCard] = []
+            var invoices: [InvoiceCard] = []
+            var meetings: [MeetingCard] = []
+
+            for seg in segments {
+                if let s = seg.scheduleEvents, !s.isEmpty { schedules.append(contentsOf: s) }
+                if let c = seg.contacts, !c.isEmpty { contacts.append(contentsOf: c) }
+                if let i = seg.invoices, !i.isEmpty { invoices.append(contentsOf: i) }
+                if let m = seg.meetings, !m.isEmpty { meetings.append(contentsOf: m) }
+            }
+
+            message.scheduleEvents = schedules.isEmpty ? nil : schedules
+            message.contacts = contacts.isEmpty ? nil : contacts
+            message.invoices = invoices.isEmpty ? nil : invoices
+            message.meetings = meetings.isEmpty ? nil : meetings
+        }
+
+        // 1) 先在本地聊天室“乐观移除”，并记录快照用于失败回滚
+        var snapshots: [(idx: Int, old: ChatMessage)] = []
+        for i in chatMessages.indices {
+            var msg = chatMessages[i]
+            let old = msg
+            var changed = false
+
+            // a) 聚合字段 meetings
+            if var ms = msg.meetings, !ms.isEmpty {
+                let before = ms.count
+                ms.removeAll(where: { isSameMeeting($0) })
+                if ms.count != before {
+                    msg.meetings = ms.isEmpty ? nil : ms
+                    changed = true
+                }
+            }
+
+            // b) 分段字段 segments（优先）
+            if var segs = msg.segments, !segs.isEmpty {
+                var segChanged = false
+                for j in segs.indices {
+                    guard segs[j].kind == .meetingCards else { continue }
+                    if var ms = segs[j].meetings, !ms.isEmpty {
+                        let before = ms.count
+                        ms.removeAll(where: { isSameMeeting($0) })
+                        if ms.count != before {
+                            segs[j].meetings = ms.isEmpty ? nil : ms
+                            segChanged = true
+                        }
+                    }
+                }
+                if segChanged {
+                    // 删除空的 meetingCards 段，避免 UI 留下“空卡片占位”
+                    segs.removeAll(where: { $0.kind == .meetingCards && (($0.meetings ?? []).isEmpty) })
+                    msg.segments = segs.isEmpty ? nil : segs
+                    if let newSegs = msg.segments {
+                        rebuildAggregatesFromSegments(newSegs, into: &msg)
+                    } else {
+                        // 没有 segments：保持现有聚合字段（已经处理 meetings）
+                    }
+                    changed = true
+                }
+            }
+
+            if changed {
+                snapshots.append((idx: i, old: old))
+                chatMessages[i] = msg
+                saveMessageToStorage(msg, modelContext: modelContext)
+            }
+        }
+
+        // 若本地没有任何命中，就不做后续动作
+        guard !snapshots.isEmpty else { return }
+
+        // 2) 后端删除（有 remoteId 才删）；失败则回滚聊天室，保持一致性
+        do {
+            if !rid.isEmpty {
+                try await MeetingMinutesService.deleteMeetingMinutes(id: rid)
+            }
+
+            // 3) 删本地音频文件（仅当 path 存在）
+            if !localPath.isEmpty {
+                let url = URL(fileURLWithPath: localPath)
+                if FileManager.default.fileExists(atPath: url.path) {
+                    try? FileManager.default.removeItem(at: url)
+                }
+            }
+
+            // 4) 通知会议列表立即移除（工具箱同步）
+            NotificationCenter.default.post(
+                name: NSNotification.Name("MeetingListDidDelete"),
+                object: nil,
+                userInfo: [
+                    "remoteId": rid,
+                    "audioPath": meeting.audioPath ?? ""
+                ]
+            )
+        } catch {
+            // 回滚：恢复本地聊天室（并落库），避免“聊天室删了但后端/工具箱还在”
+            for s in snapshots {
+                chatMessages[s.idx] = s.old
+                saveMessageToStorage(s.old, modelContext: modelContext)
+            }
+        }
     }
     
     /// 从工具箱联系人（SwiftData Contact）发起的删除：转换为统一卡片删除逻辑，确保聊天室同步。
@@ -937,51 +1090,184 @@ class AppState: ObservableObject {
     
     /// 快捷指令/AppIntent：从 App Group 文件队列读取待发送截图，并用 ChatSendFlow 发送（与 App 内发送同链路）。
     func processPendingScreenshotIfNeeded(modelContext: ModelContext) {
-        #if DEBUG
-        AppGroupDebugLog.dumpToConsole(prefix: "🧾 [AppGroupDebug] (before pending drain)")
-        #endif
+        // 旧实现是“每次只处理一张 + 正在生成就直接 return”：
+        // - 用户连续截图很快时，会堆积多张 pending，但通知只触发一次/前几次被丢掉
+        // - 后续某个时刻才处理到旧截图，看起来像“回复时序混乱/消息串台”
+        //
+        // 新实现：启动一个 drain 任务，按入队顺序逐个发送；每张截图先插入占位消息，再按 messageId 回填。
+        // ✅ 进一步优化：对“连续截图”做 debounce，避免第一张触发主 App 立刻开始解码/发网，
+        // 造成后续快捷指令（截屏动作 + AppIntent）被系统资源竞争拖慢。
+        schedulePendingScreenshotDrain(modelContext: modelContext)
+    }
 
-        // 与 App 内一致：AI 正在生成时不允许再发新消息，避免并发链路混乱
-        guard !isAgentTyping else {
-            #if DEBUG
-            #endif
-            return
+    // MARK: - Pending screenshot drain (serial)
+
+    /// pending 截图串行 drain 任务：确保“截图顺序”与“聊天中消息位置”稳定一致。
+    private var pendingScreenshotDrainTask: Task<Void, Never>? = nil
+    /// 连续截图 debounce：有新截图进来就延后启动 drain（让快捷指令更“秒过”）
+    private var pendingScreenshotDrainDebounceTask: Task<Void, Never>? = nil
+
+    /// 延迟启动 drain：多次触发会取消前一次延迟，最终只启动一次 drain。
+    private func schedulePendingScreenshotDrain(modelContext: ModelContext) {
+        // 如果 drain 已经在跑，就不需要 debounce 了（它会继续吃掉队列）
+        if pendingScreenshotDrainTask != nil { return }
+
+        pendingScreenshotDrainDebounceTask?.cancel()
+        pendingScreenshotDrainDebounceTask = Task.detached(priority: .utility) { [weak self] in
+            // 适度延迟：给系统/快捷指令截屏流程留出时间，避免资源竞争
+            try? await Task.sleep(nanoseconds: 650_000_000) // 0.65s
+            guard !Task.isCancelled else { return }
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                self.pendingScreenshotDrainDebounceTask = nil
+                self.startPendingScreenshotDrainIfNeeded(modelContext: modelContext)
+            }
         }
+    }
 
-        // ✅ 关键修复：
-        // 聊天历史是“进入聊天室时懒加载”（ChatView.onAppear 里：仅当 chatMessages 为空才加载）。
-        // 但快捷指令的 pending 截图会在 ChatView 出现前就调用本方法，先往 chatMessages 里追加新消息，
-        // 导致 ChatView 误以为“已有消息”而跳过历史加载，于是用户看到“历史没了”（其实是没加载进内存）。
-        // 这里在发送前先把最近历史拉进内存，保证 UI 能看到历史 + 新截图消息。
-        if chatMessages.isEmpty {
-            refreshChatMessagesFromStorageIfNeeded(modelContext: modelContext, limit: 120)
+    /// 若已有 drain 在跑则不重复启动；否则启动一个后台任务，循环处理 pending 队列直到为空。
+    private func startPendingScreenshotDrainIfNeeded(modelContext: ModelContext) {
+        // 已在 drain：让现有任务继续吃掉队列即可
+        if pendingScreenshotDrainTask != nil { return }
+
+        // ⚠️ 优先级刻意调低：避免主 App 立刻开始 heavy work，影响用户在快捷指令里连续截屏的流畅度
+        pendingScreenshotDrainTask = Task.detached(priority: .utility) { [weak self] in
+            guard let self else { return }
+
+            // 进入 drain 后：把 UI 统一标为“生成中”，避免用户在 auto-send 期间再并发触发新请求
+            await MainActor.run {
+                self.isAgentTyping = true
+            }
+
+            defer {
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    self.isAgentTyping = false
+                    self.pendingScreenshotDrainTask = nil
+                }
+            }
+
+            while true {
+                // 每轮取一张（严格按文件名时间戳升序）
+                let nextRelPathAndThumb: (String, String?)? = await MainActor.run {
+                    // ✅ 关键修复：
+                    // 聊天历史是“进入聊天室时懒加载”（ChatView.onAppear 里：仅当 chatMessages 为空才加载）。
+                    // pending 截图可能在 ChatView 出现前就触发 drain；这里先把最近历史拉进内存，
+                    // 避免 UI 误判“已有消息”而跳过历史加载。
+                    if self.chatMessages.isEmpty {
+                        self.refreshChatMessagesFromStorageIfNeeded(modelContext: modelContext, limit: 120)
+                    }
+                    guard let rel = PendingScreenshotQueue.listPendingRelativePaths(limit: 1).first else { return nil }
+                    let thumb = PendingScreenshotQueue.thumbnailRelativePath(forPendingImageRelativePath: rel)
+                    return (rel, thumb)
+                }
+
+                guard let (rel, thumbRelPath) = nextRelPathAndThumb else { break }
+
+                // 读取图片（失败就丢弃该文件，继续下一张）
+                guard let image = PendingScreenshotQueue.loadImage(relativePath: rel) else {
+                    PendingScreenshotQueue.remove(relativePath: rel)
+                    continue
+                }
+                // 读到内存后立刻删除，防止重复发送
+                PendingScreenshotQueue.remove(relativePath: rel)
+
+                // 快捷指令现在走“秒过”快路径：可能没有提前生成缩略图
+                let ensuredThumbRelPath: String? = {
+                    if let thumbRelPath, !thumbRelPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        return thumbRelPath
+                    }
+                    // 在主App侧生成缩略图（不阻塞快捷指令）
+                    guard let groupURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: ScreenshotSendAttributes.appGroupId) else {
+                        return nil
+                    }
+                    let dir = groupURL.appendingPathComponent("screenshot_thumbnails", isDirectory: true)
+                    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                    let thumb = image.yy_resizedThumbnail(maxPixel: 320)
+                    guard let data = thumb.jpegData(compressionQuality: 0.72) else { return nil }
+                    let filename = "thumb_\(UUID().uuidString).jpg"
+                    let fileURL = dir.appendingPathComponent(filename)
+                    do {
+                        try data.write(to: fileURL, options: [.atomic])
+                        return "screenshot_thumbnails/\(filename)"
+                    } catch {
+                        return nil
+                    }
+                }()
+
+                // 通知：主App开始实际处理该截图（会覆盖 intent 里“已交给Moly”那条 sending 通知）
+                await ScreenshotSendNotifications.postSending(thumbnailRelativePath: ensuredThumbRelPath)
+
+                // 1) 先插入用户消息 + AI 占位消息（确保 UI 顺序稳定）
+                let (messageId, messagesForModel): (UUID, [ChatMessage]) = await MainActor.run {
+                    self.showChatRoom = true
+
+                    let userMsg = ChatMessage(role: .user, images: [image], content: "")
+                    withAnimation {
+                        self.chatMessages.append(userMsg)
+                    }
+                    self.saveMessageToStorage(userMsg, modelContext: modelContext)
+
+                    let agentMsg = ChatMessage(role: .agent, content: "")
+                    withAnimation {
+                        self.chatMessages.append(agentMsg)
+                    }
+                    let agentMessageId = agentMsg.id
+
+                    self.startStreaming(messageId: agentMessageId)
+
+                    // 与 ChatSendFlow 一致：默认带历史。SmartModelRouter 若选择后端实现，会自行只取 last user。
+                    let snapshot = self.chatMessages
+                    return (agentMessageId, snapshot)
+                }
+
+                // 2) 串行发送：等待该张截图完整结束（成功/失败）后再处理下一张
+                await SmartModelRouter.sendMessageStream(
+                    messages: messagesForModel,
+                    mode: await MainActor.run { self.currentMode },
+                    onStructuredOutput: { output in
+                        Task { @MainActor [weak self] in
+                            guard let self else { return }
+                            self.applyStructuredOutput(output, to: messageId, modelContext: modelContext)
+                        }
+                    },
+                    onComplete: { finalText in
+                        // playResponse 内会按 messageId 定位并回填内容（不 append），确保时序稳定
+                        await self.playResponse(finalText, for: messageId)
+                        await MainActor.run { [weak self] in
+                            guard let self else { return }
+                            if let completedMessage = self.chatMessages.first(where: { $0.id == messageId }) {
+                                self.saveMessageToStorage(completedMessage, modelContext: modelContext)
+                            }
+                        }
+
+                        let normalized = BackendChatService.normalizeDisplayText(finalText)
+                        let success = !normalized.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        let resultNotificationId = "molymemo.screenshot_send.result.\(messageId.uuidString)"
+                        await ScreenshotSendNotifications.postResult(
+                            success: success,
+                            thumbnailRelativePath: ensuredThumbRelPath,
+                            id: resultNotificationId
+                        )
+                    },
+                    onError: { error in
+                        Task { @MainActor [weak self] in
+                            guard let self else { return }
+                            self.handleStreamingError(error, for: messageId)
+                            // 失败也继续 drain 下一张
+                        }
+                        let resultNotificationId = "molymemo.screenshot_send.result.\(messageId.uuidString)"
+                        Task {
+                            await ScreenshotSendNotifications.postResult(
+                                success: false,
+                                thumbnailRelativePath: ensuredThumbRelPath,
+                                id: resultNotificationId
+                            )
+                        }
+                    }
+                )
+            }
         }
-
-        let pending = PendingScreenshotQueue.listPendingRelativePaths(limit: 4)
-        #if DEBUG
-        #endif
-        guard let first = pending.first else { return }
-
-        guard let image = PendingScreenshotQueue.loadImage(relativePath: first) else {
-            #if DEBUG
-            #endif
-            PendingScreenshotQueue.remove(relativePath: first)
-            return
-        }
-
-        // 先删除文件防止重复（发送过程若失败，可由用户再次截图触发）
-        PendingScreenshotQueue.remove(relativePath: first)
-        #if DEBUG
-        #endif
-
-        showChatRoom = true
-        ChatSendFlow.send(
-            appState: self,
-            modelContext: modelContext,
-            text: "",
-            images: [image],
-            includeHistory: true
-        )
     }
 
     // MARK: - 聊天室流式更新方法
@@ -1092,17 +1378,25 @@ class AppState: ObservableObject {
         }
         let beforeScheduleSignatures: Set<String> = Set((msg.scheduleEvents ?? []).map(scheduleSignature))
         let beforeScheduleToolRunning = msg.isScheduleToolRunning
+        let beforeContactToolRunning = msg.isContactToolRunning
 
         // ✅ 在应用结构化输出前，如果 output 包含卡片，检查是否是更新操作
         // 如果是更新（即 remoteId 已在之前的消息中存在），则将旧卡片标记为已废弃
         let obsoleteChangedMessageIds = markPreviousCardsAsObsoleteIfNeeded(output: output)
 
         StructuredOutputApplier.apply(output, to: &msg)
+        
+        // ✅ 联系人 tool 从 running -> finished：允许“紧随其后的联系人卡片”把本地 soft-delete 的联系人复活
+        let afterContactToolRunning = msg.isContactToolRunning
+        if beforeContactToolRunning && !afterContactToolRunning {
+            msg.reviveContactsForNextCards = true
+        }
 
         // ✅ 聊天里“创建联系人/更新联系人”成功后：
         // 把 contact card 同步到本地 SwiftData Contact 库，随后由 ContactCardLocalSync 触发单向写入系统通讯录。
         if let modelContext {
             let incoming = (msg.contacts ?? []).dedup(by: ChatCardStableId.contact)
+            let allowReviveFromThisMessage = msg.reviveContactsForNextCards
             if !incoming.isEmpty {
 #if DEBUG
                 print("[AppState] applyStructuredOutput() syncing contacts to local store. isDelta=\(output.isDelta) count=\(incoming.count)")
@@ -1110,16 +1404,31 @@ class AppState: ObservableObject {
                 do {
                     var all = try modelContext.fetch(FetchDescriptor<Contact>())
                     for card in incoming {
-                        let local = ContactCardLocalSync.findOrCreateContact(from: card, allContacts: all, modelContext: modelContext)
+                        let local = ContactCardLocalSync.findOrCreateContact(from: card, allContacts: all, modelContext: modelContext, reviveIfObsolete: allowReviveFromThisMessage)
                         if !all.contains(where: { $0.id == local.id }) {
                             all.append(local)
                         }
                     }
+                    // 只对“紧随 tool 完成的这一批卡片”生效一次，避免影响后续纯展示场景
+                    if msg.reviveContactsForNextCards { msg.reviveContactsForNextCards = false }
                 } catch {
 #if DEBUG
                     print("[AppState] applyStructuredOutput() local Contact sync failed: \(error.localizedDescription)")
 #endif
                 }
+            }
+
+            // ✅ 删除态统一：
+            // 若本地联系人库里该联系人已被软删除（Contact.isObsolete=true），则任何新回填到聊天里的同实体联系人卡片
+            // 都应展示为“已删除”（置灰划杠），避免出现「联系人列表已删，但聊天新生成仍正常显示」的不一致。
+            // 例外：若该消息刚完成 contacts_create/contacts_update，则允许显示/复活联系人（否则“删了再建”会一直划杠）
+            if allowReviveFromThisMessage, !incoming.isEmpty {
+                // 本条消息属于“创建/更新联系人”的落卡阶段：不做 sticky 删除覆盖
+            } else if !msg.reviveContactsForNextCards {
+                applyContactSoftDeleteOverlayIfNeeded(to: &msg, modelContext: modelContext)
+            } else {
+                // 即使没有卡片同步成功，也确保该开关只影响当前一轮
+                msg.reviveContactsForNextCards = false
             }
         }
 
@@ -1156,6 +1465,89 @@ class AppState: ObservableObject {
                     saveMessageToStorage(chatMessages[idx], modelContext: modelContext)
                 }
             }
+        }
+    }
+
+    /// 将“本地已删除联系人（Contact.isObsolete=true）”的删除态覆盖到聊天消息里的联系人卡片上（含 segments / 聚合字段）。
+    /// - 目标：删除是 sticky 的；任何后续出现的同一联系人卡片都应该展示为已删除。
+    @MainActor
+    private func applyContactSoftDeleteOverlayIfNeeded(to message: inout ChatMessage, modelContext: ModelContext) {
+        // 快路径：消息里根本没有联系人卡片就不处理
+        let hasAggregate = (message.contacts?.isEmpty == false)
+        let hasSegments: Bool = {
+            guard let segs = message.segments, !segs.isEmpty else { return false }
+            return segs.contains(where: { $0.kind == .contactCards && (($0.contacts ?? []).isEmpty == false) })
+        }()
+        guard hasAggregate || hasSegments else { return }
+
+        let all: [Contact] = (try? modelContext.fetch(FetchDescriptor<Contact>())) ?? []
+        let obsoleteContacts = all.filter { $0.isObsolete }
+        guard !obsoleteContacts.isEmpty else { return }
+
+        // 1) 已删除实体 key（remoteId/uuid 归一，保证大小写/格式一致）
+        let obsoleteKeys: Set<String> = Set(obsoleteContacts.map { EntityKey.contactModel($0) })
+
+        // 2) 强兜底 key：phone/email（避免卡片还没补齐 remoteId 时无法命中）
+        func trimmedLower(_ s: String?) -> String {
+            (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        }
+        func normalizedPhone(_ s: String?) -> String {
+            let raw = (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !raw.isEmpty else { return "" }
+            let allowed = CharacterSet(charactersIn: "+0123456789")
+            let filtered = raw.unicodeScalars.filter { allowed.contains($0) }
+            return String(String.UnicodeScalarView(filtered))
+        }
+        var strongStableKeys: Set<String> = []
+        strongStableKeys.reserveCapacity(obsoleteContacts.count * 2)
+        for c in obsoleteContacts {
+            let phone = normalizedPhone(c.phoneNumber)
+            if !phone.isEmpty { strongStableKeys.insert("phone:\(phone)") }
+            let email = trimmedLower(c.email)
+            if !email.isEmpty { strongStableKeys.insert("email:\(email)") }
+        }
+
+        func shouldBeObsolete(_ card: ContactCard) -> Bool {
+            if obsoleteKeys.contains(EntityKey.contactCard(card)) { return true }
+            if !strongStableKeys.isEmpty {
+                let s = ChatCardStableId.contact(card)
+                if s.hasPrefix("phone:") || s.hasPrefix("email:") {
+                    return strongStableKeys.contains(s)
+                }
+            }
+            return false
+        }
+
+        // 覆盖聚合字段
+        if var cards = message.contacts, !cards.isEmpty {
+            var changed = false
+            for i in cards.indices {
+                if !cards[i].isObsolete, shouldBeObsolete(cards[i]) {
+                    cards[i].isObsolete = true
+                    changed = true
+                }
+            }
+            if changed { message.contacts = cards }
+        }
+
+        // 覆盖 segments
+        if var segs = message.segments, !segs.isEmpty {
+            var segsChanged = false
+            for si in segs.indices where segs[si].kind == .contactCards {
+                guard var cs = segs[si].contacts, !cs.isEmpty else { continue }
+                var localChanged = false
+                for ci in cs.indices {
+                    if !cs[ci].isObsolete, shouldBeObsolete(cs[ci]) {
+                        cs[ci].isObsolete = true
+                        localChanged = true
+                    }
+                }
+                if localChanged {
+                    segs[si].contacts = cs
+                    segsChanged = true
+                }
+            }
+            if segsChanged { message.segments = segs }
         }
     }
 
@@ -1916,8 +2308,29 @@ class AppState: ObservableObject {
 
     @MainActor
     private func markContactCardsAsObsoleteAndPersist(updated: ContactCard, modelContext: ModelContext) {
+        // ⚠️ 这里不能只按 raw remoteId 直接 ==：
+        // - remoteId 可能大小写不同（UUID）
+        // - 卡片可能暂未补齐 remoteId（先给字段，后补 remoteId）
+        // 因此用统一 key（remoteId -> UUID 归一 -> lowercased），并用 phone/email 做安全兜底。
         func trimmed(_ s: String?) -> String { (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
-        let rid = trimmed(updated.remoteId)
+        let targetKey = EntityKey.contactCard(updated)
+        let targetStable: String? = {
+            let s = ChatCardStableId.contact(updated)
+            // 只在“强锚点”时兜底，避免仅按 name/company/title 的指纹误伤
+            if s.hasPrefix("phone:") || s.hasPrefix("email:") { return s }
+            return nil
+        }()
+
+        func isSameEntity(_ card: ContactCard) -> Bool {
+            if EntityKey.contactCard(card) == targetKey { return true }
+            if let targetStable {
+                return ChatCardStableId.contact(card) == targetStable
+            }
+            return false
+        }
+
+        // @Published 数组元素变更有时不会触发 UI 刷新：这里显式发一次变更，确保聊天页能立刻看到“置灰划杠”
+        objectWillChange.send()
 
         var changedMessageIds: Set<UUID> = []
         for i in chatMessages.indices {
@@ -1926,8 +2339,7 @@ class AppState: ObservableObject {
 
             if var cards = msg.contacts, !cards.isEmpty {
                 for j in cards.indices {
-                    let match: Bool = (!rid.isEmpty && trimmed(cards[j].remoteId) == rid) || (cards[j].id == updated.id)
-                    guard match, !cards[j].isObsolete else { continue }
+                    guard isSameEntity(cards[j]), !cards[j].isObsolete else { continue }
                     cards[j].isObsolete = true
                     msgChanged = true
                 }
@@ -1941,8 +2353,7 @@ class AppState: ObservableObject {
                     guard var cs = segs[si].contacts, !cs.isEmpty else { continue }
                     var localChanged = false
                     for ci in cs.indices {
-                        let match: Bool = (!rid.isEmpty && trimmed(cs[ci].remoteId) == rid) || (cs[ci].id == updated.id)
-                        guard match, !cs[ci].isObsolete else { continue }
+                        guard isSameEntity(cs[ci]), !cs[ci].isObsolete else { continue }
                         cs[ci].isObsolete = true
                         localChanged = true
                     }
@@ -2156,6 +2567,22 @@ class AppState: ObservableObject {
         // 录音气泡已简化为纯文字，无需清理动态状态
     }
     
+}
+
+// MARK: - Small helpers (local)
+
+private extension UIImage {
+    func yy_resizedThumbnail(maxPixel: CGFloat) -> UIImage {
+        let maxSide = max(size.width, size.height)
+        guard maxSide > 0 else { return self }
+        let scale = min(1.0, maxPixel / maxSide)
+        guard scale < 1.0 else { return self }
+        let newSize = CGSize(width: size.width * scale, height: size.height * scale)
+        let renderer = UIGraphicsImageRenderer(size: newSize)
+        return renderer.image { _ in
+            self.draw(in: CGRect(origin: .zero, size: newSize))
+        }
+    }
 }
 
 // MARK: - Small helpers

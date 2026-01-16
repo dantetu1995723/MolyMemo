@@ -103,7 +103,17 @@ final class HoldToTalkPCMRecorder: ObservableObject {
 
                 outBuffer.frameLength = 0
                 var error: NSError?
+                // 关键：AVAudioConverter 在一次 convert() 过程中可能会多次调用 inputBlock 拉取输入。
+                // 如果我们每次都返回同一个 buffer，会导致同一段音频被“重复喂入”，听起来像回声/重影。
+                // 正确做法：对“单个输入 buffer 的转换”，只提供一次输入，后续返回 endOfStream。
+                var didProvideInput = false
+                converter.reset() // 避免跨 buffer 的内部状态残留（更确定的单段转换）
                 let status = converter.convert(to: outBuffer, error: &error) { _, outStatus -> AVAudioBuffer? in
+                    if didProvideInput {
+                        outStatus.pointee = .endOfStream
+                        return nil
+                    }
+                    didProvideInput = true
                     outStatus.pointee = .haveData
                     return buffer
                 }
@@ -114,7 +124,8 @@ final class HoldToTalkPCMRecorder: ObservableObject {
                 guard status == .haveData, outBuffer.frameLength > 0 else { return }
                 guard let p = outBuffer.int16ChannelData?[0] else { return }
                 let byteCount = Int(outBuffer.frameLength) * self.bytesPerFrame
-                self.pcmData.append(Data(bytes: p, count: byteCount))
+                let bytes = Data(bytes: p, count: byteCount)
+                self.pcmData.append(bytes)
             }
         }
 
@@ -193,29 +204,26 @@ final class HoldToTalkPCMRecorder: ObservableObject {
 
     private func configureAudioSessionForRecording() throws {
         let audioSession = AVAudioSession.sharedInstance()
-        do {
-            do {
-                try audioSession.setCategory(
-                    .playAndRecord,
-                    // 优先启用语音处理（AEC/NS）：能明显减少“余音/回声”导致的叠词
-                    mode: .voiceChat,
-                    // 按住说话场景不需要强制扬声器输出；避免外放回灌到麦克风造成重复
-                    options: [.duckOthers, .allowBluetoothHFP]
-                )
-            } catch {
-                try audioSession.setCategory(
-                    .playAndRecord,
-                    mode: .spokenAudio,
-                    options: [.duckOthers, .allowBluetoothHFP]
-                )
+        // 极简“通话式”配置（接近系统电话的体验）：
+        // - 必须使用 playAndRecord + voiceChat 才有系统的语音处理（AEC/NS/AGC）
+        // - 不开启 defaultToSpeaker：默认走听筒（receiver），避免外放回灌造成回声
+        // - 为了最大化消除回声，这里不启用蓝牙通话（allowBluetoothHFP），强制用内置麦克风+听筒
+        try audioSession.setCategory(.playAndRecord, mode: .voiceChat, options: [.duckOthers])
+
+        // 强制走听筒（不是扬声器）
+        try audioSession.overrideOutputAudioPort(.none)
+
+        // 尽量固定用内置麦克风（避免蓝牙/多路由导致的“侧音/回声”体感）
+        if #available(iOS 13.0, *) {
+            if let builtInMic = audioSession.availableInputs?.first(where: { $0.portType == .builtInMic }) {
+                try? audioSession.setPreferredInput(builtInMic)
             }
-            try? audioSession.setPreferredSampleRate(48_000)
-            try? audioSession.setPreferredInputNumberOfChannels(1)
-            try? audioSession.setPreferredIOBufferDuration(0.01)
-            try audioSession.setActive(true)
-        } catch {
-            throw error
         }
+
+        try? audioSession.setPreferredSampleRate(48_000)
+        try? audioSession.setPreferredInputNumberOfChannels(1)
+        try? audioSession.setPreferredIOBufferDuration(0.01)
+        try audioSession.setActive(true)
     }
 
     private static func computeLevel(buffer: AVAudioPCMBuffer) -> Float {

@@ -15,23 +15,42 @@ enum ContactCardLocalSync {
     }
     
     /// 根据 card 在本地查找或创建 `Contact`，并把 card 的“有值字段”补齐写回。
-    static func findOrCreateContact(from card: ContactCard, allContacts: [Contact], modelContext: ModelContext) -> Contact {
+    /// - Parameters:
+    ///   - reviveIfObsolete: 当该卡片来自“明确的创建/更新链路”时允许把本地 soft-delete 的联系人复活。
+    static func findOrCreateContact(from card: ContactCard, allContacts: [Contact], modelContext: ModelContext, reviveIfObsolete: Bool = false) -> Contact {
         // 1) 优先按本地 id 命中（我们在创建时会对齐 id）
         if let existing = allContacts.first(where: { $0.id == card.id }) {
-            applyCard(card, to: existing, modelContext: modelContext)
+            applyCard(card, to: existing, modelContext: modelContext, reviveIfObsolete: reviveIfObsolete)
             return existing
         }
 
-        // 2) 兜底：按 name + phone 命中（避免历史数据没有对齐 id 的情况）
+        // 2) 其次按 remoteId 命中（避免同一后端联系人在本地产生重复记录）
+        let rid = trimmed(card.remoteId)
+        if !rid.isEmpty {
+            if let existing = allContacts.first(where: { trimmed($0.remoteId) == rid }) {
+                applyCard(card, to: existing, modelContext: modelContext, reviveIfObsolete: reviveIfObsolete)
+                return existing
+            }
+            // 若后端 id 是 UUID，允许与本地 id 直接映射
+            if let u = UUID(uuidString: rid), let existing = allContacts.first(where: { $0.id == u }) {
+                if trimmed(existing.remoteId).isEmpty {
+                    existing.remoteId = rid
+                }
+                applyCard(card, to: existing, modelContext: modelContext, reviveIfObsolete: reviveIfObsolete)
+                return existing
+            }
+        }
+
+        // 3) 兜底：按 name + phone 命中（避免历史数据没有对齐 id 的情况）
         let phone = trimmed(card.phone)
         if !phone.isEmpty,
            let existing = allContacts.first(where: { $0.name == card.name && trimmed($0.phoneNumber) == phone })
         {
-            applyCard(card, to: existing, modelContext: modelContext)
+            applyCard(card, to: existing, modelContext: modelContext, reviveIfObsolete: reviveIfObsolete)
             return existing
         }
 
-        // 3) 新建（用 card 直接填充，保证详情页可用）
+        // 4) 新建（用 card 直接填充，保证详情页可用）
         let newContact = Contact(
             name: card.name,
             remoteId: {
@@ -90,7 +109,7 @@ enum ContactCardLocalSync {
 
     /// 将 card 中“有意义的字段”补齐/覆盖到本地 Contact（不做清空）。
     @discardableResult
-    static func applyCard(_ card: ContactCard, to contact: Contact, modelContext: ModelContext) -> Bool {
+    static func applyCard(_ card: ContactCard, to contact: Contact, modelContext: ModelContext, reviveIfObsolete: Bool = false) -> Bool {
         var changed = false
 
         let rid = trimmed(card.remoteId)
@@ -168,6 +187,13 @@ enum ContactCardLocalSync {
         // 软删除/废弃态同步：卡片被删除后，工具箱联系人列表也应置灰划杠
         if card.isObsolete, !contact.isObsolete {
             contact.isObsolete = true
+            changed = true
+        }
+        
+        // ✅ 复活：当该卡片来自“明确的创建/更新成功”链路时，允许解除 soft-delete。
+        // 否则保持 sticky 删除策略：避免“联系人列表删了，但聊天又被 AI 正常展示”。
+        if reviveIfObsolete, !card.isObsolete, contact.isObsolete {
+            contact.isObsolete = false
             changed = true
         }
 

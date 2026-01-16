@@ -376,8 +376,10 @@ struct MeetingRecordView: View {
                 customTrailing: AnyView(
                     Button {
                         if !recordingManager.isRecording {
-                            // 会议记录页内发起：不要往聊天室插入“正在生成”卡片
-                            recordingManager.startRecording(suppressChatCardOnUpload: true)
+                            // ✅ 工具箱会议录音：与快捷指令一致
+                            // - 聊天室一定生成会议卡片
+                            // - 会议列表页也插入占位条目（当前页可立即看到“生成中”）
+                            recordingManager.startRecording(uploadToChat: true, updateMeetingList: true)
                         }
                     } label: {
                         let isRecording = recordingManager.isRecording || recordingManager.isStartingRecording
@@ -503,8 +505,9 @@ struct MeetingRecordView: View {
                 .receive(on: RunLoop.main)
         ) { notification in
             guard let userInfo = notification.userInfo else { return }
-            let suppressChatCard = userInfo["suppressChatCard"] as? Bool ?? false
-            guard suppressChatCard else { return }
+            let updateMeetingList = userInfo["updateMeetingList"] as? Bool
+                ?? (userInfo["suppressChatCard"] as? Bool ?? false)
+            guard updateMeetingList else { return }
 
             let date = userInfo["date"] as? Date ?? Date()
             let duration = userInfo["duration"] as? TimeInterval ?? 0

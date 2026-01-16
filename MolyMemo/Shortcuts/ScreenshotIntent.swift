@@ -1,5 +1,4 @@
 import AppIntents
-import ActivityKit
 import UIKit
 
 private let yyPendingLogPrefix = "🧩 [PendingScreenshot]"
@@ -22,97 +21,75 @@ struct MollyScreenshotIntent: AppIntent {
         }
     }
 
-    @MainActor
     func perform() async throws -> some IntentResult {
         #if DEBUG
-        AppGroupDebugLog.append("MollyScreenshotIntent start")
+        func log(_ msg: String) {
+            AppGroupDebugLog.append(msg)
+            print("\(yyPendingLogPrefix) \(msg)")
+        }
+        let t0 = CFAbsoluteTimeGetCurrent()
+        log("MollyScreenshotIntent start t=\(t0)")
         #endif
 
-        let activity = await ScreenshotSendLiveActivity.start()
-        await ScreenshotSendLiveActivity.update(activity, status: .sending, message: "准备截图…", thumbnailRelativePath: nil)
-
-        // ✅ 只使用快捷指令传入的截图：不读取系统相册，不做任何兜底
-        guard let image = loadUIImage(from: screenshot) else {
-            await ScreenshotSendLiveActivity.finish(activity, status: .failed, message: "发送失败：截图数据无效（请把截屏输出连接到本动作的「截图」参数）", thumbnailRelativePath: nil, lingerSeconds: 0.2)
+        // ✅ 目标：快捷指令动作“秒过”
+        // 这里不做任何解码/缩放/JPEG 重压缩，也不生成缩略图/发通知/LiveActivity；
+        // 只把原始 bytes 落到 App Group 队列，随后发一个 Darwin 通知让主App去 drain。
+        // 注意：IntentFile.data 可能触发系统把截图物化为 Data，存在波动。
+        // 这里不要用 Task.detached 去读（某些系统版本下可能触发额外的 sandbox extension 申请路径并打日志），
+        // 直接在当前执行器读取即可；我们已确保 perform() 不在 @MainActor。
+        let raw: Data = screenshot.data
+        guard !raw.isEmpty else {
             #if DEBUG
-            AppGroupDebugLog.append("invalid screenshot input (UIImage decode failed)")
+            log("invalid screenshot input (empty data)")
             #endif
             throw MollyScreenshotError.invalidScreenshotInput
         }
 
-        let pendingRelPath = PendingScreenshotQueue.enqueue(image: image) ?? ""
-        let thumbRelPath = saveThumbnailToAppGroup(image)
+        // ⚠️ 重要：不要访问 screenshot.filename
+        // 在快捷指令的运行环境里，IntentFile 可能是一个临时 file URL（WorkflowKit BackgroundShortcutRunner 的 tmp），
+        // 系统需要发 sandbox extension 才能读该 URL。你日志里的：
+        // `_INIssueSandboxExtensionWithTokenGeneratorBlock ... Operation not permitted`
+        // 很可能就与 file URL 访问有关（包括读取 filename/metadata）。
+        //
+        // 我们这里完全不依赖扩展名：队列端会在 ext=nil 时用默认扩展名（.img），主App decode 仍然用 bytes 识别格式。
+        let ext: String? = nil
+
+        #if DEBUG
+        let tRead = CFAbsoluteTimeGetCurrent()
+        let dtRead = String(format: "%.3f", (tRead - t0))
+        log("intent got data bytes=\(raw.count) dt=\(dtRead)s")
+        #endif
+
+        let pendingRelPath: String = await Task.detached(priority: .utility) {
+            PendingScreenshotQueue.enqueue(rawData: raw, fileExt: ext, thumbnailRelativePath: nil) ?? ""
+        }.value
         guard !pendingRelPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            await ScreenshotSendLiveActivity.finish(activity, status: .failed, message: "发送失败：无法写入共享空间", thumbnailRelativePath: nil, lingerSeconds: 0.2)
             #if DEBUG
-            AppGroupDebugLog.append("pendingRelPath empty (cannot write App Group)")
+            log("pendingRelPath empty (cannot write App Group)")
             #endif
             throw BackendChatError.invalidConfig("无法访问 App Group 容器")
         }
-        await ScreenshotSendLiveActivity.update(activity, status: .sending, message: "已交给Moly发送…", thumbnailRelativePath: thumbRelPath)
-        await ScreenshotSendNotifications.postSending(thumbnailRelativePath: thumbRelPath)
 
         #if DEBUG
-        AppGroupDebugLog.append("enqueue rel=\(pendingRelPath) thumb=\(thumbRelPath ?? "nil")")
+        let tWrote = CFAbsoluteTimeGetCurrent()
+        let dtWrite = String(format: "%.3f", (tWrote - tRead))
+        log("enqueue rel=\(pendingRelPath) (fast path) dt=\(dtWrite)s")
         #endif
 
         DarwinNotificationCenter.post(ChatDarwinNames.pendingScreenshot)
         #if DEBUG
-        AppGroupDebugLog.append("post darwin \(ChatDarwinNames.pendingScreenshot)")
+        log("post darwin \(ChatDarwinNames.pendingScreenshot)")
         #endif
-
-        await ScreenshotSendLiveActivity.finish(activity, status: .sent, message: "已交给Moly", thumbnailRelativePath: thumbRelPath, lingerSeconds: 0.2)
         #if DEBUG
-        AppGroupDebugLog.append("finish intent")
+        let tEnd = CFAbsoluteTimeGetCurrent()
+        let dtTotal = String(format: "%.3f", (tEnd - t0))
+        log("finish intent dtTotal=\(dtTotal)s")
         #endif
 
         return .result()
     }
 
     // MARK: - Helpers
-
-    private func loadUIImage(from file: IntentFile) -> UIImage? {
-        UIImage(data: file.data)
-    }
-
-    /// 把缩略图写到 App Group，供 Widget/灵动岛读取展示
-    private func saveThumbnailToAppGroup(_ image: UIImage) -> String? {
-        guard let groupURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: SharedModelContainer.appGroupId) else {
-            return nil
-        }
-
-        let dir = groupURL.appendingPathComponent("screenshot_thumbnails", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-
-        let thumb = image.yy_resizedThumbnail(maxPixel: 320)
-        guard let data = thumb.jpegData(compressionQuality: 0.72) else { return nil }
-
-        let filename = "thumb_\(UUID().uuidString).jpg"
-        let fileURL = dir.appendingPathComponent(filename)
-        do {
-            try data.write(to: fileURL, options: [.atomic])
-            // 返回“相对 App Group”的路径，避免 Widget/主App 的 URL 计算不一致
-            return "screenshot_thumbnails/\(filename)"
-        } catch {
-            return nil
-        }
-    }
-
-}
-
-private extension UIImage {
-    func yy_resizedThumbnail(maxPixel: CGFloat) -> UIImage {
-        let maxSide = max(size.width, size.height)
-        guard maxSide > 0 else { return self }
-        let scale = min(1.0, maxPixel / maxSide)
-        guard scale < 1.0 else { return self }
-        let newSize = CGSize(width: size.width * scale, height: size.height * scale)
-
-        let renderer = UIGraphicsImageRenderer(size: newSize)
-        return renderer.image { _ in
-            self.draw(in: CGRect(origin: .zero, size: newSize))
-        }
-    }
 }
 
 enum MollyScreenshotError: LocalizedError {

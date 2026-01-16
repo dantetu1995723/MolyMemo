@@ -103,7 +103,8 @@ struct MolyMemoApp: App {
                         }
 
                         if !LiveRecordingManager.shared.isRecording {
-                            LiveRecordingManager.shared.startRecording(publishTranscriptionToUI: publishTranscriptionToUI)
+                            // 快捷指令/Widget：与工具箱一致——默认生成聊天室卡片；会议列表占位由“会议页内发起”控制
+                            LiveRecordingManager.shared.startRecording(publishTranscriptionToUI: publishTranscriptionToUI, uploadToChat: true, updateMeetingList: false)
                         }
                     }
                 }
@@ -154,12 +155,96 @@ struct MolyMemoApp: App {
                     let title = userInfo["title"] as? String ?? "Moly录音"
                     let date = userInfo["date"] as? Date ?? Date()
                     let duration = userInfo["duration"] as? TimeInterval ?? 0
-                    let audioPath = userInfo["audioPath"] as? String ?? ""
-                    let suppressChatCard = userInfo["suppressChatCard"] as? Bool ?? false
+                    // 统一：本地路径标准化，避免 fileURL / path / 相对路径导致“找不到生成中卡片”而一直 loading
+                    func normalizeLocalAudioPath(_ raw: String) -> String {
+                        let s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard !s.isEmpty else { return "" }
+                        if let u = URL(string: s), u.isFileURL {
+                            return u.standardizedFileURL.path
+                        }
+                        return URL(fileURLWithPath: s).standardizedFileURL.path
+                    }
+                    let audioPath = normalizeLocalAudioPath(userInfo["audioPath"] as? String ?? "")
+                    // 新字段：更清晰的去向控制（优先）
+                    let uploadToChat = userInfo["uploadToChat"] as? Bool
+                        ?? ((userInfo["suppressChatCard"] as? Bool).map { !$0 } ?? true)
+                    let updateMeetingList = userInfo["updateMeetingList"] as? Bool
+                        ?? (userInfo["suppressChatCard"] as? Bool ?? false)
                     
+                    @MainActor
+                    func updateMeetingCardInChat(
+                        audioPath: String,
+                        remoteIdCandidates: [String],
+                        messageContent: String? = nil,
+                        _ mutate: (inout MeetingCard) -> Void
+                    ) -> Bool {
+                        func trimmed(_ s: String?) -> String { (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
+                        let ridSet = Set(remoteIdCandidates.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty })
+                        let ap = audioPath.trimmingCharacters(in: .whitespacesAndNewlines)
+
+                        func normalized(_ raw: String?) -> String {
+                            let s = trimmed(raw)
+                            guard !s.isEmpty else { return "" }
+                            if let u = URL(string: s), u.isFileURL { return u.standardizedFileURL.path }
+                            return URL(fileURLWithPath: s).standardizedFileURL.path
+                        }
+                        let apNorm = normalized(ap)
+
+                        func isMatch(_ card: MeetingCard) -> Bool {
+                            let rid = trimmed(card.remoteId)
+                            if !rid.isEmpty, ridSet.contains(rid) { return true }
+                            let cap = normalized(card.audioPath)
+                            if !apNorm.isEmpty, !cap.isEmpty, cap == apNorm { return true }
+                            return false
+                        }
+
+                        for msgIndex in appState.chatMessages.indices.reversed() {
+                            var msg = appState.chatMessages[msgIndex]
+                            var changed = false
+
+                            // 1) 聚合字段 meetings
+                            if var meetings = msg.meetings, !meetings.isEmpty {
+                                for i in meetings.indices.reversed() {
+                                    if isMatch(meetings[i]) {
+                                        mutate(&meetings[i])
+                                        msg.meetings = meetings
+                                        changed = true
+                                        break
+                                    }
+                                }
+                            }
+
+                            // 2) 分段字段 segments（meetingCards 段）
+                            if !changed, var segs = msg.segments, !segs.isEmpty {
+                                outer: for s in segs.indices {
+                                    guard segs[s].kind == .meetingCards, var cards = segs[s].meetings, !cards.isEmpty else { continue }
+                                    for i in cards.indices.reversed() {
+                                        if isMatch(cards[i]) {
+                                            mutate(&cards[i])
+                                            segs[s].meetings = cards
+                                            msg.segments = segs
+                                            changed = true
+                                            break outer
+                                        }
+                                    }
+                                }
+                            }
+
+                            if changed {
+                                if let c = messageContent {
+                                    msg.content = c
+                                }
+                                appState.chatMessages[msgIndex] = msg
+                                appState.saveMessageToStorage(msg, modelContext: modelContainer.mainContext)
+                                return true
+                            }
+                        }
+                        return false
+                    }
+
                     
                     // 先添加一个"处理中"的卡片
-                    if !suppressChatCard {
+                    if uploadToChat {
                         DispatchQueue.main.async {
                             appState.clearActiveRecordingStatus()
                             
@@ -198,7 +283,46 @@ struct MolyMemoApp: App {
                             }
                             #endif
 
-                            guard !audioPath.isEmpty else {
+                            // 即使音频文件缺失，也要给出明确结果（而不是静默不生成）
+                            guard !audioPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                                await MainActor.run {
+                                    if updateMeetingList {
+                                        NotificationCenter.default.post(
+                                            name: NSNotification.Name("MeetingListDidComplete"),
+                                            object: nil,
+                                            userInfo: [
+                                                "audioPath": audioPath,
+                                                "title": "生成失败",
+                                                "summary": "⚠️ 录音文件缺失，无法生成会议记录。"
+                                            ]
+                                        )
+                                        return
+                                    }
+                                    
+                                    if uploadToChat {
+                                        let didUpdate = updateMeetingCardInChat(
+                                            audioPath: audioPath,
+                                            remoteIdCandidates: [],
+                                            messageContent: "会议记录生成失败，请稍后重试。"
+                                        ) { card in
+                                            card.summary = "⚠️ 录音文件缺失，无法生成会议记录。"
+                                            card.isGenerating = false
+                                        }
+                                        if !didUpdate {
+                                            // 没找到对应生成中卡片：补插失败态卡片
+                                            let fail = MeetingCard(
+                                                title: title,
+                                                date: date,
+                                                summary: "⚠️ 录音文件缺失，无法生成会议记录。",
+                                                duration: duration,
+                                                audioPath: audioPath,
+                                                isGenerating: false
+                                            )
+                                            let msg = appState.addMeetingCardMessage(fail)
+                                            appState.saveMessageToStorage(msg, modelContext: modelContainer.mainContext)
+                                        }
+                                    }
+                                }
                                 return
                             }
                             
@@ -209,7 +333,7 @@ struct MolyMemoApp: App {
                                 onJobCreated: { jobId in
                                     createdJobId = jobId
                                     // 关键：尽早写入 remoteId，避免用户生成过程中退出 App 后“无法续跑/无法再轮询”
-                                    if suppressChatCard {
+                                    if updateMeetingList {
                                         // 会议纪要列表页录音：通知列表占位卡尽早拿到 remoteId
                                         let postJobCreated = {
                                             NotificationCenter.default.post(
@@ -227,32 +351,44 @@ struct MolyMemoApp: App {
                                                 postJobCreated()
                                             }
                                         }
-                                    } else {
-                                        Task { @MainActor in
-                                            if let lastIndex = appState.chatMessages.lastIndex(where: { $0.meetings != nil }) {
-                                                if var meetings = appState.chatMessages[lastIndex].meetings,
-                                                   let meetingIndex = meetings.lastIndex(where: { $0.audioPath == audioPath }) {
-                                                    meetings[meetingIndex].remoteId = jobId
-                                                    meetings[meetingIndex].isGenerating = true
-                                                    appState.chatMessages[lastIndex].meetings = meetings
-                                                    appState.saveMessageToStorage(appState.chatMessages[lastIndex], modelContext: modelContainer.mainContext)
-                                                }
-                                            }
+                                    }
+                                    // ✅ 无论是否更新会议列表，只要聊天室要生成卡片，就应尽早写回 remoteId
+                                    guard uploadToChat else { return }
+                                    Task { @MainActor in
+                                        _ = updateMeetingCardInChat(
+                                            audioPath: audioPath,
+                                            remoteIdCandidates: [jobId]
+                                        ) { card in
+                                            card.remoteId = jobId
+                                            card.isGenerating = true
                                         }
                                     }
                                 }
                             )
                             
+                            // ✅ 兜底：后端可能返回“成功但没有有效内容”（summary/转写为空）。
+                            // 前端仍需收敛为“完成态卡片”，避免一直 loading。
+                            let hasMeaningfulTranscriptions: Bool = {
+                                guard let ts = result.transcriptions, !ts.isEmpty else { return false }
+                                return ts.contains(where: { !$0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
+                            }()
+                            let trimmedSummary = result.summary.trimmingCharacters(in: .whitespacesAndNewlines)
+                            let hasMeaningfulSummary = !trimmedSummary.isEmpty
+                            let summaryForUI: String = {
+                                if hasMeaningfulSummary { return result.summary }
+                                if hasMeaningfulTranscriptions { return "会议记录已生成（暂无摘要）。" }
+                                return "会议记录已生成，但未识别到有效内容。"
+                            }()
                             
-                            // 更新卡片内容
+                            // 更新卡片内容（列表占位 + 聊天室卡片）
                             await MainActor.run {
-                                // 会议记录页录音：不更新聊天室，但仍可预下载提升首次播放体验
-                                if suppressChatCard {
+                                // 会议列表占位：如果需要，先把列表条目更新到完成态（不影响聊天室同步更新）
+                                if updateMeetingList {
                                     let card = MeetingCard(
                                         remoteId: result.id,
                                         title: (result.title?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false) ? (result.title ?? title) : title,
                                         date: result.date ?? date,
-                                        summary: result.summary,
+                                        summary: summaryForUI,
                                         duration: result.audioDuration ?? duration,
                                         audioPath: audioPath,
                                         audioRemoteURL: result.audioUrl,
@@ -273,41 +409,44 @@ struct MolyMemoApp: App {
                                             "summary": card.summary
                                         ]
                                     )
-                                    return
                                 }
                                 
-                                // 找到最后一条会议卡片消息并更新
-                                if let lastIndex = appState.chatMessages.lastIndex(where: { $0.meetings != nil }) {
-                                    if var meetings = appState.chatMessages[lastIndex].meetings,
-                                       let meetingIndex = meetings.lastIndex(where: { $0.audioPath == audioPath }) {
-                                        if let newTitle = result.title, !newTitle.isEmpty {
-                                            meetings[meetingIndex].title = newTitle
-                                        }
-                                        if let newDate = result.date {
-                                            meetings[meetingIndex].date = newDate
-                                        }
-                                        meetings[meetingIndex].remoteId = result.id
-                                        meetings[meetingIndex].summary = result.summary
-                                        meetings[meetingIndex].transcriptions = result.transcriptions
-                                        // 🔍 调试：只用后端 audio_duration 更新卡片时长
-                                        if let d = result.audioDuration {
-                                            meetings[meetingIndex].duration = d
-                                        } else {
-                                        }
-                                        // 🔍 调试：写入 audio_url，确保卡片可直接播放/可预下载
-                                        if let u = result.audioUrl, !u.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                            meetings[meetingIndex].audioRemoteURL = u
-                                        } else {
-                                        }
-                                        meetings[meetingIndex].isGenerating = false
-                                        appState.chatMessages[lastIndex].meetings = meetings
-                                        // 同步更新“AI气泡文案”：从生成中 -> 生成完成（与 demo 一致）
-                                        appState.chatMessages[lastIndex].content = "已为您创建了一份会议记录文件，长按可调整。"
-                                        appState.saveMessageToStorage(appState.chatMessages[lastIndex], modelContext: modelContainer.mainContext)
-
-                                        // 一口气完成：生成完成后立刻预下载（不播放）
-                                        let updated = meetings[meetingIndex]
-                                        RecordingPlaybackController.shared.prefetch(meeting: updated)
+                                if uploadToChat {
+                                    let ridResult = (result.id ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                                    let ridCreated = (createdJobId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                                    let didUpdate = updateMeetingCardInChat(
+                                        audioPath: audioPath,
+                                        remoteIdCandidates: [ridResult, ridCreated],
+                                        messageContent: "已为您创建了一份会议记录文件，长按可调整。"
+                                    ) { card in
+                                        if let newTitle = result.title, !newTitle.isEmpty { card.title = newTitle }
+                                        if let newDate = result.date { card.date = newDate }
+                                        card.remoteId = result.id
+                                        card.summary = summaryForUI
+                                        card.transcriptions = result.transcriptions
+                                        if let d = result.audioDuration { card.duration = d }
+                                        if let u = result.audioUrl, !u.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { card.audioRemoteURL = u }
+                                        card.isGenerating = false
+                                    }
+                                    if !didUpdate {
+                                        // 兜底：补插一张完成态卡片，避免 UI 卡住
+                                        let fallbackCard = MeetingCard(
+                                            remoteId: result.id,
+                                            title: (result.title?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false) ? (result.title ?? title) : title,
+                                            date: result.date ?? date,
+                                            summary: summaryForUI,
+                                            duration: result.audioDuration ?? duration,
+                                            audioPath: audioPath,
+                                            audioRemoteURL: result.audioUrl,
+                                            transcriptions: result.transcriptions,
+                                            isGenerating: false
+                                        )
+                                        let agentMsg = appState.addMeetingCardMessage(fallbackCard)
+                                        appState.saveMessageToStorage(agentMsg, modelContext: modelContainer.mainContext)
+                                        RecordingPlaybackController.shared.prefetch(meeting: fallbackCard)
+                                    } else {
+                                        // 预下载：更新后的卡片引用不易直接拿到，这里用 audioPath/rid 交给播放器内部自行命中缓存即可
+                                        //（保留为空；真正播放时会按 remoteId/audioURL 预取）
                                     }
                                 }
                             }
@@ -334,7 +473,7 @@ struct MolyMemoApp: App {
                                 let hasJob = !jid.isEmpty
                                 let shouldKeepGenerating = hasJob && isLikelyBackgroundInterruption(error)
                                 
-                                if suppressChatCard {
+                                if updateMeetingList {
                                     // 会议列表占位卡：如果已创建 job 且像是后台中断，就不要判失败（避免误导）
                                     if shouldKeepGenerating {
                                         #if DEBUG
@@ -352,26 +491,22 @@ struct MolyMemoApp: App {
                                             ]
                                         )
                                     }
-                                    return
                                 }
-                                if let lastIndex = appState.chatMessages.lastIndex(where: { $0.meetings != nil }) {
-                                    if var meetings = appState.chatMessages[lastIndex].meetings,
-                                       let meetingIndex = meetings.lastIndex(where: { $0.audioPath == audioPath }) {
+                                if uploadToChat {
+                                    let content = shouldKeepGenerating ? "正在生成会议记录，请稍候..." : "会议记录生成失败，请稍后重试。"
+                                    _ = updateMeetingCardInChat(
+                                        audioPath: audioPath,
+                                        remoteIdCandidates: [jid],
+                                        messageContent: content
+                                    ) { card in
                                         if shouldKeepGenerating {
-                                            // 有 jobId：说明后端任务已经开始跑。保持生成中，并提示“回到前台会自动继续刷新”。
-                                            if meetings[meetingIndex].remoteId == nil { meetings[meetingIndex].remoteId = jid }
-                                            meetings[meetingIndex].isGenerating = true
-                                            meetings[meetingIndex].summary = "正在生成会议记录（应用在后台时可能暂停刷新，回到前台会自动继续）。"
-                                            // 文案也不要写失败
-                                            appState.chatMessages[lastIndex].content = "正在生成会议记录，请稍候..."
+                                            if (card.remoteId ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { card.remoteId = jid }
+                                            card.isGenerating = true
+                                            card.summary = "正在生成会议记录（应用在后台时可能暂停刷新，回到前台会自动继续）。"
                                         } else {
-                                            meetings[meetingIndex].summary = "⚠️ 会议记录生成失败: \(error.localizedDescription)"
-                                            meetings[meetingIndex].isGenerating = false
-                                            // 同步更新“AI气泡文案”：提示失败，避免仍显示“正在生成”
-                                            appState.chatMessages[lastIndex].content = "会议记录生成失败，请稍后重试。"
+                                            card.summary = "⚠️ 会议记录生成失败: \(error.localizedDescription)"
+                                            card.isGenerating = false
                                         }
-                                        appState.chatMessages[lastIndex].meetings = meetings
-                                        appState.saveMessageToStorage(appState.chatMessages[lastIndex], modelContext: modelContainer.mainContext)
                                     }
                                 }
                             }
@@ -491,13 +626,26 @@ struct MolyMemoApp: App {
             let newSummary = (item.summary ?? item.meetingSummary ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             let hasDetails = (item.meetingDetails?.isEmpty == false) || (item.transcriptions?.isEmpty == false)
             
-            // 没拿到任何内容就不硬改，避免把“生成中”变成空白
-            guard !newTitle.isEmpty || !newSummary.isEmpty || hasDetails else { return }
+            // ✅ 兜底：如果后端返回“已完成但无有效内容”，也要把前端收敛为完成态占位卡片，避免一直 loading。
+            let status = (item.status ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let looksCompleted = (
+                status == "completed" || status == "complete" || status == "done" || status == "success" || status == "finished"
+            )
+            let hasAnyContent = (!newTitle.isEmpty) || (!newSummary.isEmpty) || hasDetails
+            if !hasAnyContent && !looksCompleted {
+                // 仍在处理中：保持生成中
+                return
+            }
+            let summaryForUI: String = {
+                if !newSummary.isEmpty { return newSummary }
+                if hasDetails { return "会议记录已生成（暂无摘要）。" }
+                return "会议记录已生成，但未识别到有效内容。"
+            }()
             guard t.msgIndex < appState.chatMessages.count else { return }
             guard var meetings = appState.chatMessages[t.msgIndex].meetings, t.meetingIndex < meetings.count else { return }
             
             if !newTitle.isEmpty { meetings[t.meetingIndex].title = newTitle }
-            if !newSummary.isEmpty { meetings[t.meetingIndex].summary = newSummary }
+            meetings[t.meetingIndex].summary = summaryForUI
             if let d = item.audioDuration { meetings[t.meetingIndex].duration = d }
             if let u = item.audioUrl, !u.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 meetings[t.meetingIndex].audioRemoteURL = u
@@ -600,7 +748,7 @@ struct MolyMemoApp: App {
                 }
                 if !LiveRecordingManager.shared.isRecording {
                     // Widget/快捷指令触发：默认不向 UI 发布实时转写
-                    LiveRecordingManager.shared.startRecording(publishTranscriptionToUI: false)
+                    LiveRecordingManager.shared.startRecording(publishTranscriptionToUI: false, uploadToChat: true, updateMeetingList: false)
                 }
             }
         } else if url.host == "start-recording" || url.path == "/start-recording" {
@@ -617,7 +765,7 @@ struct MolyMemoApp: App {
                 }
                 if !LiveRecordingManager.shared.isRecording {
                     // URL 触发录音：默认不向 UI 发布实时转写（与 Widget/快捷指令保持一致）
-                    LiveRecordingManager.shared.startRecording(publishTranscriptionToUI: false)
+                    LiveRecordingManager.shared.startRecording(publishTranscriptionToUI: false, uploadToChat: true, updateMeetingList: false)
                 }
             }
         } else if url.host == "pause-recording" || url.path == "/pause-recording" {

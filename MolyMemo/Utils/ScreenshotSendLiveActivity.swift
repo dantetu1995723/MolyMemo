@@ -8,6 +8,11 @@ enum ScreenshotSendLiveActivity {
             return nil
         }
 
+        // 避免短时间内反复 request/end（连续截图时可能出现轻微卡顿）
+        if let existing = Activity<ScreenshotSendAttributes>.activities.last {
+            return existing
+        }
+
         let attributes = ScreenshotSendAttributes(title: "发送截图")
         let state = ScreenshotSendAttributes.ContentState(status: .sending, message: "发送中…", thumbnailRelativePath: nil)
         do {

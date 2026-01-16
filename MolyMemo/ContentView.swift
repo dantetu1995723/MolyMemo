@@ -41,9 +41,16 @@ struct ContentView: View {
                     // ✅ 全局接收（不依赖 ChatView 是否已出现），统一走“pending 兜底+去重”逻辑
                     _ = note
                     appState.processPendingChatUpdateIfNeeded(modelContext: modelContext)
+#if DEBUG
+                    // AppIntent 的 print 有时不进主App控制台；这里把 App Group debug log 尾部刷到控制台
+                    AppGroupDebugLog.dumpToConsole(prefix: "🧾 [AppIntentLog]")
+#endif
                 }
                 .onReceive(NotificationCenter.default.publisher(for: .yyPendingScreenshot)) { _ in
                     appState.processPendingScreenshotIfNeeded(modelContext: modelContext)
+#if DEBUG
+                    AppGroupDebugLog.dumpToConsole(prefix: "🧾 [PendingScreenshot]")
+#endif
                 }
                 } else {
                     LoginView()

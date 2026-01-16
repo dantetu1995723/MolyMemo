@@ -19,6 +19,8 @@ struct ChatView: View {
     // MARK: - Input ViewModel
     @StateObject private var inputViewModel = ChatInputViewModel()
     @Namespace private var inputNamespace
+    @Namespace private var chatSearchNamespace
+    @Namespace private var chatHeaderNamespace
 
     // 快捷指令/会议纪要录音：复用 LiveRecordingManager 的同一套通路
     @ObservedObject private var meetingRecordingManager = LiveRecordingManager.shared
@@ -36,8 +38,10 @@ struct ChatView: View {
     @State private var eventToDelete: ScheduleEvent? = nil
     @State private var messageIdToDeleteFrom: UUID? = nil
     
-    // 聊天搜索
-    @State private var showSearch: Bool = false
+    // 聊天搜索（顶部栏按钮 -> 动画展开为搜索框）
+    @State private var isChatSearchExpanded: Bool = false
+    @State private var chatSearchQuery: String = ""
+    @FocusState private var isChatSearchFocused: Bool
     @State private var pendingScrollToMessageId: UUID? = nil
 
     // 聊天滚动（用于：首次进入自动滚到最新；回到前台刷新后也能滚动）
@@ -178,11 +182,12 @@ struct ChatView: View {
                         }
                         .onChange(of: pendingScrollToMessageId) { _, newValue in
                             guard let id = newValue else { return }
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                                withAnimation(.easeInOut(duration: 0.2)) {
+                            // 延迟 0.18 秒（比 scrollToLatestMessageOnOpen 的 0.12 秒长），确保搜索跳转不被覆盖
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
+                                withAnimation(.easeInOut(duration: 0.25)) {
                                     proxy.scrollTo(id, anchor: .center)
                                 }
-                                pendingScrollToMessageId = nil
+                                self.pendingScrollToMessageId = nil
                             }
                         }
                         .onChange(of: inputTotalHeight) { _, _ in
@@ -325,16 +330,7 @@ struct ChatView: View {
                     .presentationDetents([.large])
                     .presentationDragIndicator(.visible)
             }
-            .sheet(isPresented: $showSearch) {
-                ChatSearchView(
-                    messages: appState.chatMessages,
-                    onSelect: { id in
-                        showSearch = false
-                        pendingScrollToMessageId = id
-                    }
-                )
-                .presentationDragIndicator(.visible)
-            }
+            // 搜索已改为顶部栏内联展开 + 顶部区域结果列表（不再使用 sheet）
             
             // 删除确认弹窗
             if showDeleteConfirmation, let event = eventToDelete {
@@ -591,48 +587,175 @@ struct ChatView: View {
     
     // MARK: - 顶部导航
     private var headerView: some View {
-        HStack {
-            // 左侧：打开设置
-            Button(action: {
-                HapticFeedback.light()
-                appState.showSettings = true
-            }) {
-                Image(systemName: "line.3.horizontal")
-                    .font(.system(size: 20, weight: .light))
-                    .foregroundColor(primaryGray)
+        HStack(spacing: 0) {
+            if isChatSearchExpanded {
+                // 展开状态：molly 图标挪到最左（替代设置位置），右侧展示搜索框（不再全覆盖）
+                Image("molymemo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(height: 30)
+                    .matchedGeometryEffect(id: "mollyLogo", in: chatHeaderNamespace)
+
+                Spacer(minLength: 12)
+
+                chatSearchControlExpanded
+            } else {
+                // 收缩状态：正常布局
+                // 左侧：打开设置
+                Button(action: {
+                    HapticFeedback.light()
+                    appState.showSettings = true
+                }) {
+                    Image(systemName: "line.3.horizontal")
+                        .font(.system(size: 20, weight: .light))
+                        .foregroundColor(primaryGray)
+                }
+                
+                Spacer()
+                
+                // 中间标题
+                Image("molymemo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(height: 30)
+                    .matchedGeometryEffect(id: "mollyLogo", in: chatHeaderNamespace)
+                
+                Spacer()
+                
+                // 右侧：搜索按钮（作为展开动画的起点）
+                chatSearchCompactButton
             }
+        }
+        .animation(.spring(response: 0.32, dampingFraction: 0.86), value: isChatSearchExpanded)
+        .opacity(showContent ? 1 : 0)
+    }
+    
+    // MARK: - 搜索栏展开状态（占满整行）
+    private var chatSearchControlExpanded: some View {
+        ZStack {
+            Capsule()
+                .fill(Color.white.opacity(0.95))
+                .shadow(color: Color.black.opacity(0.06), radius: 6, x: 0, y: 3)
+                .overlay(
+                    Capsule()
+                        .stroke(Color.black.opacity(0.05), lineWidth: 1)
+                )
+                .matchedGeometryEffect(id: "chatSearchBg", in: chatSearchNamespace)
             
-            Spacer()
-            
-            // 中间标题
-            Image("molymemo")
-                .resizable()
-                .scaledToFit()
-                .frame(height: 30)
-            
-            Spacer()
-            
-            // 右侧：搜索聊天记录
-            Button(action: {
-                HapticFeedback.light()
-                showSearch = true
-            }) {
+            HStack(spacing: 10) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 18, weight: .light))
+                    .foregroundColor(primaryGray)
+                    .matchedGeometryEffect(id: "chatSearchIcon", in: chatSearchNamespace)
+                
+                TextField("搜索聊天记录", text: $chatSearchQuery)
+                    .font(.system(size: 16, weight: .regular))
+                    .foregroundColor(primaryGray)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled(true)
+                    .submitLabel(.search)
+                    .focused($isChatSearchFocused)
+                    .onSubmit {
+                        isChatSearchFocused = false
+                    }
+                
+                if !chatSearchQuery.isEmpty {
+                    Button(action: {
+                        HapticFeedback.light()
+                        chatSearchQuery = ""
+                        isChatSearchFocused = true
+                    }) {
+                        Image(systemName: "delete.backward.fill")
+                            .font(.system(size: 16, weight: .regular))
+                            .foregroundColor(primaryGray.opacity(0.45))
+                    }
+                    .buttonStyle(.plain)
+                }
+                
+                Button(action: {
+                    HapticFeedback.light()
+                    collapseChatSearch()
+                }) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(primaryGray.opacity(0.7))
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 14)
+        }
+        .frame(height: 40)
+        .frame(maxWidth: .infinity)
+    }
+
+    // MARK: - 搜索按钮收缩态（展开动画起点）
+    private var chatSearchCompactButton: some View {
+        Button(action: {
+            HapticFeedback.light()
+            expandChatSearch()
+        }) {
+            ZStack {
+                Capsule()
+                    // 收缩态不显示白底，但保留 matchedGeometryEffect 的占位用于展开动画
+                    .fill(Color.clear)
+                    .matchedGeometryEffect(id: "chatSearchBg", in: chatSearchNamespace)
+                
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 20, weight: .light))
                     .foregroundColor(primaryGray)
+                    .matchedGeometryEffect(id: "chatSearchIcon", in: chatSearchNamespace)
             }
+            .frame(width: 40, height: 40)
         }
-        .opacity(showContent ? 1 : 0)
+        .buttonStyle(.plain)
     }
     
     // MARK: - 提醒卡片
     private var reminderCard: some View {
-        TodayScheduleNotificationBar(
-            events: todayScheduleEvents,
-            isLoading: todayScheduleIsLoading,
-            errorText: todayScheduleErrorText,
-            isExpanded: $isTodayScheduleExpanded
-        )
+        Group {
+            // 搜索展开且有输入时，显示搜索结果面板
+            if isChatSearchExpanded && !chatSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                ChatInlineSearchPanel(
+                    messages: appState.chatMessages,
+                    query: chatSearchQuery,
+                    onSelect: { id in
+                        HapticFeedback.light()
+                        pendingScrollToMessageId = id
+                        collapseChatSearch()
+                    }
+                )
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            } else if !isChatSearchExpanded {
+                // 搜索未展开时，显示今日日程通知栏
+                TodayScheduleNotificationBar(
+                    events: todayScheduleEvents,
+                    isLoading: todayScheduleIsLoading,
+                    errorText: todayScheduleErrorText,
+                    isExpanded: $isTodayScheduleExpanded
+                )
+                .transition(.opacity)
+            }
+            // 搜索展开但还没输入时，不显示任何东西（留白）
+        }
+    }
+
+    private func expandChatSearch() {
+        withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
+            isChatSearchExpanded = true
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+            isChatSearchFocused = true
+        }
+    }
+
+    private func collapseChatSearch() {
+        // 收起时先收键盘，避免焦点残留导致下一次动画抖动
+        isChatSearchFocused = false
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        withAnimation(.spring(response: 0.30, dampingFraction: 0.90)) {
+            isChatSearchExpanded = false
+        }
+        chatSearchQuery = ""
     }
     
     // MARK: - 聊天内容
@@ -814,17 +937,8 @@ struct ChatView: View {
                                         }
                                     ), isParentScrollDisabled: $isCardHorizontalPaging,
                                     onDeleteRequest: { meeting in
-                                        guard let mIndex = appState.chatMessages.firstIndex(where: { $0.id == message.id }) else { return }
-                                        withAnimation {
-                                            var m = appState.chatMessages[mIndex]
-                                            guard var segs = m.segments,
-                                                  let sIndex = segs.firstIndex(where: { $0.id == seg.id })
-                                            else { return }
-                                            segs[sIndex].meetings?.removeAll(where: { $0.id == meeting.id })
-                                            m.segments = segs
-                                            rebuildAggregatesFromSegments(segs, into: &m)
-                                            appState.chatMessages[mIndex] = m
-                                            appState.saveMessageToStorage(m, modelContext: modelContext)
+                                        Task { @MainActor in
+                                            await appState.deleteMeetingCardEverywhere(meeting, modelContext: modelContext)
                                         }
                                     }, onOpenDetail: { meeting in
                                         meetingDetailSelection = MeetingDetailSelection(messageId: message.id, meetingId: meeting.id)
@@ -957,11 +1071,8 @@ struct ChatView: View {
                                         }
                                     ), isParentScrollDisabled: $isCardHorizontalPaging,
                                     onDeleteRequest: { meeting in
-                                        guard let idx = appState.chatMessages.firstIndex(where: { $0.id == message.id }) else { return }
-                                        withAnimation {
-                                            appState.chatMessages[idx].meetings?.removeAll(where: { $0.id == meeting.id })
-                                            if (appState.chatMessages[idx].meetings ?? []).isEmpty { appState.chatMessages[idx].meetings = nil }
-                                            appState.saveMessageToStorage(appState.chatMessages[idx], modelContext: modelContext)
+                                        Task { @MainActor in
+                                            await appState.deleteMeetingCardEverywhere(meeting, modelContext: modelContext)
                                         }
                                     }, onOpenDetail: { meeting in
                                         meetingDetailSelection = MeetingDetailSelection(messageId: message.id, meetingId: meeting.id)
@@ -1016,6 +1127,8 @@ struct ChatView: View {
     /// 自动滚动到“最新位置”（统一滚到底部锚点，确保最后一条是用户消息时也能到最底）
     private func scrollToLatestMessageOnOpen(proxy: ScrollViewProxy) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+            // 如果有待滚动的搜索结果，跳过自动滚到底部，避免覆盖搜索跳转
+            guard self.pendingScrollToMessageId == nil else { return }
             withAnimation(.easeInOut(duration: 0.22)) {
                 proxy.scrollTo("bottomID", anchor: .bottom)
             }
@@ -1429,64 +1542,76 @@ struct ActionButton: View {
     }
 }
 
-// MARK: - 聊天记录搜索
-private struct ChatSearchView: View {
+// MARK: - 聊天记录搜索（顶部区域内联结果面板）
+private struct ChatInlineSearchPanel: View {
     let messages: [ChatMessage]
+    let query: String
     let onSelect: (UUID) -> Void
-    
-    @Environment(\.dismiss) private var dismiss
-    @State private var query: String = ""
-    
+
+    private var trimmedQuery: String {
+        query.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private var results: [ChatMessage] {
-        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let q = trimmedQuery
         guard !q.isEmpty else { return [] }
         return messages.filter { m in
-            !m.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-            m.content.localizedCaseInsensitiveContains(q)
+            let c = m.content.trimmingCharacters(in: .whitespacesAndNewlines)
+            return !c.isEmpty && c.localizedCaseInsensitiveContains(q)
         }
     }
-    
+
     var body: some View {
-        NavigationStack {
-            List {
-                if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    Text("输入关键词搜索聊天记录")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(.secondary)
-                } else if results.isEmpty {
-                    Text("没有找到匹配内容")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(.secondary)
-                } else {
-                    ForEach(results) { m in
-                        Button {
-                            HapticFeedback.light()
-                            onSelect(m.id)
-                        } label: {
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text(m.role == .user ? "我" : "圆圆")
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundColor(.secondary)
-                                
-                                Text(m.content)
-                                    .font(.system(size: 15, weight: .medium))
-                                    .foregroundColor(.primary)
-                                    .lineLimit(3)
+        VStack(alignment: .leading, spacing: 10) {
+            if results.isEmpty {
+                Text("没有找到匹配内容")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(.secondary)
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 10) {
+                        let limited = Array(results.prefix(10))
+                        ForEach(limited) { m in
+                            Button {
+                                onSelect(m.id)
+                            } label: {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text(m.role == .user ? "我" : "圆圆")
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundColor(.secondary)
+
+                                    Text(m.content)
+                                        .font(.system(size: 15, weight: .medium))
+                                        .foregroundColor(.primary)
+                                        .lineLimit(3)
+                                        .multilineTextAlignment(.leading)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.vertical, 6)
                             }
-                            .padding(.vertical, 4)
+                            .buttonStyle(.plain)
+
+                            if m.id != limited.last?.id {
+                                Divider().opacity(0.35)
+                            }
                         }
                     }
                 }
+                .frame(maxHeight: 180)
             }
-            .navigationTitle("搜索")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("关闭") { dismiss() }
-                }
-            }
-            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "搜索聊天内容")
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color.white.opacity(0.92))
+                .shadow(color: Color.black.opacity(0.06), radius: 10, x: 0, y: 4)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color.black.opacity(0.06), lineWidth: 1)
+        )
     }
 }
 
