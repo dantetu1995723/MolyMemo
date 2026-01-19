@@ -27,6 +27,42 @@ enum AuthService {
             }
         }
     }
+
+    enum DeactivateError: LocalizedError {
+        case invalidBaseURL
+        case invalidResponse
+        case httpError(Int, String?)
+
+        var errorDescription: String? {
+            switch self {
+            case .invalidBaseURL:
+                return "后端 Base URL 为空或不合法，请先在「聊天后端」里配置"
+            case .invalidResponse:
+                return "注销失败：服务端返回异常"
+            case let .httpError(code, message):
+                if let message, !message.isEmpty { return "注销失败：\(message)（HTTP \(code)）" }
+                return "注销失败（HTTP \(code)）"
+            }
+        }
+    }
+
+    enum SendCodeError: LocalizedError {
+        case invalidBaseURL
+        case invalidResponse
+        case httpError(Int, String?)
+
+        var errorDescription: String? {
+            switch self {
+            case .invalidBaseURL:
+                return "后端 Base URL 为空或不合法，请先在「聊天后端」里配置"
+            case .invalidResponse:
+                return "验证码发送失败：服务端返回异常"
+            case let .httpError(code, message):
+                if let message, !message.isEmpty { return "验证码发送失败：\(message)（HTTP \(code)）" }
+                return "验证码发送失败（HTTP \(code)）"
+            }
+        }
+    }
     
     static func login(baseURL: String, phone: String, verificationCode: String) async throws -> String {
         let normalizedBase = BackendChatConfig.normalizeBaseURL(baseURL)
@@ -80,6 +116,84 @@ enum AuthService {
         guard (200...299).contains(http.statusCode) else {
             throw AuthError.httpError(http.statusCode, raw)
         }
+    }
+
+    static func deactivateAccount(baseURL: String, sessionId: String) async throws {
+        let normalizedBase = BackendChatConfig.normalizeBaseURL(baseURL)
+        guard !normalizedBase.isEmpty else { throw DeactivateError.invalidBaseURL }
+        guard let url = URL(string: normalizedBase + "/api/v1/auth/deactivate") else {
+            throw DeactivateError.invalidBaseURL
+        }
+
+        var request = URLRequest(url: url, timeoutInterval: 30)
+        request.httpMethod = "DELETE"
+        request.setValue(sessionId, forHTTPHeaderField: "X-Session-Id")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw DeactivateError.invalidResponse }
+
+        let raw = String(data: data, encoding: .utf8) ?? ""
+#if DEBUG || targetEnvironment(simulator)
+        print("🧹 deactivate response: \(raw)")
+#endif
+        guard (200...299).contains(http.statusCode) else {
+            throw DeactivateError.httpError(http.statusCode, raw)
+        }
+    }
+
+    static func sendVerificationCode(baseURL: String, phone: String) async throws {
+        let normalizedBase = BackendChatConfig.normalizeBaseURL(baseURL)
+        guard !normalizedBase.isEmpty else { throw SendCodeError.invalidBaseURL }
+        guard let url = URL(string: normalizedBase + "/api/v1/auth/send-verification-code") else {
+            throw SendCodeError.invalidBaseURL
+        }
+
+        let body: [String: String] = [
+            "phone": phone
+        ]
+
+        var request = URLRequest(url: url, timeoutInterval: 30)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: body, options: [])
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw SendCodeError.invalidResponse }
+
+        let raw = String(data: data, encoding: .utf8) ?? ""
+#if DEBUG || targetEnvironment(simulator)
+        print("📩 send-verification-code response: \(raw)")
+#endif
+        guard (200...299).contains(http.statusCode) else {
+            throw SendCodeError.httpError(http.statusCode, raw)
+        }
+    }
+
+    // MARK: - User Info
+
+    /// 获取当前用户信息（原始返回字符串，便于你核对字段）
+    static func fetchCurrentUserInfoRaw(baseURL: String, sessionId: String) async throws -> String {
+        let normalizedBase = BackendChatConfig.normalizeBaseURL(baseURL)
+        guard !normalizedBase.isEmpty else { throw AuthError.invalidBaseURL }
+        guard let url = URL(string: normalizedBase + "/api/v1/user/info") else {
+            throw AuthError.invalidBaseURL
+        }
+
+        var request = URLRequest(url: url, timeoutInterval: 30)
+        request.httpMethod = "GET"
+        request.setValue(sessionId, forHTTPHeaderField: "X-Session-Id")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw AuthError.invalidResponse }
+
+        let raw = String(data: data, encoding: .utf8) ?? ""
+#if DEBUG || targetEnvironment(simulator)
+        print("👤 user/info raw response: \(raw)")
+#endif
+        guard (200...299).contains(http.statusCode) else {
+            throw AuthError.httpError(http.statusCode, raw)
+        }
+        return raw
     }
     
     private static func extractToken(from data: Data) -> String? {

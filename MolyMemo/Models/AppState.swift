@@ -684,6 +684,17 @@ class AppState: ObservableObject {
     private enum SoftDeleteStoreKeys {
         static let deletedScheduleSnapshots = "yuanyuan_deleted_schedule_snapshots_v1"
     }
+
+    enum ContactDeleteError: LocalizedError {
+        case missingRemoteId
+
+        var errorDescription: String? {
+            switch self {
+            case .missingRemoteId:
+                return "删除失败：联系人缺少后端 id，无法同步删除。"
+            }
+        }
+    }
     
     /// 被删除（软删）的日程快照：用于“后端删了列表不再返回，但工具箱仍要显示置灰划杠”
     @Published private(set) var deletedScheduleSnapshotByKey: [String: ScheduleEvent] = [:]
@@ -765,8 +776,17 @@ class AppState: ObservableObject {
         Task { await ScheduleService.invalidateCachesAndNotifyRemoteScheduleDidChange() }
     }
     
-    /// 统一：软删除一个联系人（聊天室卡片 + 工具箱联系人列表同步，按 id/remoteId 统一）
-    func softDeleteContactCard(_ card: ContactCard, modelContext: ModelContext) async {
+    /// 统一：删除联系人（必须成功同步后端，才更新本地）
+    func softDeleteContactCard(_ card: ContactCard, modelContext: ModelContext) async throws {
+        let rid = (card.remoteId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !rid.isEmpty else {
+            throw ContactDeleteError.missingRemoteId
+        }
+
+        // 1) 先确保后端成功删除（不做本地软删）
+        try await ContactService.deleteContact(remoteId: rid)
+        Task { await ContactService.invalidateContactCaches() }
+
         // ✅ 关键：删除可能发生在“用户还没打开聊天室 / chatMessages 仍为空”的场景。
         // 此时仅修改内存数组不会影响落盘历史，导致“联系人列表删了，但聊天仍正常显示”。
         // 这里先把最近一批聊天历史拉进内存，再做统一置灰并落库。
@@ -774,10 +794,10 @@ class AppState: ObservableObject {
             refreshChatMessagesFromStorageIfNeeded(modelContext: modelContext, limit: 200)
         }
 
-        // 1) 聊天历史：同实体卡片置灰划杠并落库
+        // 2) 聊天历史：同实体卡片置灰划杠并落库
         markContactCardsAsObsoleteAndPersist(updated: card, modelContext: modelContext)
-        
-        // 2) 工具箱联系人库：确保本地 Contact 存在，并标记为 obsolete（不硬删）
+
+        // 3) 工具箱联系人库：确保本地 Contact 存在，并标记为 obsolete（不硬删）
         do {
             let all = try modelContext.fetch(FetchDescriptor<Contact>())
             let local = ContactCardLocalSync.findOrCreateContact(from: card, allContacts: all, modelContext: modelContext)
@@ -788,16 +808,6 @@ class AppState: ObservableObject {
             }
         } catch {
         }
-        
-        // 3) 后端删除（若有 remoteId）
-        let rid = (card.remoteId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        if !rid.isEmpty {
-            do {
-                try await ContactService.deleteContact(remoteId: rid)
-            } catch {
-            }
-        }
-        Task { await ContactService.invalidateContactCaches() }
     }
 
     // MARK: - 会议记录：删除同步（聊天室卡片 -> 工具箱列表 + 后端）
@@ -942,7 +952,7 @@ class AppState: ObservableObject {
     }
     
     /// 从工具箱联系人（SwiftData Contact）发起的删除：转换为统一卡片删除逻辑，确保聊天室同步。
-    func softDeleteContactModel(_ contact: Contact, modelContext: ModelContext) async {
+    func softDeleteContactModel(_ contact: Contact, modelContext: ModelContext) async throws {
         let stub = ContactCard(
             id: contact.id,
             remoteId: {
@@ -981,9 +991,9 @@ class AppState: ObservableObject {
             impression: nil,
             avatarData: contact.avatarData,
             rawImage: nil,
-            isObsolete: true
+            isObsolete: false
         )
-        await softDeleteContactCard(stub, modelContext: modelContext)
+        try await softDeleteContactCard(stub, modelContext: modelContext)
     }
     
     // 界面状态
@@ -1030,6 +1040,14 @@ class AppState: ObservableObject {
 
     /// AppIntent/快捷指令后台写入的 AI 回复：需要在 ChatView 中触发一次性打字机动画的消息 id
     @Published var pendingAnimatedAgentMessageId: UUID? = nil
+    
+    /// 联系人创建/更新工具刚结束时，允许“下一批联系人卡片”复活本地软删联系人。
+    /// - 作用域：跨消息（tool 输出与卡片可能分开发送）
+    private var pendingContactReviveForNextCards: Bool = false
+
+    /// 日程创建/更新工具刚结束时，允许“下一批日程卡片”撤销本地删除快照（deletedScheduleSnapshotByKey）带来的置灰。
+    /// - 作用域：跨消息（tool 输出与卡片可能分开发送）
+    private var pendingScheduleReviveForNextCards: Bool = false
     
     // 当前生成任务（用于中止）
     var currentGenerationTask: Task<Void, Never>?
@@ -1393,13 +1411,20 @@ class AppState: ObservableObject {
         let afterContactToolRunning = msg.isContactToolRunning
         if beforeContactToolRunning && !afterContactToolRunning {
             msg.reviveContactsForNextCards = true
+            pendingContactReviveForNextCards = true
+        }
+
+        // ✅ 日程 tool 从 running -> finished：允许“紧随其后的日程卡片”撤销本地删除快照，避免“删了再建仍划杠”
+        let afterScheduleToolRunning = msg.isScheduleToolRunning
+        if beforeScheduleToolRunning && !afterScheduleToolRunning {
+            pendingScheduleReviveForNextCards = true
         }
 
         // ✅ 聊天里“创建联系人/更新联系人”成功后：
         // 把 contact card 同步到本地 SwiftData Contact 库，随后由 ContactCardLocalSync 触发单向写入系统通讯录。
         if let modelContext {
             let incoming = (msg.contacts ?? []).dedup(by: ChatCardStableId.contact)
-            let allowReviveFromThisMessage = msg.reviveContactsForNextCards
+            let allowReviveFromThisMessage = msg.reviveContactsForNextCards || pendingContactReviveForNextCards
             if !incoming.isEmpty {
 #if DEBUG
                 print("[AppState] applyStructuredOutput() syncing contacts to local store. isDelta=\(output.isDelta) count=\(incoming.count)")
@@ -1414,6 +1439,7 @@ class AppState: ObservableObject {
                     }
                     // 只对“紧随 tool 完成的这一批卡片”生效一次，避免影响后续纯展示场景
                     if msg.reviveContactsForNextCards { msg.reviveContactsForNextCards = false }
+                    if pendingContactReviveForNextCards { pendingContactReviveForNextCards = false }
                 } catch {
 #if DEBUG
                     print("[AppState] applyStructuredOutput() local Contact sync failed: \(error.localizedDescription)")
@@ -1440,11 +1466,48 @@ class AppState: ObservableObject {
         // 1) 非 delta 的最终输出里，日程内容签名发生变化（可覆盖“修改但 remoteId 不变”的情况）
         // 2) 日程 tool 从 running -> finished（可覆盖“删除但没返回卡片”的情况）
         let afterScheduleSignatures: Set<String> = Set((msg.scheduleEvents ?? []).map(scheduleSignature))
-        let afterScheduleToolRunning = msg.isScheduleToolRunning
         let scheduleToolJustFinished = beforeScheduleToolRunning && !afterScheduleToolRunning
         let scheduleCardsChangedOnFinal = (!output.isDelta) && (!output.scheduleEvents.isEmpty) && (afterScheduleSignatures != beforeScheduleSignatures)
         if scheduleToolJustFinished || scheduleCardsChangedOnFinal {
             Task { await ScheduleService.invalidateCachesAndNotifyRemoteScheduleDidChange() }
+        }
+
+        // ✅ “删了再建”复活：如果本地有删除快照，而本次（或紧随其后）出现了新的日程卡片，则移除快照并取消置灰
+        if pendingScheduleReviveForNextCards {
+            var didRevive = false
+            if var events = msg.scheduleEvents, !events.isEmpty {
+                for i in events.indices {
+                    let k = EntityKey.schedule(events[i])
+                    if deletedScheduleSnapshotByKey.removeValue(forKey: k) != nil {
+                        didRevive = true
+                    }
+                    if events[i].isObsolete { events[i].isObsolete = false }
+                }
+                msg.scheduleEvents = events
+            }
+            if var segs = msg.segments, !segs.isEmpty {
+                var segsChanged = false
+                for si in segs.indices where segs[si].kind == .scheduleCards {
+                    guard var es = segs[si].scheduleEvents, !es.isEmpty else { continue }
+                    var localChanged = false
+                    for i in es.indices {
+                        let k = EntityKey.schedule(es[i])
+                        if deletedScheduleSnapshotByKey.removeValue(forKey: k) != nil {
+                            didRevive = true
+                        }
+                        if es[i].isObsolete { es[i].isObsolete = false; localChanged = true }
+                    }
+                    if localChanged {
+                        segs[si].scheduleEvents = es
+                        segsChanged = true
+                    }
+                }
+                if segsChanged { msg.segments = segs }
+            }
+            if didRevive { persistDeletedScheduleSnapshots() }
+            if (msg.scheduleEvents?.isEmpty == false) || (msg.segments?.contains(where: { $0.kind == .scheduleCards && (($0.scheduleEvents ?? []).isEmpty == false) }) == true) {
+                pendingScheduleReviveForNextCards = false
+            }
         }
 
         chatMessages[index] = msg

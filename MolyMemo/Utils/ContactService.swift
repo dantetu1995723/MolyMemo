@@ -308,6 +308,17 @@ enum ContactService {
         }
     }
 
+    /// 只用于“列表接口”：无视 debug 开关，强制打印后端原始 JSON（便于核对字段/分页）。
+    private static func debugAlwaysPrintRawListJSON(data: Data) {
+        guard !data.isEmpty else {
+            print("[ContactService][list] <empty body>")
+            return
+        }
+        let body = String(data: data, encoding: .utf8) ?? "<non-utf8 body: \(data.count) bytes>"
+        print("[ContactService][list] raw response (\(data.count) bytes):")
+        debugPrintLongString(body, chunkSize: 800)
+    }
+
     /// 只用于“创建接口”：无视 debug 开关，强制打印后端原始 JSON + 返回字段（便于你核对字段）。
     private static func debugAlwaysPrintRawCreateJSON(data: Data, statusCode: Int?) {
         guard !data.isEmpty else { return }
@@ -569,6 +580,9 @@ enum ContactService {
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
             debugPrintResponse(data: data, response: response, error: nil, tag: "list")
+#if DEBUG || targetEnvironment(simulator)
+            debugAlwaysPrintRawListJSON(data: data)
+#endif
             
             guard let http = response as? HTTPURLResponse else { throw ContactServiceError.invalidResponse }
             if !(200...299).contains(http.statusCode) {

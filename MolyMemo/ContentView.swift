@@ -27,7 +27,7 @@ struct ContentView: View {
             .sheet(isPresented: $appState.showSettings) {
                 SettingsView()
                     .presentationDragIndicator(.visible)
-                    .presentationDetents([.height(240)])
+                    .presentationDetents([.large])
             }
                 .fullScreenCover(isPresented: $appState.showLiveRecording) {
                     LiveRecordingView()

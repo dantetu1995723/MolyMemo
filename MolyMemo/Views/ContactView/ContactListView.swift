@@ -140,12 +140,50 @@ struct ContactListView: View {
         }
         .toolbar(.hidden, for: .navigationBar)
         .onAppear {
-            // 等待数据准备完成
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            // 每次进入联系人列表，都强制走后端刷新，并在完成前保持加载态
+            isLoading = true
+            Task { await reloadRemoteContacts(allowCache: false, showLoading: true) }
+        }
+    }
+
+    // MARK: - 后端拉取联系人列表（分页）
+    @MainActor
+    private func reloadRemoteContacts(allowCache: Bool = true, showLoading: Bool = false) async {
+        remoteErrorText = nil
+        
+        // 1) 先用缓存秒开（不必每次进来都打网络）
+        let base = ContactService.ListParams(page: nil, pageSize: nil, search: nil, relationshipType: nil)
+        if allowCache, let cached = await ContactService.peekAllContacts(maxPages: 5, pageSize: 100, baseParams: base) {
+            // 仅在缓存仍 fresh 时才“写回本地联系人库”，避免旧缓存把刚更新的联系人覆盖回旧值
+            if cached.isFresh {
+                upsertRemoteContacts(cached.value)
+            }
+            // 无论是否 fresh，都后台静默刷新，确保数据及时更新
+            Task {
+                await reloadRemoteContactsFromNetwork(base: base, showError: false, forceRefresh: true, showLoading: false)
+            }
+            // fresh：直接返回（已秒开）；stale：继续走网络（可以展示错误提示）
+            if cached.isFresh { return }
+        }
+        
+        // 2) 首次无缓存：走网络（可以显示错误提示）
+        await reloadRemoteContactsFromNetwork(base: base, showError: true, forceRefresh: true, showLoading: showLoading)
+    }
+    
+    @MainActor
+    private func reloadRemoteContactsFromNetwork(
+        base: ContactService.ListParams,
+        showError: Bool,
+        forceRefresh: Bool,
+        showLoading: Bool
+    ) async {
+        remoteIsLoading = true
+        defer {
+            remoteIsLoading = false
+            if showLoading {
                 withAnimation(.easeOut(duration: 0.25)) {
                     isLoading = false
                 }
-                
                 // 检查是否需要滚动到指定联系人
                 if let contactId = appState.scrollToContactId {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
@@ -156,46 +194,14 @@ struct ContactListView: View {
                     }
                 }
             }
-            
-            // 与「日程」一致：进入模块即拉取后端列表；失败则仍展示本地缓存
-            Task { await reloadRemoteContacts() }
         }
-    }
-
-    // MARK: - 后端拉取联系人列表（分页）
-    @MainActor
-    private func reloadRemoteContacts() async {
-        remoteErrorText = nil
-        
-        // 1) 先用缓存秒开（不必每次进来都打网络）
-        let base = ContactService.ListParams(page: nil, pageSize: nil, search: nil, relationshipType: nil)
-        if let cached = await ContactService.peekAllContacts(maxPages: 5, pageSize: 100, baseParams: base) {
-            // 仅在缓存仍 fresh 时才“写回本地联系人库”，避免旧缓存把刚更新的联系人覆盖回旧值
-            if cached.isFresh {
-                upsertRemoteContacts(cached.value)
-            }
-            // 无论是否 fresh，都后台静默刷新，确保数据及时更新
-            Task {
-                await reloadRemoteContactsFromNetwork(base: base, showError: false)
-            }
-            // fresh：直接返回（已秒开）；stale：继续走网络（可以展示错误提示）
-            if cached.isFresh { return }
-        }
-        
-        // 2) 首次无缓存：走网络（可以显示错误提示）
-        await reloadRemoteContactsFromNetwork(base: base, showError: true)
-    }
-    
-    @MainActor
-    private func reloadRemoteContactsFromNetwork(base: ContactService.ListParams, showError: Bool) async {
-        remoteIsLoading = true
-        defer { remoteIsLoading = false }
         
         do {
             let all = try await ContactService.fetchContactListAllPages(
                 maxPages: 5,
                 pageSize: 100,
-                baseParams: base
+                baseParams: base,
+                forceRefresh: forceRefresh
             )
             upsertRemoteContacts(all)
         } catch {
@@ -280,6 +286,11 @@ struct ContactListView: View {
         if let v = card.phone?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty { contact.phoneNumber = v }
         if let v = card.email?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty { contact.email = v }
         if let v = card.birthday?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty { contact.birthday = v }
+
+        // 后端仍存在该联系人时，强制解除本地废弃态，避免列表缺失
+        if contact.isObsolete {
+            contact.isObsolete = false
+        }
         
         let n = (card.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         if !n.isEmpty {
@@ -304,7 +315,11 @@ struct ContactListView: View {
             if let current = selectedContact, current.id == contact.id {
                 selectedContact = nil
             }
-            await appState.softDeleteContactModel(contact, modelContext: modelContext)
+            do {
+                try await appState.softDeleteContactModel(contact, modelContext: modelContext)
+            } catch {
+                deleteErrorText = "删除失败：\(error.localizedDescription)"
+            }
         }
     }
 }

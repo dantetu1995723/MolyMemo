@@ -968,7 +968,13 @@ struct ChatView: View {
                                         selectedContact = findOrCreateContact(from: card)
                                     }, onDeleteRequest: { card in
                                         Task { @MainActor in
-                                            await appState.softDeleteContactCard(card, modelContext: modelContext)
+                                            do {
+                                                try await appState.softDeleteContactCard(card, modelContext: modelContext)
+                                            } catch {
+#if DEBUG
+                                                AppGroupDebugLog.append("[ContactDelete] failed: \(error.localizedDescription)")
+#endif
+                                            }
                                         }
                                     })
                                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -1112,7 +1118,13 @@ struct ChatView: View {
                                         selectedContact = findOrCreateContact(from: card)
                                     }, onDeleteRequest: { card in
                                         Task { @MainActor in
-                                            await appState.softDeleteContactCard(card, modelContext: modelContext)
+                                            do {
+                                                try await appState.softDeleteContactCard(card, modelContext: modelContext)
+                                            } catch {
+#if DEBUG
+                                                AppGroupDebugLog.append("[ContactDelete] failed: \(error.localizedDescription)")
+#endif
+                                            }
                                         }
                                     })
                                     .frame(maxWidth: .infinity, alignment: .leading)

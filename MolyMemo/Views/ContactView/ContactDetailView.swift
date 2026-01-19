@@ -1076,8 +1076,12 @@ struct ContactDetailView: View {
         submittingAction = .delete
         defer { isSubmitting = false }
         
-        await appState.softDeleteContactModel(contact, modelContext: modelContext)
-        dismiss()
+        do {
+            try await appState.softDeleteContactModel(contact, modelContext: modelContext)
+            dismiss()
+        } catch {
+            alertMessage = "删除失败：\(error.localizedDescription)"
+        }
         submittingAction = nil
     }
     
