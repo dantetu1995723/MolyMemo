@@ -42,6 +42,9 @@ class ChatInputViewModel: ObservableObject {
     var onEndVoiceAgentMessage: ((UUID) -> Void)?
     /// 语音 WS：流式错误（若 messageId=nil 表示尚未创建 agent 占位）
     var onVoiceAgentError: ((UUID?, String) -> Void)?
+    /// 测试：把“原始录音”插入聊天（用户气泡，带本地可播放音频）。
+    /// - 仅用于验证按住说话的音频是否正确采集；不影响现有转写/AI 链路。
+    var onInsertHoldToTalkRawAudio: ((URL) -> Void)?
     var onBoxTap: (() -> Void)?
     var onStopGenerator: (() -> Void)?
     
@@ -72,6 +75,10 @@ class ChatInputViewModel: ObservableObject {
     private var shouldBackfillTranscriptOnOverlayDismiss: Bool = false
     /// hold-to-talk 过程中持续更新的“最近一次识别文本”（用于 stop 后发送）
     private var holdToTalkLatestText: String = ""
+    /// 测试：汇总本次按住说话的完整 PCM（16k/16bit/mono）。
+    /// - 由于 sendLoop 会 drain PCM 并清空 recorder 缓冲，所以需要额外累积一份。
+    /// - 仅用于本地落盘成 wav 并展示；不会影响 WS 的发送数据。
+    private var holdToTalkFullPCM: Data = Data()
     
     // MARK: - Computed Properties
     
@@ -381,6 +388,7 @@ class ChatInputViewModel: ObservableObject {
         holdToTalkVoiceSession = nil
         holdToTalkPlaceholderMessageId = nil
         holdToTalkPCMBacklog = PCMBacklog()
+        holdToTalkFullPCM = Data()
 
         print("[HoldToTalk] press down -> start pre-capture (gen=\(gen))")
 
@@ -426,6 +434,9 @@ class ChatInputViewModel: ObservableObject {
 
                         // 1) 从录音器取出新增 PCM，先写入 backlog（无论 WS 是否已就绪）
                         let drained = await MainActor.run { self.holdToTalkRecorder.drainPCMBytes() }
+                        if !drained.isEmpty {
+                            await MainActor.run { self.appendHoldToTalkFullPCM(drained) }
+                        }
                         if let backlog, !drained.isEmpty {
                             await backlog.append(drained)
                         }
@@ -614,6 +625,7 @@ class ChatInputViewModel: ObservableObject {
         holdToTalkReceiveLoopTask?.cancel()
         holdToTalkReceiveLoopTask = nil
         holdToTalkPCMBacklog = nil
+        holdToTalkFullPCM = Data()
 
         Task.detached { [weak self] in
             guard let self else { return }
@@ -673,9 +685,15 @@ private extension ChatInputViewModel {
     func finishBackendHoldToTalkAndSendAudioDone(genAtStop: Int) async {
         // 1) 停止本地 PCM 采集，把尾巴 drain 出来（避免最后一截丢字）
         let remainingPCM = holdToTalkRecorder.stop(discard: false)
+        if !remainingPCM.isEmpty {
+            appendHoldToTalkFullPCM(remainingPCM)
+        }
 
         // 若这一轮已被替代，直接退出（避免影响新一轮）
         guard holdToTalkGeneration == genAtStop else { return }
+
+        // 1.5) 测试：把完整 PCM 落盘为 wav，并插入一条“用户音频气泡”
+        emitHoldToTalkRawAudioBubbleIfNeeded(genAtStop: genAtStop)
 
         // 2) 发送剩余 PCM + audio_record_done（携带客户端侧最后一次 asr_result 兜底）
         guard let session = holdToTalkVoiceSession else { return }
@@ -746,6 +764,90 @@ private extension ChatInputViewModel {
             try await session.sendPCMChunk(next)
             await backlog.dropFirst(next.count)
         }
+    }
+
+    func appendHoldToTalkFullPCM(_ bytes: Data) {
+        guard !bytes.isEmpty else { return }
+        holdToTalkFullPCM.append(bytes)
+        // 兜底上限：约 4 分钟（32KB/s -> 7.5MB），足够测试且避免极端情况下内存无限增长
+        let cap = 8 * 1024 * 1024
+        if holdToTalkFullPCM.count > cap {
+            holdToTalkFullPCM = Data(holdToTalkFullPCM.suffix(cap))
+        }
+    }
+
+    func emitHoldToTalkRawAudioBubbleIfNeeded(genAtStop: Int) {
+        // 仅在有数据、且仍是同一轮时触发
+        guard holdToTalkGeneration == genAtStop else { return }
+        guard !holdToTalkFullPCM.isEmpty else { return }
+
+        // 快照 + 清空（避免下一轮串数据）
+        let pcmSnapshot = holdToTalkFullPCM
+        holdToTalkFullPCM = Data()
+
+        Task.detached(priority: .utility) { [weak self] in
+            guard let self else { return }
+            do {
+                let wav = WAV16PCMWriter.makeWAV(pcm16leMono: pcmSnapshot, sampleRate: 16_000)
+                let url = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("holdtotalk-\(UUID().uuidString)")
+                    .appendingPathExtension("wav")
+                try wav.write(to: url, options: [.atomic])
+                await MainActor.run {
+                    self.onInsertHoldToTalkRawAudio?(url)
+                }
+            } catch {
+                // 测试功能：写失败就忽略，不影响原链路
+            }
+        }
+    }
+}
+
+// MARK: - WAV writer (16-bit PCM, little-endian, mono)
+
+private enum WAV16PCMWriter {
+    static func makeWAV(pcm16leMono: Data, sampleRate: Int) -> Data {
+        let numChannels: UInt16 = 1
+        let bitsPerSample: UInt16 = 16
+        let byteRate = UInt32(sampleRate) * UInt32(numChannels) * UInt32(bitsPerSample) / 8
+        let blockAlign = numChannels * (bitsPerSample / 8)
+        let dataSize = UInt32(pcm16leMono.count)
+        let riffChunkSize = UInt32(36) + dataSize
+
+        var out = Data()
+        out.reserveCapacity(44 + pcm16leMono.count)
+
+        // RIFF header
+        out.append(contentsOf: [0x52, 0x49, 0x46, 0x46]) // "RIFF"
+        out.appendLE(riffChunkSize)
+        out.append(contentsOf: [0x57, 0x41, 0x56, 0x45]) // "WAVE"
+
+        // fmt subchunk
+        out.append(contentsOf: [0x66, 0x6D, 0x74, 0x20]) // "fmt "
+        out.appendLE(UInt32(16)) // PCM fmt chunk size
+        out.appendLE(UInt16(1)) // audio format = 1 (PCM)
+        out.appendLE(numChannels)
+        out.appendLE(UInt32(sampleRate))
+        out.appendLE(byteRate)
+        out.appendLE(blockAlign)
+        out.appendLE(bitsPerSample)
+
+        // data subchunk
+        out.append(contentsOf: [0x64, 0x61, 0x74, 0x61]) // "data"
+        out.appendLE(dataSize)
+        out.append(pcm16leMono)
+        return out
+    }
+}
+
+private extension Data {
+    mutating func appendLE(_ v: UInt16) {
+        var x = v.littleEndian
+        Swift.withUnsafeBytes(of: &x) { append(contentsOf: $0) }
+    }
+    mutating func appendLE(_ v: UInt32) {
+        var x = v.littleEndian
+        Swift.withUnsafeBytes(of: &x) { append(contentsOf: $0) }
     }
 }
 

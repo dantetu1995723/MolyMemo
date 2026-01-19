@@ -516,6 +516,9 @@ struct ChatMessage: Identifiable, Equatable {
     var notes: String? = nil  // 临时存储数据（如待处理的报销信息）
     var isContactToolRunning: Bool = false // tool 中间态：用于联系人创建 loading
     var isScheduleToolRunning: Bool = false // tool 中间态：用于日程创建/更新 loading
+    /// 仅运行态：本地音频（用于测试在聊天里展示“原录音”）。
+    /// - 不落盘：PersistentChatMessage 不会保存该字段，避免引入 SwiftData schema/migration。
+    var localAudioURL: URL? = nil
     /// 仅运行态：当联系人工具链路刚结束（contacts_create/contacts_update），允许“下一批联系人卡片”把本地 soft-delete 的联系人复活。
     /// - 目的：支持“删了又创建同名联系人”时，聊天/工具箱不应继续划杠。
     /// - 注意：不落盘，不参与 Equatable（避免 Date/状态抖动影响 UI diff）。
@@ -587,7 +590,8 @@ struct ChatMessage: Identifiable, Equatable {
         lhs.showIntentSelection == rhs.showIntentSelection &&
         lhs.isWrongClassification == rhs.isWrongClassification &&
         lhs.showReclassifyBubble == rhs.showReclassifyBubble &&
-        lhs.isInterrupted == rhs.isInterrupted
+        lhs.isInterrupted == rhs.isInterrupted &&
+        lhs.localAudioURL == rhs.localAudioURL
     }
 }
 
@@ -799,11 +803,11 @@ class AppState: ObservableObject {
     // MARK: - 会议记录：删除同步（聊天室卡片 -> 工具箱列表 + 后端）
 
     /// 统一：从聊天室删除一个会议卡片，同时同步：
-    /// - 聊天历史：移除所有同一会议（按 remoteId 优先，其次 audioPath）
+    /// - 聊天历史：软删除（置灰划杠），保留卡片占位（按 remoteId 优先，其次 audioPath）
     /// - 工具箱会议列表：通过通知立即移除
     /// - 后端：有 remoteId 则真实删除
     ///
-    /// 设计目标：前后端一致、逻辑清晰；删除失败则回滚聊天室，避免“聊天室删了但工具箱/后端还在”。
+    /// 设计目标：与联系人/发票等一致——先在聊天里“立刻置灰划杠”，再异步删后端并同步工具箱列表。
     @MainActor
     func deleteMeetingCardEverywhere(_ meeting: MeetingCard, modelContext: ModelContext) async {
         func trimmed(_ s: String?) -> String { (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -819,94 +823,16 @@ class AppState: ObservableObject {
 
         let rid = trimmed(meeting.remoteId)
         let localPath = normalizeLocalAudioPath(meeting.audioPath)
-
-        func isSameMeeting(_ other: MeetingCard) -> Bool {
-            let otherRid = trimmed(other.remoteId)
-            if !rid.isEmpty, !otherRid.isEmpty {
-                return otherRid == rid
-            }
-            let otherPath = normalizeLocalAudioPath(other.audioPath)
-            if !localPath.isEmpty, !otherPath.isEmpty {
-                return otherPath == localPath
-            }
-            // 最后兜底：同一条消息内删除（按本地 UUID）
-            return other.id == meeting.id
+        // ✅ 关键：删除可能发生在“用户还没打开聊天室 / chatMessages 为空”的场景（例如从详情页/通知触发）。
+        // 为保证“置灰划杠”也能落盘到历史，先把最近一批消息拉进内存。
+        if chatMessages.isEmpty {
+            refreshChatMessagesFromStorageIfNeeded(modelContext: modelContext, limit: 200)
         }
 
-        func rebuildAggregatesFromSegments(_ segments: [ChatSegment], into message: inout ChatMessage) {
-            var schedules: [ScheduleEvent] = []
-            var contacts: [ContactCard] = []
-            var invoices: [InvoiceCard] = []
-            var meetings: [MeetingCard] = []
+        // 1) 先在聊天里“立刻置灰划杠”并落库（与联系人软删除一致）
+        markMeetingCardsAsObsoleteAndPersist(updated: meeting, modelContext: modelContext)
 
-            for seg in segments {
-                if let s = seg.scheduleEvents, !s.isEmpty { schedules.append(contentsOf: s) }
-                if let c = seg.contacts, !c.isEmpty { contacts.append(contentsOf: c) }
-                if let i = seg.invoices, !i.isEmpty { invoices.append(contentsOf: i) }
-                if let m = seg.meetings, !m.isEmpty { meetings.append(contentsOf: m) }
-            }
-
-            message.scheduleEvents = schedules.isEmpty ? nil : schedules
-            message.contacts = contacts.isEmpty ? nil : contacts
-            message.invoices = invoices.isEmpty ? nil : invoices
-            message.meetings = meetings.isEmpty ? nil : meetings
-        }
-
-        // 1) 先在本地聊天室“乐观移除”，并记录快照用于失败回滚
-        var snapshots: [(idx: Int, old: ChatMessage)] = []
-        for i in chatMessages.indices {
-            var msg = chatMessages[i]
-            let old = msg
-            var changed = false
-
-            // a) 聚合字段 meetings
-            if var ms = msg.meetings, !ms.isEmpty {
-                let before = ms.count
-                ms.removeAll(where: { isSameMeeting($0) })
-                if ms.count != before {
-                    msg.meetings = ms.isEmpty ? nil : ms
-                    changed = true
-                }
-            }
-
-            // b) 分段字段 segments（优先）
-            if var segs = msg.segments, !segs.isEmpty {
-                var segChanged = false
-                for j in segs.indices {
-                    guard segs[j].kind == .meetingCards else { continue }
-                    if var ms = segs[j].meetings, !ms.isEmpty {
-                        let before = ms.count
-                        ms.removeAll(where: { isSameMeeting($0) })
-                        if ms.count != before {
-                            segs[j].meetings = ms.isEmpty ? nil : ms
-                            segChanged = true
-                        }
-                    }
-                }
-                if segChanged {
-                    // 删除空的 meetingCards 段，避免 UI 留下“空卡片占位”
-                    segs.removeAll(where: { $0.kind == .meetingCards && (($0.meetings ?? []).isEmpty) })
-                    msg.segments = segs.isEmpty ? nil : segs
-                    if let newSegs = msg.segments {
-                        rebuildAggregatesFromSegments(newSegs, into: &msg)
-                    } else {
-                        // 没有 segments：保持现有聚合字段（已经处理 meetings）
-                    }
-                    changed = true
-                }
-            }
-
-            if changed {
-                snapshots.append((idx: i, old: old))
-                chatMessages[i] = msg
-                saveMessageToStorage(msg, modelContext: modelContext)
-            }
-        }
-
-        // 若本地没有任何命中，就不做后续动作
-        guard !snapshots.isEmpty else { return }
-
-        // 2) 后端删除（有 remoteId 才删）；失败则回滚聊天室，保持一致性
+        // 2) 后端删除（有 remoteId 才删）：成功后再通知工具箱移除
         do {
             if !rid.isEmpty {
                 try await MeetingMinutesService.deleteMeetingMinutes(id: rid)
@@ -930,10 +856,87 @@ class AppState: ObservableObject {
                 ]
             )
         } catch {
-            // 回滚：恢复本地聊天室（并落库），避免“聊天室删了但后端/工具箱还在”
-            for s in snapshots {
-                chatMessages[s.idx] = s.old
-                saveMessageToStorage(s.old, modelContext: modelContext)
+            // 后端删除失败：保持聊天的“置灰划杠”（与联系人一致，避免来回跳动）；工具箱不做乐观移除，等待用户重试/刷新。
+            #if DEBUG
+            AppGroupDebugLog.append("[MeetingDelete] backend delete failed rid=\(rid) err=\(error.localizedDescription)")
+            #endif
+        }
+    }
+
+    @MainActor
+    private func markMeetingCardsAsObsoleteAndPersist(updated: MeetingCard, modelContext: ModelContext) {
+        func trimmed(_ s: String?) -> String { (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
+        func normalizeLocalAudioPath(_ raw: String?) -> String {
+            let s = trimmed(raw)
+            guard !s.isEmpty else { return "" }
+            if let u = URL(string: s), u.isFileURL { return u.standardizedFileURL.path }
+            return URL(fileURLWithPath: s).standardizedFileURL.path
+        }
+
+        let rid = trimmed(updated.remoteId)
+        let localPath = normalizeLocalAudioPath(updated.audioPath)
+
+        func isSameEntity(_ card: MeetingCard) -> Bool {
+            let otherRid = trimmed(card.remoteId)
+            if !rid.isEmpty, !otherRid.isEmpty, rid == otherRid { return true }
+            let otherPath = normalizeLocalAudioPath(card.audioPath)
+            if !localPath.isEmpty, !otherPath.isEmpty, localPath == otherPath { return true }
+            // 兜底：同一条消息内按 UUID 命中
+            return card.id == updated.id
+        }
+
+        // @Published 数组元素变更有时不会触发 UI 刷新：显式发一次变更，确保聊天页立刻看到“置灰划杠”
+        objectWillChange.send()
+
+        var changedMessageIds: Set<UUID> = []
+        for i in chatMessages.indices {
+            var msg = chatMessages[i]
+            var msgChanged = false
+
+            if var ms = msg.meetings, !ms.isEmpty {
+                var localChanged = false
+                for j in ms.indices {
+                    guard isSameEntity(ms[j]), !ms[j].isObsolete else { continue }
+                    ms[j].isObsolete = true
+                    localChanged = true
+                }
+                if localChanged {
+                    msg.meetings = ms
+                    msgChanged = true
+                }
+            }
+
+            if var segs = msg.segments, !segs.isEmpty {
+                var segsChanged = false
+                for si in segs.indices {
+                    guard segs[si].kind == .meetingCards else { continue }
+                    guard var cards = segs[si].meetings, !cards.isEmpty else { continue }
+                    var localChanged = false
+                    for ci in cards.indices {
+                        guard isSameEntity(cards[ci]), !cards[ci].isObsolete else { continue }
+                        cards[ci].isObsolete = true
+                        localChanged = true
+                    }
+                    if localChanged {
+                        segs[si].meetings = cards
+                        segsChanged = true
+                        msgChanged = true
+                    }
+                }
+                if segsChanged {
+                    msg.segments = segs
+                }
+            }
+
+            if msgChanged {
+                chatMessages[i] = msg
+                changedMessageIds.insert(msg.id)
+            }
+        }
+
+        for mid in changedMessageIds {
+            if let idx = chatMessages.firstIndex(where: { $0.id == mid }) {
+                saveMessageToStorage(chatMessages[idx], modelContext: modelContext)
             }
         }
     }

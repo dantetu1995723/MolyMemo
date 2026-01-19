@@ -5,6 +5,8 @@ import UserNotifications
 
 @main
 struct MolyMemoApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+
     @StateObject private var appState = AppState()
     @StateObject private var authStore = AuthStore()
     @Environment(\.scenePhase) private var scenePhase
@@ -83,6 +85,7 @@ struct MolyMemoApp: App {
                     // 兼容旧字段 shouldNavigateToMeeting（旧逻辑会跳会议页）；现在统一走聊天室
                     let shouldNavigateToChatRoom = notification.userInfo?["shouldNavigateToChatRoom"] as? Bool
                         ?? true
+                    let autoMinimize = notification.userInfo?["autoMinimize"] as? Bool ?? false
                     let publishTranscriptionToUI = notification.userInfo?["publishTranscriptionToUI"] as? Bool ?? true
 
                     DispatchQueue.main.async {
@@ -105,6 +108,14 @@ struct MolyMemoApp: App {
                         if !LiveRecordingManager.shared.isRecording {
                             // 快捷指令/Widget：与工具箱一致——默认生成聊天室卡片；会议列表占位由“会议页内发起”控制
                             LiveRecordingManager.shared.startRecording(publishTranscriptionToUI: publishTranscriptionToUI, uploadToChat: true, updateMeetingList: false)
+                        }
+
+                        // ✅ 快捷指令体验：启动后自动缩回灵动岛/回到桌面
+                        // 放一点点延迟，确保录音与 Live Activity 已经起来（否则会出现“没显示灵动岛”错觉）
+                        if autoMinimize {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) {
+                                AppMinimizer.minimizeToHomeIfPossible()
+                            }
                         }
                     }
                 }

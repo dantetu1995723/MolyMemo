@@ -38,10 +38,15 @@ final class AuthStore: ObservableObject {
     
     func login() async {
         let p = phone.trimmingCharacters(in: .whitespacesAndNewlines)
-        let c = verificationCode.trimmingCharacters(in: .whitespacesAndNewlines) // 允许为空
+        let c = verificationCode.trimmingCharacters(in: .whitespacesAndNewlines)
         
         guard !p.isEmpty else {
             lastError = "请输入手机号"
+            return
+        }
+        
+        guard !c.isEmpty else {
+            lastError = "请输入验证码"
             return
         }
         
@@ -82,7 +87,7 @@ final class AuthStore: ObservableObject {
         Task { await logoutAsync() }
     }
 
-    func logoutAsync() async {
+    func logoutAsync(clearPhone: Bool = false) async {
         let sessionId = (sessionId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         
         // 先尝试通知后端登出；即使失败也会清本地，避免用户被卡住
@@ -103,12 +108,17 @@ final class AuthStore: ObservableObject {
         
         UserDefaults.standard.removeObject(forKey: Keys.sessionId)
         _ = KeychainStore.delete(Keys.sessionId)
-        // 保留手机号，方便下次登录更快
         verificationCode = ""
         isLoggedIn = false
         
         // 清掉后端聊天 token，避免误带旧登录态
         BackendChatConfig.apiKey = ""
+        
+        if clearPhone {
+            phone = ""
+            UserDefaults.standard.removeObject(forKey: Keys.phone)
+            _ = KeychainStore.delete(Keys.phone)
+        }
         
         #if DEBUG
         #endif

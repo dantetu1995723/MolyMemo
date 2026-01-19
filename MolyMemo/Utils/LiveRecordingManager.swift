@@ -28,6 +28,8 @@ class LiveRecordingManager: ObservableObject {
     
     // Live Activity
     private var activity: Activity<MeetingRecordingAttributes>?
+    private var liveActivityWaveTimer: DispatchSourceTimer?
+    private var liveActivityWavePhase: Int = 0
 
     // Widget/快捷指令场景：可以只在后台做转写，但不把文本推到 UI（灵动岛/Live Activity）
     private var publishTranscriptionToUI: Bool = true
@@ -35,6 +37,8 @@ class LiveRecordingManager: ObservableObject {
     private var uploadToChat: Bool = true
     // 上传生成后，是否通知会议列表页插入/更新“占位条目”
     private var updateMeetingList: Bool = false
+    // 是否使用后台上传器（background URLSession），用于灵动岛/快捷指令“无需打开 App 前台”的链路
+    private var useBackgroundUploader: Bool = false
     
     // 保存 ModelContext 的回调
     var modelContextProvider: (() -> ModelContext?)?
@@ -44,6 +48,27 @@ class LiveRecordingManager: ObservableObject {
         setupBackgroundHandling()
         // 启动时清理所有残留的Live Activity
         cleanupStaleActivities()
+    }
+
+    // MARK: - Live Activity 音浪驱动（Dynamic Island 会冻结 TimelineView，需用 state 更新触发重绘）
+    private func startLiveActivityWaveTicker() {
+        guard liveActivityWaveTimer == nil else { return }
+        liveActivityWaveTimer = DispatchSource.makeTimerSource(queue: .main)
+        // 频率不要太高，避免“倒计时式卡顿”；同时足够产生“跳动”观感
+        liveActivityWaveTimer?.schedule(deadline: .now(), repeating: 0.34, leeway: .milliseconds(120))
+        liveActivityWaveTimer?.setEventHandler { [weak self] in
+            guard let self else { return }
+            guard self.isRecording, !self.isPaused else { return }
+            self.liveActivityWavePhase &+= 1
+            self.updateLiveActivity()
+        }
+        liveActivityWaveTimer?.resume()
+    }
+
+    private func stopLiveActivityWaveTicker() {
+        liveActivityWaveTimer?.setEventHandler {}
+        liveActivityWaveTimer?.cancel()
+        liveActivityWaveTimer = nil
     }
 
     private func runOnMain(_ block: @escaping () -> Void) {
@@ -66,16 +91,18 @@ class LiveRecordingManager: ObservableObject {
     /// - Parameter publishTranscriptionToUI: 是否在 Live Activity / 灵动岛显示实时转写文本（默认 true）。
     /// - Parameter uploadToChat: 是否在聊天室生成会议卡片（默认 true）。
     /// - Parameter updateMeetingList: 是否在会议列表页插入/更新占位条目（默认 false）。
-    func startRecording(publishTranscriptionToUI: Bool = true, uploadToChat: Bool = true, updateMeetingList: Bool = false) {
+    /// - Parameter useBackgroundUploader: 是否在停止后使用后台上传器（默认 false）。
+    func startRecording(publishTranscriptionToUI: Bool = true, uploadToChat: Bool = true, updateMeetingList: Bool = false, useBackgroundUploader: Bool = false) {
         self.publishTranscriptionToUI = publishTranscriptionToUI
         self.uploadToChat = uploadToChat
         self.updateMeetingList = updateMeetingList
+        self.useBackgroundUploader = useBackgroundUploader
         print("[RecordingFlow] 🎙️ startRecording publishToUI=\(publishTranscriptionToUI)")
 
         // 先让 UI 进入“启动中”，避免用户感觉点了没反应
         runOnMain { [weak self] in
             guard let self else { return }
-            if self.isRecording { return }
+            if self.isRecording || self.isStartingRecording { return }
             self.isStartingRecording = true
         }
         
@@ -242,7 +269,6 @@ class LiveRecordingManager: ObservableObject {
                 let text = result.bestTranscription.formattedString
                 DispatchQueue.main.async {
                     self.recognizedText = text
-                    self.updateLiveActivity()
                 }
             }
             
@@ -268,6 +294,9 @@ class LiveRecordingManager: ObservableObject {
         // 暂停音频引擎
         audioEngine.pause()
         
+        // 暂停音浪 ticker，避免无意义刷新
+        stopLiveActivityWaveTicker()
+
         // 更新 Live Activity
         updateLiveActivity()
         
@@ -287,7 +316,6 @@ class LiveRecordingManager: ObservableObject {
         recordingTimer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
             guard let self = self else { return }
             self.recordingDuration += 0.5
-            self.updateLiveActivity()
         }
         RunLoop.current.add(recordingTimer!, forMode: .common)
         
@@ -297,9 +325,9 @@ class LiveRecordingManager: ObservableObject {
         } catch {
         }
         
-        // 更新 Live Activity
+        // 更新 Live Activity (仅一次，反映“录音中”状态)
         updateLiveActivity()
-        
+        startLiveActivityWaveTicker()
     }
     
     // 停止录音
@@ -326,6 +354,7 @@ class LiveRecordingManager: ObservableObject {
         let finalAudioURL = audioURL
 
         isStartingRecording = false
+        stopLiveActivityWaveTicker()
         isRecording = false
         isPaused = false
 
@@ -337,6 +366,27 @@ class LiveRecordingManager: ObservableObject {
         // - 不再用“时长阈值”决定要不要生成卡片（用户停止就应生成：成功/失败都要给结果）
         // - 若文件缺失/无效，也会发通知，让上层生成“失败卡片”而不是静默消失
         postRecordingNeedsUpload(audioURL: finalAudioURL, duration: finalDuration)
+
+        // 灵动岛/快捷指令链路：不依赖前台 SwiftUI onReceive，直接走后台上传器。
+        if useBackgroundUploader, let url = finalAudioURL {
+            #if canImport(UIKit)
+            let isForeground = UIApplication.shared.applicationState == .active
+            #else
+            let isForeground = false
+            #endif
+
+            // 前台：维持原链路（UI 会接到 RecordingNeedsUpload 并走 MeetingMinutesService.generateMeetingMinutes）
+            // 后台：走 background URLSession，确保 App 被挂起也能继续上传。
+            if !isForeground {
+                RecordingStopNotifier.notifyStoppedAndUploading()
+                MeetingMinutesBackgroundUploader.shared.enqueueGenerateMeetingMinutes(
+                    originalAudioFileURL: url,
+                    duration: finalDuration,
+                    uploadToChat: uploadToChat,
+                    updateMeetingList: updateMeetingList
+                )
+            }
+        }
 
         // 后台做耗时清理，避免阻塞 UI
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
@@ -421,11 +471,14 @@ class LiveRecordingManager: ObservableObject {
         }
         
         let attributes = MeetingRecordingAttributes(meetingTitle: "Moly录音")
+        liveActivityWavePhase = 0
         let contentState = MeetingRecordingAttributes.ContentState(
             transcribedText: isPaused ? "已暂停" : "录音中",
-            duration: 0,
+            duration: 0, // 录音中不展示实时计时，避免频繁更新导致卡顿
             isRecording: true,
-            isPaused: false
+            isPaused: false,
+            isCompleted: false,
+            wavePhase: liveActivityWavePhase
         )
         
         do {
@@ -441,6 +494,7 @@ class LiveRecordingManager: ObservableObject {
                 content: activityContent,
                 pushType: nil
             )
+            startLiveActivityWaveTicker()
         } catch {
         }
     }
@@ -453,9 +507,11 @@ class LiveRecordingManager: ObservableObject {
                 // 灵动岛不再展示实时转写/计时，固定文案即可
                 return isPaused ? "已暂停" : "录音中"
             }(),
-            duration: recordingDuration,
+            duration: 0, // 录音中不展示实时计时，避免频繁更新导致卡顿
             isRecording: isRecording,
-            isPaused: isPaused
+            isPaused: isPaused,
+            isCompleted: false,
+            wavePhase: liveActivityWavePhase
         )
         
         Task { @MainActor in
@@ -473,17 +529,33 @@ class LiveRecordingManager: ObservableObject {
         guard let activity = activity else { return }
         
         let finalState = MeetingRecordingAttributes.ContentState(
-            transcribedText: "录音中",
+            transcribedText: "录音已保存",
             duration: recordingDuration,
             isRecording: false,
-            isPaused: false
+            isPaused: false,
+            isCompleted: true,
+            wavePhase: liveActivityWavePhase
         )
         
         // 捕获当前的 activity 引用
         let currentActivity = activity
         
         Task {
-            // 点击停止后立刻结束灵动岛/Live Activity（不再停留/不展示计时完成态）
+            // 1. 先显示“完成态”
+            if #available(iOS 16.2, *) {
+                let content = ActivityContent(
+                    state: finalState,
+                    staleDate: nil,
+                    relevanceScore: 100.0
+                )
+                await currentActivity.update(content)
+            } else {
+                await currentActivity.update(using: finalState)
+            }
+            
+            // 2. 停留 2.5 秒后消失，给用户明确反馈
+            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            
             if #available(iOS 16.2, *) {
                 let content = ActivityContent(
                     state: finalState,

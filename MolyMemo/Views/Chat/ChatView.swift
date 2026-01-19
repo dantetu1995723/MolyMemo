@@ -496,6 +496,16 @@ struct ChatView: View {
                 inputViewModel.stopVoiceAssistantIfNeeded()
             }
 
+            // 测试：按住说话结束后，把原始录音（本地 wav）插入一条用户气泡
+            inputViewModel.onInsertHoldToTalkRawAudio = { url in
+                var msg = ChatMessage(role: .user, content: "")
+                msg.localAudioURL = url
+                withAnimation {
+                    appState.chatMessages.append(msg)
+                }
+                // 仅测试展示：不落盘，避免引入 SwiftData schema 变更
+            }
+
             // 首页通知栏：初始化今日日程
             bootstrapTodayScheduleNotice()
         }
@@ -1534,6 +1544,10 @@ struct UserBubble: View {
                         )
                     }
                 }
+
+                if let url = message.localAudioURL {
+                    ChatAudioBubble(url: url)
+                }
                 
                 if !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     Text(message.content)
@@ -1550,6 +1564,74 @@ struct UserBubble: View {
             }
             .frame(maxWidth: ScreenMetrics.width * 0.80, alignment: .trailing)
         }
+    }
+}
+
+private struct ChatAudioBubble: View {
+    let url: URL
+
+    @StateObject private var player = AudioPlayer()
+    @State private var didStartOnce: Bool = false
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Button {
+                HapticFeedback.light()
+                toggle()
+            } label: {
+                Image(systemName: (player.isPlaying ? "pause.fill" : "play.fill"))
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(Color(hex: "333333"))
+                    .frame(width: 34, height: 34)
+                    .background(Color.black.opacity(0.04), in: Circle())
+            }
+            .buttonStyle(.plain)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("原录音（测试）")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(Color(hex: "333333"))
+                    .lineLimit(1)
+                Text(timeText)
+                    .font(.system(size: 12, weight: .regular))
+                    .foregroundColor(Color(hex: "666666"))
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(
+            BubbleShape(myRole: .user)
+                .fill(Color.white)
+                .shadow(color: Color.black.opacity(0.04), radius: 3, x: 0, y: 1)
+        )
+    }
+
+    private var timeText: String {
+        let cur = max(0, player.currentTime)
+        let dur = max(0, player.duration)
+        if dur > 0 {
+            return "\(formatTime(cur)) / \(formatTime(dur))"
+        }
+        return didStartOnce ? formatTime(cur) : "点击播放"
+    }
+
+    private func toggle() {
+        if player.isPlaying {
+            player.pause()
+            return
+        }
+        didStartOnce = true
+        player.play(url: url)
+    }
+
+    private func formatTime(_ t: TimeInterval) -> String {
+        let s = Int(t.rounded(.down))
+        let m = s / 60
+        let r = s % 60
+        return String(format: "%d:%02d", m, r)
     }
 }
 

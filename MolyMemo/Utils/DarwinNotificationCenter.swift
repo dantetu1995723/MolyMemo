@@ -37,6 +37,8 @@ enum RecordingSharedDefaults {
     static let shouldNavigateToMeetingKey = "recording.shouldNavigateToMeeting"
     static let autoMinimizeKey = "recording.autoMinimize"
     static let shouldNavigateToChatRoomKey = "recording.shouldNavigateToChatRoom"
+    /// 是否使用“后台上传器”（background URLSession），用于灵动岛/快捷指令场景避免依赖前台 UI。
+    static let useBackgroundUploaderKey = "recording.useBackgroundUploader"
     /// 是否在 UI（Live Activity / 灵动岛）展示实时转写。
     /// - true: 展示（默认）
     /// - false: 只录音/内部转写，但不把转写文本推到 UI（避免出现“蓝色球/歌词滚动”）

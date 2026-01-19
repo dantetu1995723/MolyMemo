@@ -24,11 +24,11 @@ struct ContentView: View {
                                     .environmentObject(appState)
                             }
                     }
-                    .sheet(isPresented: $appState.showSettings) {
-                    SettingsView()
-                        .presentationDragIndicator(.visible)
-                        .presentationDetents([.height(340)])
-                }
+            .sheet(isPresented: $appState.showSettings) {
+                SettingsView()
+                    .presentationDragIndicator(.visible)
+                    .presentationDetents([.height(240)])
+            }
                 .fullScreenCover(isPresented: $appState.showLiveRecording) {
                     LiveRecordingView()
                 }
