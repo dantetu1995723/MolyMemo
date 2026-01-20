@@ -1247,10 +1247,8 @@ class AppState: ObservableObject {
                     messages: messagesForModel,
                     mode: await MainActor.run { self.currentMode },
                     onStructuredOutput: { output in
-                        Task { @MainActor [weak self] in
-                            guard let self else { return }
-                            self.applyStructuredOutput(output, to: messageId, modelContext: modelContext)
-                        }
+                        // 回调本身已在 MainActor 上：直接串行回填，避免末尾 chunk 竞争/丢失
+                        self.applyStructuredOutput(output, to: messageId, modelContext: modelContext)
                     },
                     onComplete: { finalText in
                         // playResponse 内会按 messageId 定位并回填内容（不 append），确保时序稳定
@@ -1426,9 +1424,6 @@ class AppState: ObservableObject {
             let incoming = (msg.contacts ?? []).dedup(by: ChatCardStableId.contact)
             let allowReviveFromThisMessage = msg.reviveContactsForNextCards || pendingContactReviveForNextCards
             if !incoming.isEmpty {
-#if DEBUG
-                print("[AppState] applyStructuredOutput() syncing contacts to local store. isDelta=\(output.isDelta) count=\(incoming.count)")
-#endif
                 do {
                     var all = try modelContext.fetch(FetchDescriptor<Contact>())
                     for card in incoming {
@@ -1441,9 +1436,6 @@ class AppState: ObservableObject {
                     if msg.reviveContactsForNextCards { msg.reviveContactsForNextCards = false }
                     if pendingContactReviveForNextCards { pendingContactReviveForNextCards = false }
                 } catch {
-#if DEBUG
-                    print("[AppState] applyStructuredOutput() local Contact sync failed: \(error.localizedDescription)")
-#endif
                 }
             }
 

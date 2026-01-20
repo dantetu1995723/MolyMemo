@@ -27,6 +27,8 @@ class ChatInputViewModel: ObservableObject {
     
     // MARK: - Agent State
     @Published var isAgentTyping: Bool = false
+    /// 停止按钮点击后到状态真正收敛前：禁用连点，提升“第一次就停住”的体感
+    @Published var isStoppingAgent: Bool = false
     
     // MARK: - Actions
     var onSend: ((String, UIImage?) -> Void)?
@@ -44,7 +46,6 @@ class ChatInputViewModel: ObservableObject {
     var onVoiceAgentError: ((UUID?, String) -> Void)?
     /// 测试：把“原始录音”插入聊天（用户气泡，带本地可播放音频）。
     /// - 仅用于验证按住说话的音频是否正确采集；不影响现有转写/AI 链路。
-    var onInsertHoldToTalkRawAudio: ((URL) -> Void)?
     var onBoxTap: (() -> Void)?
     var onStopGenerator: (() -> Void)?
     
@@ -75,10 +76,8 @@ class ChatInputViewModel: ObservableObject {
     private var shouldBackfillTranscriptOnOverlayDismiss: Bool = false
     /// hold-to-talk 过程中持续更新的“最近一次识别文本”（用于 stop 后发送）
     private var holdToTalkLatestText: String = ""
-    /// 测试：汇总本次按住说话的完整 PCM（16k/16bit/mono）。
-    /// - 由于 sendLoop 会 drain PCM 并清空 recorder 缓冲，所以需要额外累积一份。
-    /// - 仅用于本地落盘成 wav 并展示；不会影响 WS 的发送数据。
-    private var holdToTalkFullPCM: Data = Data()
+    /// 用户请求停止语音 AI：用于在 WS 还没完全断开时丢弃后续 chunk（避免“点了停止但还在继续输出”）
+    private var voiceStopRequestedGeneration: Int?
     
     // MARK: - Computed Properties
     
@@ -100,6 +99,11 @@ class ChatInputViewModel: ObservableObject {
                 self.audioPower = CGFloat(level)
             }
             .store(in: &cancellables)
+    }
+    
+    /// 预热录音引擎：在进入聊天界面时调用，减少首次按住说话的启动延迟
+    func warmUpRecorder() {
+        holdToTalkRecorder.warmUpSession()
     }
     
     func sendMessage() {
@@ -222,6 +226,7 @@ class ChatInputViewModel: ObservableObject {
         guard shouldSend else {
             // 取消需要告知后端并释放麦克风
             let placeholderId = holdToTalkPlaceholderMessageId
+            let sessionAtStop = holdToTalkVoiceSession
             holdToTalkPlaceholderMessageId = nil
             holdToTalkAgentMessageId = nil
             holdToTalkLatestText = ""
@@ -233,12 +238,11 @@ class ChatInputViewModel: ObservableObject {
             holdToTalkReceiveLoopTask = nil
             Task.detached { [weak self] in
                 guard let self else { return }
-                if let s = await MainActor.run(body: { self.holdToTalkVoiceSession }) {
+                if let s = sessionAtStop {
                     try? await s.sendCancel()
                     await s.close()
                 }
-                _ = await MainActor.run { self.holdToTalkRecorder.stop(discard: true) }
-                await MainActor.run { self.holdToTalkVoiceSession = nil }
+                await self.closeHoldToTalkSessionIfStillCurrent(gen: genAtStop, session: sessionAtStop)
             }
             if let placeholderId {
                 onRemovePlaceholder?(placeholderId)
@@ -344,12 +348,22 @@ class ChatInputViewModel: ObservableObject {
     /// 停止“语音 WS 的 AI 回复流”（用于：用户点了“中止”按钮）。
     /// - 备注：普通 chat 的中止由 AppState.stopGeneration() 处理；这里补齐 voice WS 的取消。
     func stopVoiceAssistantIfNeeded() {
+        // 关键：防止“上一轮的异步 close”误关掉“新一轮刚建立的 session”，否则会出现第二次吞字/录不完整。
+        let genAtStop = holdToTalkGeneration
+        let sessionAtStop = holdToTalkVoiceSession
+
+        // 立刻进入“停止中”态：防连点 + 后续 chunk 丢弃
+        isStoppingAgent = true
+        voiceStopRequestedGeneration = genAtStop
+        holdToTalkSendLoopTask?.cancel()
+        holdToTalkReceiveLoopTask?.cancel()
+
         Task.detached { [weak self] in
             guard let self else { return }
-            if let s = await MainActor.run(body: { self.holdToTalkVoiceSession }) {
+            if let s = sessionAtStop {
                 try? await s.sendCancel()
             }
-            await self.closeHoldToTalkSession()
+            await self.closeHoldToTalkSessionIfStillCurrent(gen: genAtStop, session: sessionAtStop)
         }
     }
 
@@ -374,6 +388,8 @@ class ChatInputViewModel: ObservableObject {
         holdToTalkLatestASRText = ""
         holdToTalkLatestASRIsFinal = false
         holdToTalkAgentMessageId = nil
+        // 新一轮录音：清除上一轮“停止语音”标记
+        voiceStopRequestedGeneration = nil
 
         holdToTalkGeneration &+= 1
         let gen = holdToTalkGeneration
@@ -388,7 +404,6 @@ class ChatInputViewModel: ObservableObject {
         holdToTalkVoiceSession = nil
         holdToTalkPlaceholderMessageId = nil
         holdToTalkPCMBacklog = PCMBacklog()
-        holdToTalkFullPCM = Data()
 
         print("[HoldToTalk] press down -> start pre-capture (gen=\(gen))")
 
@@ -396,7 +411,16 @@ class ChatInputViewModel: ObservableObject {
         holdToTalkStartupTask = Task { [weak self] in
             guard let self else { return }
             do {
-                // 1) 建立 WS
+                // 1) 立刻启动本地录音引擎（不要等 WS），避免“点停止后立刻第二次录音”时
+                //    因为 WS 建连/上一次 close 抖动造成的 1~2s 空窗从而吞掉开头几字。
+                // 注意：这里必须用 detached，不能用继承 MainActor 的 Task，否则录音启动会被当前 Task（WS 建连逻辑）阻塞，
+                // 从而出现日志里看到的“WS connected 后才开始 PCM capture”的现象。
+                let recorder = self.holdToTalkRecorder
+                let recorderTask = Task.detached(priority: .userInitiated) {
+                    try await recorder.start()
+                }
+
+                // 2) 建立 WS（可慢慢来；PCM 会先缓存在 recorder / backlog 里）
                 let session = try ChatVoiceInputService.makeSession(contactId: nil)
                 // 用户可能已经快速松手/取消：这时不要再继续，也不要插入占位气泡
                 let stillValidAfterConnect = await MainActor.run {
@@ -404,19 +428,29 @@ class ChatInputViewModel: ObservableObject {
                 }
                 guard stillValidAfterConnect, !Task.isCancelled else {
                     await session.close()
+                    recorderTask.cancel()
+                    await MainActor.run {
+                        // 若仍是这一轮才 stop（避免误伤下一轮）
+                        guard self.holdToTalkGeneration == gen else { return }
+                        _ = self.holdToTalkRecorder.stop(discard: true)
+                    }
                     return
                 }
                 self.holdToTalkVoiceSession = session
                 session.start()
 
-                // 2) 开始录 PCM（包含麦克风权限请求与 AudioSession 配置）
-                try await self.holdToTalkRecorder.start()
+                // 3) 等待录音引擎真正启动完成
+                try await recorderTask.value
                 let stillValidAfterRecorder = await MainActor.run {
                     self.holdToTalkGeneration == gen && self.isPreCapturingHoldToTalk && !self.isAgentTyping
                 }
                 guard stillValidAfterRecorder, !Task.isCancelled else {
                     await session.close()
-                    _ = self.holdToTalkRecorder.stop(discard: true)
+                    await MainActor.run {
+                        // 关键：若下一轮已经开始，不能 stop 掉新一轮的 recorder（会导致吞字/录不完整）
+                        guard self.holdToTalkGeneration == gen else { return }
+                        _ = self.holdToTalkRecorder.stop(discard: true)
+                    }
                     return
                 }
 
@@ -434,9 +468,6 @@ class ChatInputViewModel: ObservableObject {
 
                         // 1) 从录音器取出新增 PCM，先写入 backlog（无论 WS 是否已就绪）
                         let drained = await MainActor.run { self.holdToTalkRecorder.drainPCMBytes() }
-                        if !drained.isEmpty {
-                            await MainActor.run { self.appendHoldToTalkFullPCM(drained) }
-                        }
                         if let backlog, !drained.isEmpty {
                             await backlog.append(drained)
                         }
@@ -473,6 +504,9 @@ class ChatInputViewModel: ObservableObject {
                 self.holdToTalkReceiveLoopTask = Task.detached(priority: .userInitiated) { [weak self] in
                     guard let self else { return }
                     while !Task.isCancelled {
+                        // 若用户已点“停止”，直接退出接收循环（避免后续 chunk 继续回填 UI）
+                        let stopRequested = await MainActor.run { self.voiceStopRequestedGeneration == gen }
+                        if stopRequested { break }
                         let stillValid = await MainActor.run { self.holdToTalkGeneration == gen }
                         if !stillValid { break }
                         guard let s = await MainActor.run(body: { self.holdToTalkVoiceSession }) else { break }
@@ -481,6 +515,8 @@ class ChatInputViewModel: ObservableObject {
                             await MainActor.run {
                                 // 若这一轮已被替代，丢弃
                                 guard self.holdToTalkGeneration == gen else { return }
+                                // 若用户已点“停止”，丢弃所有事件（包括 assistant chunk），避免“点了停止还在继续输出”
+                                guard self.voiceStopRequestedGeneration != gen else { return }
                                 switch ev {
                                 case let .asrResult(text, isFinal):
                                     self.holdToTalkLatestASRText = text
@@ -540,20 +576,26 @@ class ChatInputViewModel: ObservableObject {
                                         self.onEndVoiceAgentMessage?(aid)
                                     }
                                     // done 后释放 WS/麦克风资源
+                                    let sessionAtEvent = self.holdToTalkVoiceSession
                                     Task.detached { [weak self] in
-                                        await self?.closeHoldToTalkSession()
+                                        guard let self else { return }
+                                        await self.closeHoldToTalkSessionIfStillCurrent(gen: gen, session: sessionAtEvent)
                                     }
                                 case .cancelled, .stopped:
                                     if let aid = self.holdToTalkAgentMessageId {
                                         self.onEndVoiceAgentMessage?(aid)
                                     }
+                                    let sessionAtEvent = self.holdToTalkVoiceSession
                                     Task.detached { [weak self] in
-                                        await self?.closeHoldToTalkSession()
+                                        guard let self else { return }
+                                        await self.closeHoldToTalkSessionIfStillCurrent(gen: gen, session: sessionAtEvent)
                                     }
                                 case let .error(_, message):
                                     self.onVoiceAgentError?(self.holdToTalkAgentMessageId, message)
+                                    let sessionAtEvent = self.holdToTalkVoiceSession
                                     Task.detached { [weak self] in
-                                        await self?.closeHoldToTalkSession()
+                                        guard let self else { return }
+                                        await self.closeHoldToTalkSessionIfStillCurrent(gen: gen, session: sessionAtEvent)
                                     }
                                 }
                             }
@@ -571,6 +613,9 @@ class ChatInputViewModel: ObservableObject {
                 }
             } catch {
                 // 启动失败：释放资源并清理占位消息
+                // 关键：startup task 可能在下一轮已经开始后才抛错；这里必须做 generation 校验，避免误清理新一轮状态。
+                let shouldApply = await MainActor.run { self.holdToTalkGeneration == gen }
+                guard shouldApply else { return }
                 let placeholderId = self.holdToTalkPlaceholderMessageId
                 self.holdToTalkPlaceholderMessageId = nil
                 self.holdToTalkVoiceSession = nil
@@ -603,6 +648,8 @@ class ChatInputViewModel: ObservableObject {
     /// 轻点/滑动打断时调用：停止预收音且不展示 overlay、不发送任何文字。
     func stopHoldToTalkPreCaptureIfNeeded() {
         guard isPreCapturingHoldToTalk else { return }
+        let genAtStop = holdToTalkGeneration
+        let sessionAtStop = holdToTalkVoiceSession
         isPreCapturingHoldToTalk = false
         holdToTalkASRTask?.cancel()
         holdToTalkASRTask = nil
@@ -625,16 +672,14 @@ class ChatInputViewModel: ObservableObject {
         holdToTalkReceiveLoopTask?.cancel()
         holdToTalkReceiveLoopTask = nil
         holdToTalkPCMBacklog = nil
-        holdToTalkFullPCM = Data()
 
         Task.detached { [weak self] in
             guard let self else { return }
-            if let s = await MainActor.run(body: { self.holdToTalkVoiceSession }) {
+            if let s = sessionAtStop {
                 try? await s.sendCancel()
                 await s.close()
             }
-            _ = await MainActor.run { self.holdToTalkRecorder.stop(discard: true) }
-            await MainActor.run { self.holdToTalkVoiceSession = nil }
+            await self.closeHoldToTalkSessionIfStillCurrent(gen: genAtStop, session: sessionAtStop)
         }
 
         if let placeholderId {
@@ -683,17 +728,16 @@ private extension ChatInputViewModel {
     /// 松手后：停止本地录音，并告知后端音频发送完毕。
     /// 注意：不会关闭 WS（AI 回复仍会继续从该 WS 返回）。
     func finishBackendHoldToTalkAndSendAudioDone(genAtStop: Int) async {
+        // 松手“尾巴缓冲”：给音频引擎一点点时间把最后几个 phoneme 采进来，避免尾部吞字。
+        // 这里延迟很小（~120ms），不会影响整体体验，但能显著减少“松手最后一个字没录到”。
+        try? await Task.sleep(nanoseconds: 120_000_000)
+        guard holdToTalkGeneration == genAtStop else { return }
+
         // 1) 停止本地 PCM 采集，把尾巴 drain 出来（避免最后一截丢字）
         let remainingPCM = holdToTalkRecorder.stop(discard: false)
-        if !remainingPCM.isEmpty {
-            appendHoldToTalkFullPCM(remainingPCM)
-        }
 
         // 若这一轮已被替代，直接退出（避免影响新一轮）
         guard holdToTalkGeneration == genAtStop else { return }
-
-        // 1.5) 测试：把完整 PCM 落盘为 wav，并插入一条“用户音频气泡”
-        emitHoldToTalkRawAudioBubbleIfNeeded(genAtStop: genAtStop)
 
         // 2) 发送剩余 PCM + audio_record_done（携带客户端侧最后一次 asr_result 兜底）
         guard let session = holdToTalkVoiceSession else { return }
@@ -745,6 +789,19 @@ private extension ChatInputViewModel {
         }
     }
 
+    /// 仅在“仍是同一轮 + 同一个 session 实例”时才允许关闭，避免上一轮的异步任务误伤下一轮。
+    @MainActor
+    func closeHoldToTalkSessionIfStillCurrent(gen: Int, session: ChatVoiceInputService.Session?) async {
+        guard holdToTalkGeneration == gen else { return }
+        if let s = session {
+            guard let current = holdToTalkVoiceSession, current === s else { return }
+        } else {
+            // session 为空时：只有在当前也没有 session（仍是同一轮）才允许收尾（用于某些提前置 nil 的路径）
+            guard holdToTalkVoiceSession == nil else { return }
+        }
+        await closeHoldToTalkSession()
+    }
+
     func sendPCMInChunks(_ data: Data, session: ChatVoiceInputService.Session, chunkSize: Int) async throws {
         guard !data.isEmpty else { return }
         let size = max(256, chunkSize)
@@ -766,89 +823,6 @@ private extension ChatInputViewModel {
         }
     }
 
-    func appendHoldToTalkFullPCM(_ bytes: Data) {
-        guard !bytes.isEmpty else { return }
-        holdToTalkFullPCM.append(bytes)
-        // 兜底上限：约 4 分钟（32KB/s -> 7.5MB），足够测试且避免极端情况下内存无限增长
-        let cap = 8 * 1024 * 1024
-        if holdToTalkFullPCM.count > cap {
-            holdToTalkFullPCM = Data(holdToTalkFullPCM.suffix(cap))
-        }
-    }
-
-    func emitHoldToTalkRawAudioBubbleIfNeeded(genAtStop: Int) {
-        // 仅在有数据、且仍是同一轮时触发
-        guard holdToTalkGeneration == genAtStop else { return }
-        guard !holdToTalkFullPCM.isEmpty else { return }
-
-        // 快照 + 清空（避免下一轮串数据）
-        let pcmSnapshot = holdToTalkFullPCM
-        holdToTalkFullPCM = Data()
-
-        Task.detached(priority: .utility) { [weak self] in
-            guard let self else { return }
-            do {
-                let wav = WAV16PCMWriter.makeWAV(pcm16leMono: pcmSnapshot, sampleRate: 16_000)
-                let url = FileManager.default.temporaryDirectory
-                    .appendingPathComponent("holdtotalk-\(UUID().uuidString)")
-                    .appendingPathExtension("wav")
-                try wav.write(to: url, options: [.atomic])
-                await MainActor.run {
-                    self.onInsertHoldToTalkRawAudio?(url)
-                }
-            } catch {
-                // 测试功能：写失败就忽略，不影响原链路
-            }
-        }
-    }
-}
-
-// MARK: - WAV writer (16-bit PCM, little-endian, mono)
-
-private enum WAV16PCMWriter {
-    static func makeWAV(pcm16leMono: Data, sampleRate: Int) -> Data {
-        let numChannels: UInt16 = 1
-        let bitsPerSample: UInt16 = 16
-        let byteRate = UInt32(sampleRate) * UInt32(numChannels) * UInt32(bitsPerSample) / 8
-        let blockAlign = numChannels * (bitsPerSample / 8)
-        let dataSize = UInt32(pcm16leMono.count)
-        let riffChunkSize = UInt32(36) + dataSize
-
-        var out = Data()
-        out.reserveCapacity(44 + pcm16leMono.count)
-
-        // RIFF header
-        out.append(contentsOf: [0x52, 0x49, 0x46, 0x46]) // "RIFF"
-        out.appendLE(riffChunkSize)
-        out.append(contentsOf: [0x57, 0x41, 0x56, 0x45]) // "WAVE"
-
-        // fmt subchunk
-        out.append(contentsOf: [0x66, 0x6D, 0x74, 0x20]) // "fmt "
-        out.appendLE(UInt32(16)) // PCM fmt chunk size
-        out.appendLE(UInt16(1)) // audio format = 1 (PCM)
-        out.appendLE(numChannels)
-        out.appendLE(UInt32(sampleRate))
-        out.appendLE(byteRate)
-        out.appendLE(blockAlign)
-        out.appendLE(bitsPerSample)
-
-        // data subchunk
-        out.append(contentsOf: [0x64, 0x61, 0x74, 0x61]) // "data"
-        out.appendLE(dataSize)
-        out.append(pcm16leMono)
-        return out
-    }
-}
-
-private extension Data {
-    mutating func appendLE(_ v: UInt16) {
-        var x = v.littleEndian
-        Swift.withUnsafeBytes(of: &x) { append(contentsOf: $0) }
-    }
-    mutating func appendLE(_ v: UInt32) {
-        var x = v.littleEndian
-        Swift.withUnsafeBytes(of: &x) { append(contentsOf: $0) }
-    }
 }
 
 // MARK: - PCM backlog actor

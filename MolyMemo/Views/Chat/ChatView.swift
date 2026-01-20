@@ -176,6 +176,10 @@ struct ChatView: View {
                             NotificationCenter.default.post(name: .dismissScheduleMenu, object: nil)
                         }
                         .onChange(of: appState.chatMessages.count) { _, _ in
+                            // 录音中插入“语音占位消息”会触发这里的自动滚动；
+                            // 滚动/动画会占用主线程，间接拖慢录音启动（导致前期吞字）。
+                            // 因此录音期间禁用自动滚动，松手后再补一次即可。
+                            guard !inputViewModel.isRecording, !inputViewModel.isAnimatingRecordingExit else { return }
                             scrollToLatestMessageOnOpen(proxy: proxy)
                         }
                         .onChange(of: pendingScrollToMessageId) { _, newValue in
@@ -190,6 +194,7 @@ struct ChatView: View {
                         }
                         .onChange(of: inputTotalHeight) { _, _ in
                             // 附件面板/建议条等高度变化时，让最新消息保持可见
+                            guard !inputViewModel.isRecording, !inputViewModel.isAnimatingRecordingExit else { return }
                             scrollToLatestMessageOnOpen(proxy: proxy)
                         }
                     }
@@ -391,6 +396,13 @@ struct ChatView: View {
                 scrollToLatestMessageOnOpen(proxy: proxy)
             }
         }
+        // 录音结束后补一次滚动，让用户回到最新位置（避免录音期间禁用 auto-scroll 后停留在中间）
+        .onChange(of: inputViewModel.isRecording) { _, isRec in
+            guard !isRec else { return }
+            if let proxy = chatScrollProxy {
+                scrollToLatestMessageOnOpen(proxy: proxy)
+            }
+        }
         .onAppear {
             withAnimation(.easeOut(duration: 0.5)) {
                 showContent = true
@@ -403,6 +415,9 @@ struct ChatView: View {
 
             // ✅ 快捷指令/URL scheme 截图：进入聊天室后立即自动发送（不需要任何“转发截图”按钮）
             appState.consumeClipboardScreenshotAndAutoSendIfNeeded(modelContext: modelContext)
+            
+            // 预热录音引擎：减少首次按住说话的启动延迟
+            inputViewModel.warmUpRecorder()
             
             // 同步初始状态
             inputViewModel.isAgentTyping = appState.isAgentTyping
@@ -494,16 +509,6 @@ struct ChatView: View {
             inputViewModel.onStopGenerator = {
                 appState.stopGeneration()
                 inputViewModel.stopVoiceAssistantIfNeeded()
-            }
-
-            // 测试：按住说话结束后，把原始录音（本地 wav）插入一条用户气泡
-            inputViewModel.onInsertHoldToTalkRawAudio = { url in
-                var msg = ChatMessage(role: .user, content: "")
-                msg.localAudioURL = url
-                withAnimation {
-                    appState.chatMessages.append(msg)
-                }
-                // 仅测试展示：不落盘，避免引入 SwiftData schema 变更
             }
 
             // 首页通知栏：初始化今日日程
@@ -1441,9 +1446,8 @@ struct AIBubble: View {
                 messages: Array(appState.chatMessages.prefix(currentIndex)), // 只包含当前消息之前的消息
                 mode: appState.currentMode,
                 onStructuredOutput: { output in
-                    Task { @MainActor in
-                        appState.applyStructuredOutput(output, to: messageId, modelContext: modelContext)
-                    }
+                    // 这里的回调本身就在 MainActor 上；不要再包 Task，避免 chunk 回填乱序/丢尾巴
+                    appState.applyStructuredOutput(output, to: messageId, modelContext: modelContext)
                 },
                 onComplete: { finalText in
                     await appState.playResponse(finalText, for: messageId)
@@ -1916,9 +1920,8 @@ struct MessageActionButtons: View {
                 messages: Array(appState.chatMessages.prefix(currentIndex)), // 只包含当前消息之前的消息
                 mode: appState.currentMode,
                 onStructuredOutput: { output in
-                    DispatchQueue.main.async {
-                        appState.applyStructuredOutput(output, to: messageId, modelContext: modelContext)
-                    }
+                    // 同上：保持顺序执行，避免末尾 chunk 被收尾覆盖
+                    appState.applyStructuredOutput(output, to: messageId, modelContext: modelContext)
                 },
                 onComplete: { finalText in
                     await appState.playResponse(finalText, for: messageId)
@@ -1930,10 +1933,9 @@ struct MessageActionButtons: View {
                     }
                 },
                 onError: { error in
-                    DispatchQueue.main.async {
-                        appState.handleStreamingError(error, for: messageId)
-                        appState.isAgentTyping = false
-                    }
+                    // onError 不依赖异步派发，避免与最后一批 chunk 竞争
+                    appState.handleStreamingError(error, for: messageId)
+                    appState.isAgentTyping = false
                 }
             )
         }

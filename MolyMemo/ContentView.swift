@@ -1056,9 +1056,8 @@ struct YuanyuanHomeView: View {
                 messages: appState.chatMessages,
                 mode: appState.currentMode,
                 onStructuredOutput: { output in
-                    Task { @MainActor in
-                        self.appState.applyStructuredOutput(output, to: agentMessageId, modelContext: modelContext)
-                    }
+                    // 回调本身已在 MainActor 上：保持串行顺序，避免末尾 chunk 偶发丢失
+                    self.appState.applyStructuredOutput(output, to: agentMessageId, modelContext: modelContext)
                 },
                 onComplete: { finalText in
                     await self.appState.playResponse(finalText, for: agentMessageId)
@@ -1069,10 +1068,8 @@ struct YuanyuanHomeView: View {
                     }
                 },
                 onError: { error in
-                    Task { @MainActor in
-                        self.appState.handleStreamingError(error, for: agentMessageId)
-                        self.appState.isAgentTyping = false
-                    }
+                    self.appState.handleStreamingError(error, for: agentMessageId)
+                    self.appState.isAgentTyping = false
                 }
             )
         } else {
@@ -1092,9 +1089,7 @@ struct YuanyuanHomeView: View {
                 messages: appState.chatMessages,
                 mode: appState.currentMode,
                 onStructuredOutput: { output in
-                    Task { @MainActor in
-                        self.appState.applyStructuredOutput(output, to: agentMessageId, modelContext: modelContext)
-                    }
+                    self.appState.applyStructuredOutput(output, to: agentMessageId, modelContext: modelContext)
                 },
                 onComplete: { finalText in
                     await self.appState.playResponse(finalText, for: agentMessageId)
@@ -1105,10 +1100,8 @@ struct YuanyuanHomeView: View {
                     }
                 },
                 onError: { error in
-                    Task { @MainActor in
-                        self.appState.handleStreamingError(error, for: agentMessageId)
-                        self.appState.isAgentTyping = false
-                    }
+                    self.appState.handleStreamingError(error, for: agentMessageId)
+                    self.appState.isAgentTyping = false
                 }
             )
         }

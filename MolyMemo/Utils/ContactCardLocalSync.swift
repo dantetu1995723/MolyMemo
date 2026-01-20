@@ -10,7 +10,8 @@ import Contacts
 enum ContactCardLocalSync {
     private static func log(_ message: String) {
 #if DEBUG
-        print("[ContactCardLocalSync] \(message)")
+        // 联系人列表相关日志先静音，避免控制台刷屏
+        _ = message
 #endif
     }
     

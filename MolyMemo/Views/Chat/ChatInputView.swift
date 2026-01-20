@@ -27,8 +27,7 @@ struct ChatInputView: View {
     @State private var isPressing = false
     @State private var pressBeganAt: Date?
     @State private var didMoveDuringPress = false
-    /// 按住说话：按下立刻预收音，稍后再展示 overlay（避免轻点聚焦闪 UI）
-    @State private var pendingHoldToTalkTask: Task<Void, Never>?
+    /// 按住说话：按下瞬间即展示音浪框，并立刻开始收音 + 建连（不做延迟）
     
     var body: some View {
         let isLocked = viewModel.isAgentTyping
@@ -121,7 +120,11 @@ struct ChatInputView: View {
         .onChange(of: viewModel.isAgentTyping) { _, isTyping in
             DebugProbe.log("ChatInputView.isAgentTyping -> \(isTyping)")
             // AI 输入时：除“中止”外全部禁用，主动收起键盘/菜单/建议，并打断长按录音手势
-            guard isTyping else { return }
+            if !isTyping {
+                // 生成结束/中止后：解锁 stop 按钮防连点状态
+                viewModel.isStoppingAgent = false
+                return
+            }
             isPressing = false
             pressBeganAt = nil
             didMoveDuringPress = false
@@ -304,8 +307,8 @@ struct ChatInputView: View {
                             }
                         )
                         // 根治：用“按下即进入 tracking”的 DragGesture(minDistance:0) 来实现更灵敏的按住说话。
-                        // - 按下后 0.18s 仍未松手 → 进入录音
-                        // - 0.18s 内松手且无明显移动 → 视为轻点聚焦
+                        // - 按下瞬间：展示音浪框 + 开始收音/WS
+                        // - 松手：stop/cancel
                         // - 录音中拖动上划 → 取消提示；松手 → stop/cancel
                         .highPriorityGesture(
                             DragGesture(minimumDistance: 0)
@@ -314,37 +317,11 @@ struct ChatInputView: View {
                                     if !isPressing {
                                         // 开始 tracking
                                         handleHoldToTalkPressingChanged(true)
-
-                                        // 取消旧任务，启动新的“长按才触发录音”的任务
-                                        pendingHoldToTalkTask?.cancel()
-                                        pendingHoldToTalkTask = Task { @MainActor in
-                                            // 两段式：
-                                            // - 0.12s：仍在按住才开始“预收音”（避免轻点聚焦就点亮麦克风）
-                                            // - 0.20s：仍在按住才真正进入录音态并展示 overlay
-                                            try? await Task.sleep(nanoseconds: 120_000_000) // 0.12s
-                                            guard !Task.isCancelled else { return }
-                                            guard isPressing, !didMoveDuringPress else { return }
-                                            guard !viewModel.isRecording else { return }
-                                            guard !viewModel.isAgentTyping else { return }
-                                            guard !isFocused else { return }
-                                            guard viewModel.inputText.isEmpty, viewModel.selectedImage == nil else { return }
-                                            viewModel.beginHoldToTalkPreCaptureIfNeeded()
-
-                                            try? await Task.sleep(nanoseconds: 80_000_000) // +0.08s => 0.20s
-                                            guard !Task.isCancelled else { return }
-                                            guard isPressing, !didMoveDuringPress else {
-                                                // 轻点/抬手导致未进入录音：如果已经预收音了，确保收回
-                                                viewModel.stopHoldToTalkPreCaptureIfNeeded()
-                                                return
-                                            }
-                                            guard !viewModel.isRecording else { return }
-                                            guard !viewModel.isAgentTyping else { return }
-                                            guard !isFocused else { return }
-                                            guard viewModel.inputText.isEmpty, viewModel.selectedImage == nil else { return }
-
-                                            DebugProbe.log("HoldToTalk long-press -> start recording")
-                                            viewModel.startHoldToTalkRecordingFromLongPress()
-                                        }
+                                        
+                                        // ✅ 按下瞬间就开麦克风 + 建立 WS，并同步展示音浪框
+                                        // 这会让“轻点聚焦”也短暂进入录音态；若未来要恢复“轻点不闪 UI”，需要重新引入延迟策略。
+                                        viewModel.beginHoldToTalkPreCaptureIfNeeded()
+                                        viewModel.revealHoldToTalkOverlayIfPossible()
                                     }
                                     
                                     // 移动阈值：10pt 以上才算“发生明显移动”
@@ -354,9 +331,6 @@ struct ChatInputView: View {
                                     }
                                 }
                                 .onEnded { value in
-                                    pendingHoldToTalkTask?.cancel()
-                                    pendingHoldToTalkTask = nil
-                                    
                                     // 结束按压（会在内部决定：stop/cancel 还是 quick tap focus）
                                     handleHoldToTalkPressingChanged(false)
                                     
@@ -375,6 +349,9 @@ struct ChatInputView: View {
                 // Inside right: Action Button (Stop OR Send)
                 if viewModel.isAgentTyping {
                     Button(action: {
+                        // 防止“第一次没彻底停住”导致用户连点两下
+                        guard !viewModel.isStoppingAgent else { return }
+                        viewModel.isStoppingAgent = true
                         HapticFeedback.light()
                         viewModel.onStopGenerator?()
                     }) {
@@ -388,6 +365,8 @@ struct ChatInputView: View {
                         }
                         .frame(width: 32, height: 32)
                     }
+                    .disabled(viewModel.isStoppingAgent)
+                    .opacity(viewModel.isStoppingAgent ? 0.55 : 1)
                     .padding(.trailing, 12)
                     .padding(.bottom, 10)
                 } else if !viewModel.inputText.isEmpty || viewModel.selectedImage != nil {
@@ -430,8 +409,8 @@ struct ChatInputView: View {
             didMoveDuringPress = false
             // 触感：按下给一个很轻的确认，不阻塞 UI（真正进入录音态会再给一次更明显的确认）
             HapticFeedback.selection()
-            // 注意：不要在按下瞬间就启用麦克风，否则“轻点聚焦”也会点亮系统橙点。
-            // 预收音改为在长按阈值附近（见 pendingHoldToTalkTask）再启动。
+            // 注意：预收音现在是“按下即启动（延迟=0）”，松手会立刻 stop 兜底。
+            // 这会让“轻点聚焦”也可能短暂点亮系统橙点；如果要回到“轻点不触发收音”，需要恢复延迟策略。
             return
         }
         
@@ -468,17 +447,6 @@ struct ChatInputView: View {
         didMoveDuringPress = false
     }
     
-    private func handleHoldToTalkLongPressRecognized() {
-        guard !viewModel.isAgentTyping else { return }
-        guard !isFocused else { return }
-        guard viewModel.inputText.isEmpty, viewModel.selectedImage == nil else { return }
-        guard !viewModel.isRecording else { return }
-        
-        // 触感已在按下瞬间给过，这里保持安静，避免双重震动
-        // 已经在按下时预收音了，这里只需要展示 overlay
-        viewModel.revealHoldToTalkOverlayIfPossible()
-    }
-    
     private func handleHoldToTalkDragChanged(_ value: DragGesture.Value) {
         guard !viewModel.isAgentTyping else { return }
         
@@ -486,8 +454,6 @@ struct ChatInputView: View {
         if isPressing && !viewModel.isRecording {
             didMoveDuringPress = true
             // 如果还没展示 overlay，就立刻停止预收音，避免“用户在滑动/滚动”时意外被收音
-            pendingHoldToTalkTask?.cancel()
-            pendingHoldToTalkTask = nil
             viewModel.stopHoldToTalkPreCaptureIfNeeded()
         }
         

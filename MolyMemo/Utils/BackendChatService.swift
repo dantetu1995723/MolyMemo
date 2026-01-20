@@ -105,7 +105,17 @@ final class BackendChatService {
             var rawFallbackLines: [String] = []
 
             // 仅用于最终 onComplete 的文本聚合（UI 以 segments 为准）
-            var accumulatedTextParts: [String] = []
+            // 注意：后端现在可能是“逐字/逐短语 delta”，不能用 "\n\n" 分隔拼接。
+            // 同时也兼容少数流式格式：每个 chunk 可能是“累计全文”，需要用前缀判断做覆盖而不是重复追加。
+            var accumulatedText: String = ""
+
+            func mergeStreamingText(existing: String, incoming: String) -> String {
+                if existing.isEmpty { return incoming }
+                if incoming.isEmpty { return existing }
+                if incoming.hasPrefix(existing) { return incoming } // 累计全文
+                if existing.hasSuffix(incoming) { return existing } // 重复 delta
+                return existing + incoming // 正常 delta
+            }
 
             func emitDeltaChunk(_ obj: [String: Any]) async {
 #if DEBUG
@@ -124,9 +134,11 @@ final class BackendChatService {
                 {
                     return
                 }
-                // 用于最终完成：把 delta.text 的每段累积起来
-                let t = normalizeDisplayText(delta.text)
-                if !t.isEmpty { accumulatedTextParts.append(t) }
+                // 用于最终完成：把 delta.text 累积起来（逐字 delta 直接拼接；累计全文则覆盖）
+                let t = normalizeDisplayDeltaText(delta.text)
+                if !t.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    accumulatedText = mergeStreamingText(existing: accumulatedText, incoming: t)
+                }
                 await MainActor.run { onStructuredOutput?(delta) }
             }
 
@@ -205,7 +217,7 @@ final class BackendChatService {
             }
 
             // 最终完成：优先用流式累积文本；若为空再兜底整包解析
-            let cleaned = normalizeDisplayText(accumulatedTextParts.joined(separator: "\n\n"))
+            let cleaned = normalizeDisplayText(accumulatedText)
             if !cleaned.isEmpty {
 #if DEBUG
 #endif
@@ -259,10 +271,12 @@ final class BackendChatService {
             //    { "show_content": "...", "action": {...}, ... } + 后续 observation dump
             // 目标：只展示 show_content（给用户看的那句），其余隐藏，避免 UI 出现大段 JSON。
             let extractedShowContent = extractShowContentIfPresent(content)
-            let trimmed = (extractedShowContent ?? content).trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed.isEmpty || trimmed == "处理完成" { return out }
-            out.text = trimmed
-            out.segments = [.text(trimmed)]
+            let display = (extractedShowContent ?? content)
+            let trimmedForCheck = display.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmedForCheck.isEmpty || trimmedForCheck == "处理完成" { return out }
+            // 注意：不要在这里 trim 掉前导空格；逐 token/逐字流式下，英文很依赖前导空格。
+            out.text = display
+            out.segments = [.text(display)]
             return out
 
         case "tool":
@@ -293,10 +307,10 @@ final class BackendChatService {
 
         default:
             if let content = chunk["content"] as? String {
-                let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
-                if trimmed.isEmpty { return out }
-                out.text = trimmed
-                out.segments = [.text(trimmed)]
+                let trimmedForCheck = content.trimmingCharacters(in: .whitespacesAndNewlines)
+                if trimmedForCheck.isEmpty { return out }
+                out.text = content
+                out.segments = [.text(content)]
             }
             return out
         }
@@ -1445,8 +1459,11 @@ final class BackendChatService {
         let hint = hintParts.isEmpty ? "" : (" " + hintParts.joined(separator: " "))
         if let data = try? JSONSerialization.data(withJSONObject: chunk, options: []),
            let json = String(data: data, encoding: .utf8) {
-            let redacted = redactBase64(truncate(json, limit: 12000))
-            let msg = "[BackendChat][reqId=\(requestId)][\(source)] type=\(type)\(hint) \(redacted)"
+            // ✅ 原始记录打印：尽量保留完整 JSON（仅做 base64 脱敏），便于对照后端推送顺序与字段变化。
+            // 兜底：仍做长度上限，避免 observation/tool dump 极端情况下刷爆控制台。
+            let redacted = redactBase64(json)
+            let safe = truncate(redacted, limit: 60_000)
+            let msg = "[BackendChat][reqId=\(requestId)][\(source)] type=\(type)\(hint) \(safe)"
             printLongString(msg, chunkSize: 900)
             AppGroupDebugLog.append(msg)
         }
@@ -1484,6 +1501,14 @@ final class BackendChatService {
     /// 统一的展示文本清洗：流式阶段与最终完成阶段保持一致，避免最后一次替换导致 UI 重新打字。
     static func normalizeDisplayText(_ text: String) -> String {
         removeMarkdownFormatting(text).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// 用于“流式 delta”的展示清洗：
+    /// - 去掉 markdown 语法（与最终一致）
+    /// - **不 trim 前后空格**（避免英文 token 拼接丢空格导致粘连）
+    /// - 是否展示由上层用 `trimmingCharacters(in:)` 判空决定
+    static func normalizeDisplayDeltaText(_ text: String) -> String {
+        removeMarkdownFormatting(text)
     }
     
     /// 清理 markdown 格式（保持输出一致），做最小实现以免跨文件依赖

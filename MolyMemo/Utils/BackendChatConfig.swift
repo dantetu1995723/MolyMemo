@@ -183,9 +183,10 @@ enum BackendChatConfig {
     static var debugLogChunkSummary: Bool {
         get {
             if UserDefaults.standard.object(forKey: Keys.debugLogChunkSummary) == nil {
-                // 默认关闭：chunk JSON 依然可能很长，且包含用户输入/后端返回敏感字段
-                UserDefaults.standard.set(false, forKey: Keys.debugLogChunkSummary)
-                return false
+                // 默认开启：用于排查“后端实际推送了什么 chunk/record”
+                // 注意：chunk JSON 可能包含敏感信息；仅在 DEBUG 下生效，Release 会强制关闭。
+                UserDefaults.standard.set(true, forKey: Keys.debugLogChunkSummary)
+                return true
             }
             return UserDefaults.standard.bool(forKey: Keys.debugLogChunkSummary)
         }

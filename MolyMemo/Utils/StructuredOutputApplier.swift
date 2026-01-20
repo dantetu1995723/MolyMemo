@@ -30,6 +30,14 @@ struct StructuredOutputApplier {
         var existing = message.segments ?? []
         existing.reserveCapacity(existing.count + max(1, output.segments.count))
 
+        func mergeStreamingText(existing: String, incoming: String) -> String {
+            if existing.isEmpty { return incoming }
+            if incoming.isEmpty { return existing }
+            if incoming.hasPrefix(existing) { return incoming } // 兼容“累计全文”流式
+            if existing.hasSuffix(incoming) { return existing } // 兼容重复 delta
+            return existing + incoming
+        }
+
         func scheduleStableId(_ event: ScheduleEvent) -> String { ChatCardStableId.schedule(event) }
         func contactStableId(_ card: ContactCard) -> String { ChatCardStableId.contact(card) }
         func meetingStableId(_ card: MeetingCard) -> String { ChatCardStableId.meeting(card) }
@@ -121,8 +129,15 @@ struct StructuredOutputApplier {
             for seg in output.segments {
                 switch seg.kind {
                 case .text:
-                    let t = BackendChatService.normalizeDisplayText(seg.text ?? "")
-                    if !t.isEmpty { existing.append(.text(t)) }
+                    // ✅ 后端现在可能是“逐字/逐 token”分段返回：必须拼接到最后一个 text segment
+                    let t = BackendChatService.normalizeDisplayDeltaText(seg.text ?? "")
+                    guard !t.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+                    if let last = existing.indices.last, existing[last].kind == .text {
+                        let base = existing[last].text ?? ""
+                        existing[last].text = mergeStreamingText(existing: base, incoming: t)
+                    } else {
+                        existing.append(.text(t))
+                    }
 
                 case .scheduleCards, .contactCards, .invoiceCards, .meetingCards:
                     // ✅ 去重：后端可能同时发 tool 与 card；也可能重试导致同一张卡多次出现
@@ -192,14 +207,10 @@ struct StructuredOutputApplier {
         message.segments = existing.isEmpty ? nil : existing
 
         // 2) 文本聚合：只用于复制/搜索（UI 以 segments 为准）
-        let incomingText = BackendChatService.normalizeDisplayText(output.text)
-        if !incomingText.isEmpty {
-            let base = message.content.trimmingCharacters(in: .whitespacesAndNewlines)
-            if base.isEmpty {
-                message.content = incomingText
-            } else if !base.hasSuffix(incomingText) {
-                message.content = base + "\n\n" + incomingText
-            }
+        let incomingText = BackendChatService.normalizeDisplayDeltaText(output.text)
+        if !incomingText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            // 不做 trim，否则英文 token 的前导空格会丢；是否展示由 UI 侧决定
+            message.content = mergeStreamingText(existing: message.content, incoming: incomingText)
         }
 
         // 3) 卡片聚合字段：合并去重（用于详情页/复制卡片信息复用）

@@ -53,9 +53,9 @@ enum ChatSendFlow {
                 messages: messagesForModel,
                 mode: appState.currentMode,
                 onStructuredOutput: { output in
-                    Task { @MainActor in
-                        appState.applyStructuredOutput(output, to: messageId, modelContext: modelContext)
-                    }
+                    // 重要：这里的回调本身就在 MainActor 上（由底层流式读取保证顺序），
+                    // 不要再包一层 Task/async，否则会打乱 chunk 落库顺序，导致末尾偶发丢字。
+                    appState.applyStructuredOutput(output, to: messageId, modelContext: modelContext)
                 },
                 onComplete: { finalText in
                     await appState.playResponse(finalText, for: messageId)
@@ -168,9 +168,8 @@ enum ChatSendFlow {
                 messages: messagesForModel,
                 mode: appState.currentMode,
                 onStructuredOutput: { output in
-                    Task { @MainActor in
-                        appState.applyStructuredOutput(output, to: agentMessageId, modelContext: modelContext)
-                    }
+                    // 同上：保持流式回填的串行顺序，避免末尾 chunk 被收尾覆盖。
+                    appState.applyStructuredOutput(output, to: agentMessageId, modelContext: modelContext)
                 },
                 onComplete: { finalText in
                     await appState.playResponse(finalText, for: agentMessageId)
