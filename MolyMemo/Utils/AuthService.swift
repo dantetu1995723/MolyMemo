@@ -64,6 +64,28 @@ enum AuthService {
         }
     }
     
+    enum UpdateUserInfoError: LocalizedError {
+        case invalidBaseURL
+        case invalidResponse
+        case httpError(Int, String?)
+        case parseFailed(String?)
+        
+        var errorDescription: String? {
+            switch self {
+            case .invalidBaseURL:
+                return "后端 Base URL 为空或不合法，请先在「聊天后端」里配置"
+            case .invalidResponse:
+                return "更新失败：服务端返回异常"
+            case let .httpError(code, message):
+                if let message, !message.isEmpty { return "更新失败：\(message)（HTTP \(code)）" }
+                return "更新失败（HTTP \(code)）"
+            case let .parseFailed(raw):
+                if let raw, !raw.isEmpty { return "更新失败：解析响应异常（\(raw)）" }
+                return "更新失败：解析响应异常"
+            }
+        }
+    }
+    
     static func login(baseURL: String, phone: String, verificationCode: String) async throws -> String {
         let normalizedBase = BackendChatConfig.normalizeBaseURL(baseURL)
         guard !normalizedBase.isEmpty else { throw AuthError.invalidBaseURL }
@@ -194,6 +216,43 @@ enum AuthService {
             throw AuthError.httpError(http.statusCode, raw)
         }
         return raw
+    }
+    
+    /// 更新当前用户信息（最保守：复用 `/api/v1/user/info`，尝试 PUT）
+    /// - Parameter patch: 仅包含需要更新的字段；值可为 `String` 或 `NSNull()`（用于清空）
+    static func updateCurrentUserInfo(baseURL: String, sessionId: String, patch: [String: Any]) async throws -> UserInfo {
+        let normalizedBase = BackendChatConfig.normalizeBaseURL(baseURL)
+        guard !normalizedBase.isEmpty else { throw UpdateUserInfoError.invalidBaseURL }
+        guard let url = URL(string: normalizedBase + "/api/v1/user/info") else {
+            throw UpdateUserInfoError.invalidBaseURL
+        }
+        
+        var request = URLRequest(url: url, timeoutInterval: 30)
+        request.httpMethod = "PUT"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(sessionId, forHTTPHeaderField: "X-Session-Id")
+        request.httpBody = try JSONSerialization.data(withJSONObject: patch, options: [])
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw UpdateUserInfoError.invalidResponse }
+        
+        let raw = String(data: data, encoding: .utf8) ?? ""
+        
+#if DEBUG || targetEnvironment(simulator)
+        print("🧾 user/info update raw response: \(raw)")
+#endif
+        
+        guard (200...299).contains(http.statusCode) else {
+            throw UpdateUserInfoError.httpError(http.statusCode, raw)
+        }
+        
+        // 约定沿用 UserInfoResponse 结构：{ code, message, data }
+        do {
+            let decoded = try JSONDecoder().decode(UserInfoResponse.self, from: data)
+            return decoded.data
+        } catch {
+            throw UpdateUserInfoError.parseFailed(raw)
+        }
     }
     
     private static func extractToken(from data: Data) -> String? {

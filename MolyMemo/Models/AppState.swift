@@ -243,6 +243,8 @@ struct ContactCard: Identifiable, Equatable, Codable {
     var industry: String? = nil
     /// 地区
     var location: String? = nil
+    /// 背景速览（后端字段：background）
+    var background: String? = nil
     /// 与我关系（后端可能用 relationship_type）
     var relationshipType: String? = nil
     /// 后端可选：备注（用户/系统输入）
@@ -256,7 +258,7 @@ struct ContactCard: Identifiable, Equatable, Codable {
     
     // MARK: - Codable（向后兼容：旧数据没有 isObsolete 字段）
     private enum CodingKeys: String, CodingKey {
-        case id, remoteId, name, englishName, company, title, phone, email, birthday, gender, industry, location, relationshipType, notes, impression, avatarData, rawImage, isObsolete
+        case id, remoteId, name, englishName, company, title, phone, email, birthday, gender, industry, location, background, relationshipType, notes, impression, avatarData, rawImage, isObsolete
     }
     
     init(
@@ -272,6 +274,7 @@ struct ContactCard: Identifiable, Equatable, Codable {
         gender: String? = nil,
         industry: String? = nil,
         location: String? = nil,
+        background: String? = nil,
         relationshipType: String? = nil,
         notes: String? = nil,
         impression: String? = nil,
@@ -291,6 +294,7 @@ struct ContactCard: Identifiable, Equatable, Codable {
         self.gender = gender
         self.industry = industry
         self.location = location
+        self.background = background
         self.relationshipType = relationshipType
         self.notes = notes
         self.impression = impression
@@ -313,6 +317,7 @@ struct ContactCard: Identifiable, Equatable, Codable {
         gender = try c.decodeIfPresent(String.self, forKey: .gender)
         industry = try c.decodeIfPresent(String.self, forKey: .industry)
         location = try c.decodeIfPresent(String.self, forKey: .location)
+        background = try c.decodeIfPresent(String.self, forKey: .background)
         relationshipType = try c.decodeIfPresent(String.self, forKey: .relationshipType)
         notes = try c.decodeIfPresent(String.self, forKey: .notes)
         impression = try c.decodeIfPresent(String.self, forKey: .impression)

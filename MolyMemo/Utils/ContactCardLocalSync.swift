@@ -90,6 +90,10 @@ enum ContactCardLocalSync {
                 let v = trimmed(card.location)
                 return v.isEmpty ? nil : v
             }(),
+            background: {
+                let v = trimmed(card.background)
+                return v.isEmpty ? nil : v
+            }(),
             notes: {
                 // 备注：只使用后端 note/notes（ContactCard.notes）回填，避免把 impression 混进备注
                 let v = trimmed(card.notes)
@@ -152,6 +156,12 @@ enum ContactCardLocalSync {
         let location = trimmed(card.location)
         if !location.isEmpty, trimmed(contact.location) != location {
             contact.location = location
+            changed = true
+        }
+
+        let background = trimmed(card.background)
+        if !background.isEmpty, trimmed(contact.background) != background {
+            contact.background = background
             changed = true
         }
         

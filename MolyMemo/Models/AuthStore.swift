@@ -21,6 +21,9 @@ final class AuthStore: ObservableObject {
     @Published private(set) var userInfoFetchError: String? = nil
     @Published private(set) var userInfo: UserInfo? = nil
     
+    @Published private(set) var isUpdatingUserInfo: Bool = false
+    @Published private(set) var updateUserInfoError: String? = nil
+    
     var rememberedPhone: String? {
         let p = (KeychainStore.getString(Keys.phone) ?? UserDefaults.standard.string(forKey: Keys.phone) ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -58,6 +61,11 @@ final class AuthStore: ObservableObject {
             UserDefaults.standard.set(phone, forKey: Keys.phone)
         }
     }
+    
+    /// 仅用于 UI 层提示错误：避免暴露 `lastError` 的 setter。
+    func setLastError(_ message: String?) {
+        lastError = message
+    }
 
     func fetchCurrentUserInfoRaw(forceRefresh: Bool = false) async {
         guard isLoggedIn else { return }
@@ -86,6 +94,40 @@ final class AuthStore: ObservableObject {
             }
         } catch {
             userInfoFetchError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+    
+    /// 更新当前用户信息（仅更新 patch 内字段）
+    /// - Note: 为了最小化改动，这里复用 `/api/v1/user/info` 的 PUT；失败会写入 `updateUserInfoError`
+    func updateUserInfo(patch: [String: Any]) async -> Bool {
+        guard isLoggedIn else { return false }
+        let sid = (sessionId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !sid.isEmpty else {
+            updateUserInfoError = "登录状态异常，请重新登录"
+            return false
+        }
+        guard !BackendChatConfig.baseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            updateUserInfoError = "后端 Base URL 为空或不合法，请先在「聊天后端」里配置"
+            return false
+        }
+        guard !patch.isEmpty else { return true }
+        if isUpdatingUserInfo { return false }
+        
+        isUpdatingUserInfo = true
+        updateUserInfoError = nil
+        defer { isUpdatingUserInfo = false }
+        
+        do {
+            let updated = try await AuthService.updateCurrentUserInfo(
+                baseURL: BackendChatConfig.baseURL,
+                sessionId: sid,
+                patch: patch
+            )
+            userInfo = updated
+            return true
+        } catch {
+            updateUserInfoError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            return false
         }
     }
     

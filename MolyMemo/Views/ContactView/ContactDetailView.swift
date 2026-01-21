@@ -65,6 +65,7 @@ struct ContactDetailView: View {
     private let primaryTextColor = Color(hex: "333333")
     private let secondaryTextColor = Color(hex: "999999")
     private let iconColor = Color(hex: "CCCCCC")
+    private let accentBlue = Color(hex: "2F6BFF")
     
     private static let birthdayFormatter: DateFormatter = {
         let df = DateFormatter()
@@ -250,6 +251,9 @@ struct ContactDetailView: View {
                             .padding(.horizontal, 64)
                             .padding(.top, 10)
                             .disabled(isSubmitting)
+
+                        // 背景速览（后端字段：background）
+                        backgroundOverviewCard
                         
                         // 基础信息内容（时间线暂不展示）
                         VStack(spacing: 20) {
@@ -632,6 +636,55 @@ struct ContactDetailView: View {
             .presentationDragIndicator(.visible)
         }
     }
+
+    private var backgroundOverviewCard: some View {
+        let raw = (contact.background ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let isGenerating = raw.isEmpty
+        let placeholderText = "生成中…"
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(accentBlue)
+                    .frame(width: 28, height: 28, alignment: .center)
+
+                Text("背景速览")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundColor(primaryTextColor)
+
+                Spacer()
+            }
+
+            Group {
+                if isGenerating {
+                    HStack(spacing: 10) {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(secondaryTextColor)
+                        Text(placeholderText)
+                    }
+                    .font(.system(size: 16))
+                    .foregroundColor(secondaryTextColor)
+                    .lineSpacing(6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    Text(raw)
+                        .font(.system(size: 16))
+                        .foregroundColor(Color(hex: "666666"))
+                        .lineSpacing(6)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 16)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color.white)
+                .shadow(color: Color.black.opacity(0.06), radius: 10, x: 0, y: 5)
+        )
+        .padding(.horizontal, 20)
+    }
     
     // MARK: - Voice (WS streaming update)
 
@@ -958,6 +1011,7 @@ struct ContactDetailView: View {
         contact.location = norm(updated.location)
         contact.gender = norm(updated.gender)
         contact.birthday = norm(updated.birthday)
+        contact.background = norm(updated.background)
         // 备注：优先 notes；impression 若后端有且 notes 为空，也可兜底显示在备注（保持与其它链路一致）
         let notes = norm(updated.notes)
         let impression = norm(updated.impression)
@@ -1060,6 +1114,7 @@ struct ContactDetailView: View {
         contact.location = norm(card.location)
         contact.gender = norm(card.gender)
         contact.birthday = norm(card.birthday)
+        contact.background = norm(card.background)
         // 备注：同样以详情为准（不做拼接合并）
         contact.notes = norm(card.notes)
         contact.lastModified = Date()
@@ -1165,6 +1220,12 @@ struct ContactDetailView: View {
             contact.location = (canonical.location?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false) ? canonical.location : (location.isEmpty ? nil : location)
             contact.birthday = (canonical.birthday?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false) ? canonical.birthday : (birthday.isEmpty ? nil : birthday)
             contact.gender = (canonical.gender?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false) ? canonical.gender : (gender.isEmpty ? nil : gender)
+
+            // 背景速览：仅当后端返回非空时才更新（避免 update/create 返回体缺字段导致本地被清空）
+            let bg = (canonical.background ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !bg.isEmpty {
+                contact.background = bg
+            }
 
             // 备注：只认后端 note/notes（canonical.notes）。若后端没回，才用本次编辑态兜底。
             let n = (canonical.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)

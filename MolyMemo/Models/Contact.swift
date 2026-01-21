@@ -21,6 +21,8 @@ final class Contact {
     var gender: String?  // 性别
     var industry: String?  // 行业
     var location: String?  // 地区
+    /// 背景速览（后端字段：background）
+    var background: String?  // 背景速览
     var notes: String?  // 备注/详细描述
     
     // 附件数据
@@ -48,6 +50,7 @@ final class Contact {
         gender: String? = nil,
         industry: String? = nil,
         location: String? = nil,
+        background: String? = nil,
         notes: String? = nil,
         avatarData: Data? = nil,
         imageData: [Data]? = nil,
@@ -67,6 +70,7 @@ final class Contact {
         self.gender = gender
         self.industry = industry
         self.location = location
+        self.background = background
         self.notes = notes
         self.avatarData = avatarData
         self.imageData = imageData

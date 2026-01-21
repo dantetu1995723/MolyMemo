@@ -175,7 +175,15 @@ enum BackendChatConfig {
 
     /// Debug：是否打印 SSE/NDJSON 的每一个 data chunk（很吵，默认关闭）
     static var debugLogStreamEvents: Bool {
-        get { UserDefaults.standard.bool(forKey: Keys.debugLogStreamEvents) }
+        get {
+            // 你当前的诉求：为了联调，需要在控制台看到“后端原始返回”（逐行/逐 chunk）。
+            // 该日志仅在 DEBUG 下生效；Release 会强制关闭。
+            if UserDefaults.standard.object(forKey: Keys.debugLogStreamEvents) == nil {
+                UserDefaults.standard.set(true, forKey: Keys.debugLogStreamEvents)
+                return true
+            }
+            return UserDefaults.standard.bool(forKey: Keys.debugLogStreamEvents)
+        }
         set { UserDefaults.standard.set(newValue, forKey: Keys.debugLogStreamEvents) }
     }
 
@@ -183,10 +191,11 @@ enum BackendChatConfig {
     static var debugLogChunkSummary: Bool {
         get {
             if UserDefaults.standard.object(forKey: Keys.debugLogChunkSummary) == nil {
-                // 默认开启：用于排查“后端实际推送了什么 chunk/record”
-                // 注意：chunk JSON 可能包含敏感信息；仅在 DEBUG 下生效，Release 会强制关闭。
-                UserDefaults.standard.set(true, forKey: Keys.debugLogChunkSummary)
-                return true
+                // 默认关闭：当前联调用 debugLogStreamEvents 打印 RAW 原始返回即可，
+                // 避免 RAW + chunk JSON 双重打印造成控制台噪音。
+                // 需要看“解析后的 chunk JSON”时再手动打开该开关。
+                UserDefaults.standard.set(false, forKey: Keys.debugLogChunkSummary)
+                return false
             }
             return UserDefaults.standard.bool(forKey: Keys.debugLogChunkSummary)
         }

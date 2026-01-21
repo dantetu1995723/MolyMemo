@@ -532,6 +532,7 @@ enum ContactService {
             gender: string(dict, ["gender", "sex"]),
             industry: string(dict, ["industry"]),
             location: string(dict, ["location", "region", "city", "address"]),
+            background: string(dict, ["background", "background_overview", "backgroundOverview"]),
             relationshipType: string(dict, ["relationship_type", "relationshipType", "relationship"]),
             notes: string(dict, ["notes", "note", "remark"]),
             impression: string(dict, ["impression"]),

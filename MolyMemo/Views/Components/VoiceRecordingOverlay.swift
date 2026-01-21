@@ -153,7 +153,8 @@ struct VoiceRecordingOverlay: View {
         }
         .ignoresSafeArea()
         .onAppear {
-            withAnimation(.easeInOut(duration: 0.25)) {
+            // 入场要“最快”：录音已先启动，UI 立刻跟上
+            withAnimation(.easeOut(duration: 0.08)) {
                 backgroundOpacity = 0.35
                 showMainUI = true
             }

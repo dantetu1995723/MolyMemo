@@ -119,6 +119,8 @@ final class BackendChatService {
 
             func emitDeltaChunk(_ obj: [String: Any]) async {
 #if DEBUG
+                // 仅在显式开启 chunkSummary 时才打印“解析后的 chunk JSON”，
+                // 避免与 debugLogStreamEvents 的 RAW 行重复刷屏。
                 debugAlwaysLogChatChunk(requestId: requestId, chunk: obj, source: "delta")
 #endif
                 let delta = parseChunkDelta(obj)
@@ -144,13 +146,15 @@ final class BackendChatService {
 
             func flushSSEEventIfNeeded() async {
                 guard !sseDataLines.isEmpty else { return }
+                let wasMultiLine = (sseDataLines.count > 1)
                 let joined = sseDataLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
                 sseDataLines.removeAll(keepingCapacity: true)
                 guard !joined.isEmpty else { return }
                 if joined == "[DONE]" { return }
 #if DEBUG
                 // SSE 原始事件（可能跨行）：便于你对照后端推送顺序
-                if BackendChatConfig.debugLogChatNetworkVerbose || BackendChatConfig.debugLogStreamEvents {
+                // 仅在“跨行 event”时打印聚合后的 SSE_EVENT；单行 event 已经由 RAW data:... 打印过，避免重复。
+                if wasMultiLine, (BackendChatConfig.debugLogChatNetworkVerbose || BackendChatConfig.debugLogStreamEvents) {
                     debugLogChatRawLine(requestId: requestId, line: "SSE_EVENT: " + joined)
                 }
 #endif
@@ -1429,7 +1433,9 @@ final class BackendChatService {
     }
 
     private static func debugAlwaysLogChatChunk(requestId: String, chunk: [String: Any], source: String) {
-        guard BackendChatConfig.debugLogChunkSummary || BackendChatConfig.debugLogStreamEvents else { return }
+        // 只在显式开启 debugLogChunkSummary 时打印 chunk JSON。
+        // RAW 原始返回由 debugLogStreamEvents 负责，避免一份数据打印两遍。
+        guard BackendChatConfig.debugLogChunkSummary else { return }
         let type = (chunk["type"] as? String) ?? ""
         var hintParts: [String] = []
         if type == "tool", let tool = chunk["content"] as? [String: Any] {

@@ -59,6 +59,8 @@ class ChatInputViewModel: ObservableObject {
     private var holdToTalkReceiveLoopTask: Task<Void, Never>?
     /// 预收音启动任务：用于“快速取消/结束”时阻止异步插入占位气泡
     private var holdToTalkStartupTask: Task<Void, Never>?
+    /// 录音引擎启动任务：用于确保“收音启动先于 UI 动画”，并在快速结束时可取消
+    private var holdToTalkRecorderStartTask: Task<Void, Error>?
     private var holdToTalkPlaceholderMessageId: UUID?
     private var holdToTalkAgentMessageId: UUID?
     private var holdToTalkLatestASRText: String = ""
@@ -221,6 +223,8 @@ class ChatInputViewModel: ObservableObject {
         holdToTalkSendLoopTask = nil
         holdToTalkStartupTask?.cancel()
         holdToTalkStartupTask = nil
+        holdToTalkRecorderStartTask?.cancel()
+        holdToTalkRecorderStartTask = nil
 
         // 取消：立即 stop + 退场（不进入识别态）
         guard shouldSend else {
@@ -401,25 +405,26 @@ class ChatInputViewModel: ObservableObject {
         holdToTalkReceiveLoopTask = nil
         holdToTalkStartupTask?.cancel()
         holdToTalkStartupTask = nil
+        holdToTalkRecorderStartTask?.cancel()
+        holdToTalkRecorderStartTask = nil
         holdToTalkVoiceSession = nil
         holdToTalkPlaceholderMessageId = nil
         holdToTalkPCMBacklog = PCMBacklog()
 
         print("[HoldToTalk] press down -> start pre-capture (gen=\(gen))")
 
+        // 1) 立刻启动本地录音引擎（不要等 WS / overlay），确保“后台录音开启先于动画”
+        // 注意：必须 detached，不能阻塞主线程（UI 动画/滚动会让 MainActor 很忙）
+        let recorder = self.holdToTalkRecorder
+        let recorderStartTask = Task.detached(priority: .userInitiated) {
+            try await recorder.start()
+        }
+        holdToTalkRecorderStartTask = recorderStartTask
+
         // ✅ 改为后端语音流式识别：本地仅负责采集 PCM，转写由后端返回 asr_result/asr_complete
         holdToTalkStartupTask = Task { [weak self] in
             guard let self else { return }
             do {
-                // 1) 立刻启动本地录音引擎（不要等 WS），避免“点停止后立刻第二次录音”时
-                //    因为 WS 建连/上一次 close 抖动造成的 1~2s 空窗从而吞掉开头几字。
-                // 注意：这里必须用 detached，不能用继承 MainActor 的 Task，否则录音启动会被当前 Task（WS 建连逻辑）阻塞，
-                // 从而出现日志里看到的“WS connected 后才开始 PCM capture”的现象。
-                let recorder = self.holdToTalkRecorder
-                let recorderTask = Task.detached(priority: .userInitiated) {
-                    try await recorder.start()
-                }
-
                 // 2) 建立 WS（可慢慢来；PCM 会先缓存在 recorder / backlog 里）
                 let session = try ChatVoiceInputService.makeSession(contactId: nil)
                 // 用户可能已经快速松手/取消：这时不要再继续，也不要插入占位气泡
@@ -428,7 +433,7 @@ class ChatInputViewModel: ObservableObject {
                 }
                 guard stillValidAfterConnect, !Task.isCancelled else {
                     await session.close()
-                    recorderTask.cancel()
+                    recorderStartTask.cancel()
                     await MainActor.run {
                         // 若仍是这一轮才 stop（避免误伤下一轮）
                         guard self.holdToTalkGeneration == gen else { return }
@@ -439,8 +444,8 @@ class ChatInputViewModel: ObservableObject {
                 self.holdToTalkVoiceSession = session
                 session.start()
 
-                // 3) 等待录音引擎真正启动完成
-                try await recorderTask.value
+                // 3) 等待录音引擎真正启动完成（若启动失败将抛错，由外层 catch 统一清理）
+                try await recorderStartTask.value
                 let stillValidAfterRecorder = await MainActor.run {
                     self.holdToTalkGeneration == gen && self.isPreCapturingHoldToTalk && !self.isAgentTyping
                 }
@@ -609,6 +614,7 @@ class ChatInputViewModel: ObservableObject {
                     // 启动成功后清空引用，避免下一轮误 cancel 旧任务
                     if self.holdToTalkGeneration == gen {
                         self.holdToTalkStartupTask = nil
+                        self.holdToTalkRecorderStartTask = nil
                     }
                 }
             } catch {
@@ -619,6 +625,8 @@ class ChatInputViewModel: ObservableObject {
                 let placeholderId = self.holdToTalkPlaceholderMessageId
                 self.holdToTalkPlaceholderMessageId = nil
                 self.holdToTalkVoiceSession = nil
+                self.holdToTalkRecorderStartTask?.cancel()
+                self.holdToTalkRecorderStartTask = nil
                 _ = self.holdToTalkRecorder.stop(discard: true)
                 if let placeholderId {
                     self.onRemovePlaceholder?(placeholderId)
@@ -657,6 +665,8 @@ class ChatInputViewModel: ObservableObject {
         holdToTalkSendLoopTask = nil
         holdToTalkStartupTask?.cancel()
         holdToTalkStartupTask = nil
+        holdToTalkRecorderStartTask?.cancel()
+        holdToTalkRecorderStartTask = nil
 
         let placeholderId = holdToTalkPlaceholderMessageId
         holdToTalkPlaceholderMessageId = nil
@@ -768,6 +778,8 @@ private extension ChatInputViewModel {
         holdToTalkReceiveLoopTask = nil
         holdToTalkStartupTask?.cancel()
         holdToTalkStartupTask = nil
+        holdToTalkRecorderStartTask?.cancel()
+        holdToTalkRecorderStartTask = nil
         holdToTalkASRTask?.cancel()
         holdToTalkASRTask = nil
 
