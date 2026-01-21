@@ -6,6 +6,14 @@ final class AuthStore: ObservableObject {
         static let sessionId = "yuanyuan_auth_session_id"
         static let phone = "yuanyuan_auth_phone"
     }
+
+    /// 统一手机号输入规范化：强制去掉空格/短横线/括号等，仅保留数字。
+    /// - Note: 粘贴自系统/其它应用的手机号常带格式化空格，这里做强制清洗，避免后端校验失败。
+    static func normalizePhoneInput(_ raw: String) -> String {
+        let allowed = CharacterSet.decimalDigits
+        let filtered = raw.unicodeScalars.filter { allowed.contains($0) }
+        return String(String.UnicodeScalarView(filtered))
+    }
     
     @Published private(set) var isLoggedIn: Bool
     @Published var phone: String
@@ -25,8 +33,8 @@ final class AuthStore: ObservableObject {
     @Published private(set) var updateUserInfoError: String? = nil
     
     var rememberedPhone: String? {
-        let p = (KeychainStore.getString(Keys.phone) ?? UserDefaults.standard.string(forKey: Keys.phone) ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let raw = (KeychainStore.getString(Keys.phone) ?? UserDefaults.standard.string(forKey: Keys.phone) ?? "")
+        let p = Self.normalizePhoneInput(raw)
         return p.isEmpty ? nil : p
     }
     
@@ -49,7 +57,7 @@ final class AuthStore: ObservableObject {
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
         self.isLoggedIn = !storedSession.isEmpty
-        self.phone = (KeychainStore.getString(Keys.phone) ?? UserDefaults.standard.string(forKey: Keys.phone) ?? "")
+        self.phone = Self.normalizePhoneInput(KeychainStore.getString(Keys.phone) ?? UserDefaults.standard.string(forKey: Keys.phone) ?? "")
 
         // 让后端请求统一走 BackendChatConfig.apiKey（其它 service 会优先读它）
         if !storedSession.isEmpty {
@@ -57,7 +65,7 @@ final class AuthStore: ObservableObject {
             // 顺便把 UserDefaults 补齐，便于旧代码路径命中
             UserDefaults.standard.set(storedSession, forKey: Keys.sessionId)
         }
-        if !phone.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        if !phone.isEmpty {
             UserDefaults.standard.set(phone, forKey: Keys.phone)
         }
     }
@@ -132,7 +140,7 @@ final class AuthStore: ObservableObject {
     }
     
     func quickLogin() async {
-        let p = rememberedPhone ?? phone.trimmingCharacters(in: .whitespacesAndNewlines)
+        let p = rememberedPhone ?? Self.normalizePhoneInput(phone)
         guard !p.isEmpty else {
             lastError = "未找到记录的手机号"
             return
@@ -165,7 +173,7 @@ final class AuthStore: ObservableObject {
     }
     
     func login() async {
-        let p = phone.trimmingCharacters(in: .whitespacesAndNewlines)
+        let p = Self.normalizePhoneInput(phone)
         let c = verificationCode.trimmingCharacters(in: .whitespacesAndNewlines)
         
         guard !p.isEmpty else {
@@ -217,7 +225,7 @@ final class AuthStore: ObservableObject {
     }
 
     func sendVerificationCode() async {
-        let p = phone.trimmingCharacters(in: .whitespacesAndNewlines)
+        let p = Self.normalizePhoneInput(phone)
         guard !p.isEmpty else {
             lastError = "请输入手机号"
             return

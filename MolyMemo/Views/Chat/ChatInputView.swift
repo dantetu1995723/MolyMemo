@@ -1,5 +1,4 @@
 import SwiftUI
-import PhotosUI
 import UIKit
 
 // MARK: - Layout Preference
@@ -113,8 +112,7 @@ struct ChatInputView: View {
         .animation(.spring(response: 0.3, dampingFraction: 1.0), value: viewModel.showMenu)
         .animation(.spring(response: 0.3, dampingFraction: 1.0), value: viewModel.showSuggestions)
         .animation(.spring(response: 0.3, dampingFraction: 1.0), value: viewModel.selectedImage)
-        // 录音入口/退场：尽量“最快”，减少按住说话的体感延迟
-        .animation(.easeOut(duration: 0.06), value: viewModel.isRecording)
+        .animation(.easeInOut(duration: 0.12), value: viewModel.isRecording)
         .onAppear {
             // 预热触感引擎，避免首次/前几次长按“安静”
             HapticFeedback.warmUp()
@@ -240,7 +238,7 @@ struct ChatInputView: View {
                         .padding(.vertical, 12)
                         .frame(height: inputTextHeight)
                         .lineLimit(3, reservesSpace: false) // 限制最大3行，超过后滚动
-                        .submitLabel(.send) // 让系统键盘回车键显示“发送”
+                        .submitLabel(.send) // 系统键盘回车按钮显示为“发送”
                         .onChange(of: viewModel.inputText) { oldValue, newValue in
                             // 多行 TextField 默认会把回车当换行；这里把“尾部回车”转成“发送”。
                             // 只处理尾部 \n，避免误伤粘贴的多行文本/中间换行。
@@ -382,7 +380,7 @@ struct ChatInputView: View {
                             .frame(width: 28, height: 28)
                             .background(Circle().fill(Color.blue))
                     }
-                    .padding(.trailing, 12)
+                    .padding(.trailing, 14)
                     .padding(.bottom, 12)
                 }
             }
@@ -493,9 +491,7 @@ struct ChatInputView: View {
             guard !viewModel.isAgentTyping else { return }
             guard !isFocused, viewModel.inputText.isEmpty, viewModel.selectedImage == nil else { return }
             guard !viewModel.isRecording else { return }
-            // 关键：先启动后台收音（预收音），再让 overlay 以最快动画弹出
             viewModel.beginHoldToTalkPreCaptureIfNeeded()
-            await Task.yield() // 给 recorder.start() 的 detached task 一点调度空间，确保“录音先于动画”
             viewModel.revealHoldToTalkOverlayIfPossible()
         }
     }
@@ -640,3 +636,4 @@ private enum DebugProbe {
     static func throttled(_ key: String, interval: TimeInterval, _ block: () -> Void) {}
 }
 #endif
+

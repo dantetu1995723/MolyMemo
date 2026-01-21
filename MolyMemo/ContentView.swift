@@ -1562,7 +1562,7 @@ struct ChatTextField: UIViewRepresentable {
     var onLongPressEnd: (() -> Void)?
     
     func makeUIView(context: Context) -> UITextField {
-        let textField = UITextField()
+        let textField = ChineseMenuTextField()
         textField.placeholder = placeholder
         textField.delegate = context.coordinator
         textField.returnKeyType = .send

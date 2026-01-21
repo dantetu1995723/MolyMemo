@@ -340,12 +340,15 @@ struct LoginView: View {
             VStack(spacing: 16) { // 统一小组间距
                 LoginGlassFieldWithTrailing(
                     placeholder: "请输入手机号",
-                    text: $authStore.phone,
+                    text: Binding(
+                        get: { authStore.phone },
+                        set: { authStore.phone = AuthStore.normalizePhoneInput($0) }
+                    ),
                     keyboard: .phonePad,
                     contentType: .telephoneNumber
                 ) {
-                    let trimmedPhone = authStore.phone.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !trimmedPhone.isEmpty {
+                    let normalizedPhone = AuthStore.normalizePhoneInput(authStore.phone)
+                    if !normalizedPhone.isEmpty {
                         Button {
                             HapticFeedback.light()
                             Task { await authStore.sendVerificationCode() }
@@ -502,7 +505,7 @@ struct LoginView: View {
     }
     
     private var canSubmit: Bool {
-        let p = authStore.phone.trimmingCharacters(in: .whitespacesAndNewlines)
+        let p = AuthStore.normalizePhoneInput(authStore.phone)
         let c = authStore.verificationCode.trimmingCharacters(in: .whitespacesAndNewlines)
         return !authStore.isLoading && !p.isEmpty && !c.isEmpty
     }

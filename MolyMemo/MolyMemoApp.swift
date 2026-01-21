@@ -15,6 +15,10 @@ struct MolyMemoApp: App {
     let modelContainer: ModelContainer
     
     init() {
+        // 强制 App 语言为简体中文（影响系统编辑菜单：粘贴/选择/自动填充等胶囊文案）
+        // 说明：这是通过 AppleLanguages/AppleLocale 指定 App 语言环境；若你希望跟随系统语言，删掉这一段即可。
+        Self.enforceSimplifiedChineseLanguage()
+
         // 启动期只清理临时缓存：不要清 SwiftData store（否则会抹掉 AppIntent 写入的聊天记录）
         LocalDataPurger.purgeCaches(reason: "启动清理临时缓存")
 
@@ -38,6 +42,19 @@ struct MolyMemoApp: App {
 
         // 让前台也能展示通知横幅（否则前台默认不弹）
         UNUserNotificationCenter.current().delegate = AppNotificationCenterDelegate.shared
+    }
+
+    private static func enforceSimplifiedChineseLanguage() {
+        let defaults = UserDefaults.standard
+        let desiredLanguages = ["zh-Hans"]
+
+        if let current = defaults.array(forKey: "AppleLanguages") as? [String],
+           current.first == desiredLanguages.first {
+            return
+        }
+
+        defaults.set(desiredLanguages, forKey: "AppleLanguages")
+        defaults.set("zh_CN", forKey: "AppleLocale")
     }
     
     var body: some Scene {
