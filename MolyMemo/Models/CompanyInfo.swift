@@ -6,6 +6,8 @@ import Foundation
 @Model
 final class CompanyInfo {
     var id: UUID
+    /// 账号隔离键（建议用手机号或 userId）。旧库可能为空，迁移时会补齐。
+    var ownerKey: String?
     var companyName: String  // 公司名称（抬头）
     var taxNumber: String?  // 税号
     var phoneNumber: String?  // 手机号
@@ -24,9 +26,11 @@ final class CompanyInfo {
         email: String? = nil,
         address: String? = nil,
         bankName: String? = nil,
-        bankAccount: String? = nil
+        bankAccount: String? = nil,
+        ownerKey: String? = nil
     ) {
         self.id = UUID()
+        self.ownerKey = ownerKey
         self.companyName = companyName
         self.taxNumber = taxNumber
         self.phoneNumber = phoneNumber

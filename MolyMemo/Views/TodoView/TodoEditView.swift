@@ -12,6 +12,7 @@ extension NSNotification.Name {
 struct TodoEditView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var appState: AppState
     
     @State private var title: String
     @State private var taskDescription: String
@@ -525,6 +526,11 @@ struct TodoEditView: View {
         
         // 同步更新模型 - 不使用 Task，避免异步问题
         if isEditing, let todo = todo {
+            // 账号绑定：旧数据可能没有 ownerKey，这里补齐，避免跨账号串数据
+            let owner = appState.chatOwnerKey
+            if (todo.ownerKey ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                todo.ownerKey = owner
+            }
             
             // 直接更新模型属性
             todo.title = title
@@ -601,6 +607,7 @@ struct TodoEditView: View {
             }
         } else {
             // 新建待办
+            let owner = appState.chatOwnerKey
             let newTodo = TodoItem(
                 title: title,
                 taskDescription: taskDescription,
@@ -609,7 +616,8 @@ struct TodoEditView: View {
                 reminderTime: reminderTime,
                 imageData: selectedImages.compactMap { $0.jpegData(compressionQuality: 0.8) },
                 textAttachments: textNotes.isEmpty ? nil : textNotes,
-                syncToCalendar: syncToCalendar
+                syncToCalendar: syncToCalendar,
+                ownerKey: owner
             )
             
             modelContext.insert(newTodo)

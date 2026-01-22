@@ -77,6 +77,7 @@ enum YuanyuanGroupMigration {
             // 直接拷贝字段（外部存储字段也会跟随 Data 拷贝）
             let copied = PersistentChatMessage(
                 id: m.id,
+                ownerKey: m.ownerKey,
                 roleRawValue: m.roleRawValue,
                 content: m.content,
                 timestamp: m.timestamp,
@@ -97,28 +98,28 @@ enum YuanyuanGroupMigration {
         let schedules = try legacy.fetch(FetchDescriptor<StoredScheduleCardBatch>())
         for b in schedules {
             let decoded = b.decodedEvents()
-            target.insert(StoredScheduleCardBatch(events: decoded, sourceMessageId: b.sourceMessageId, createdAt: b.createdAt))
+            target.insert(StoredScheduleCardBatch(events: decoded, ownerKey: b.ownerKey, sourceMessageId: b.sourceMessageId, createdAt: b.createdAt))
         }
         total += schedules.count
 
         let contacts = try legacy.fetch(FetchDescriptor<StoredContactCardBatch>())
         for b in contacts {
             let decoded = b.decodedContacts()
-            target.insert(StoredContactCardBatch(contacts: decoded, sourceMessageId: b.sourceMessageId, createdAt: b.createdAt))
+            target.insert(StoredContactCardBatch(contacts: decoded, ownerKey: b.ownerKey, sourceMessageId: b.sourceMessageId, createdAt: b.createdAt))
         }
         total += contacts.count
 
         let invoices = try legacy.fetch(FetchDescriptor<StoredInvoiceCardBatch>())
         for b in invoices {
             let decoded = b.decodedInvoices()
-            target.insert(StoredInvoiceCardBatch(invoices: decoded, sourceMessageId: b.sourceMessageId, createdAt: b.createdAt))
+            target.insert(StoredInvoiceCardBatch(invoices: decoded, ownerKey: b.ownerKey, sourceMessageId: b.sourceMessageId, createdAt: b.createdAt))
         }
         total += invoices.count
 
         let meetings = try legacy.fetch(FetchDescriptor<StoredMeetingCardBatch>())
         for b in meetings {
             let decoded = b.decodedMeetings()
-            target.insert(StoredMeetingCardBatch(meetings: decoded, sourceMessageId: b.sourceMessageId, createdAt: b.createdAt))
+            target.insert(StoredMeetingCardBatch(meetings: decoded, ownerKey: b.ownerKey, sourceMessageId: b.sourceMessageId, createdAt: b.createdAt))
         }
         total += meetings.count
 

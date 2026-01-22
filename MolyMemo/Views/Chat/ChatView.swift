@@ -46,7 +46,9 @@ struct ChatView: View {
 
     // 聊天滚动（用于：首次进入自动滚到最新；回到前台刷新后也能滚动）
     @State private var chatScrollProxy: ScrollViewProxy? = nil
-    @State private var didAutoScrollOnFirstAppear: Bool = false
+    @State private var shouldScrollToBottomWhenProxyReady: Bool = false
+    @State private var scrollToBottomTask: Task<Void, Never>? = nil
+    @State private var scrollToMessageTask: Task<Void, Never>? = nil
 
     // 底部避让：输入区（含附件面板）真实高度
     @State private var inputTotalHeight: CGFloat = bottomInputBaseHeight
@@ -118,7 +120,9 @@ struct ChatView: View {
 
     // MARK: - Helpers (Chat Card -> SwiftData Model)
     private func findOrCreateContact(from card: ContactCard) -> Contact {
-        ContactCardLocalSync.findOrCreateContact(from: card, allContacts: allContacts, modelContext: modelContext)
+        let owner = appState.chatOwnerKey
+        let filtered = allContacts.filter { ($0.ownerKey ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == owner }
+        return ContactCardLocalSync.findOrCreateContact(from: card, ownerKey: owner, allContacts: filtered, modelContext: modelContext)
     }
     
     var body: some View {
@@ -145,10 +149,11 @@ struct ChatView: View {
                         .onAppear {
                             // 缓存 proxy，便于外层（如回到前台刷新）也能触发滚动
                             chatScrollProxy = proxy
-                            if !didAutoScrollOnFirstAppear {
-                                didAutoScrollOnFirstAppear = true
-                                scrollToLatestMessageOnOpen(proxy: proxy)
+                            // 首次出现/重建：尽量把视图稳定后再滚到底部（由统一的 request 负责去抖）
+                            if shouldScrollToBottomWhenProxyReady {
+                                shouldScrollToBottomWhenProxyReady = false
                             }
+                            requestScrollToBottom(proxy: proxy, animated: false)
                         }
                         .safeAreaInset(edge: .top) {
                             // 动态计算占位高度：顶部安全区域 + 导航栏与提醒卡片的高度
@@ -183,12 +188,17 @@ struct ChatView: View {
                             // 滚动/动画会占用主线程，间接拖慢录音启动（导致前期吞字）。
                             // 因此录音期间禁用自动滚动，松手后再补一次即可。
                             guard !inputViewModel.isRecording, !inputViewModel.isAnimatingRecordingExit else { return }
-                            scrollToLatestMessageOnOpen(proxy: proxy)
+                            requestScrollToBottom(proxy: proxy)
                         }
                         .onChange(of: pendingScrollToMessageId) { _, newValue in
                             guard let id = newValue else { return }
-                            // 延迟 0.18 秒（比 scrollToLatestMessageOnOpen 的 0.12 秒长），确保搜索跳转不被覆盖
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
+                            // 有明确的“跳到某条消息”需求时，取消所有“滚到底部”排队，避免互相覆盖
+                            scrollToBottomTask?.cancel()
+                            scrollToMessageTask?.cancel()
+                            scrollToMessageTask = Task { @MainActor in
+                                // 给布局一点时间（搜索结果面板收起/顶部区域动画也会触发布局）
+                                try? await Task.sleep(nanoseconds: 180_000_000)
+                                guard !Task.isCancelled else { return }
                                 withAnimation(.easeInOut(duration: 0.25)) {
                                     proxy.scrollTo(id, anchor: .center)
                                 }
@@ -198,7 +208,7 @@ struct ChatView: View {
                         .onChange(of: inputTotalHeight) { _, _ in
                             // 附件面板/建议条等高度变化时，让最新消息保持可见
                             guard !inputViewModel.isRecording, !inputViewModel.isAnimatingRecordingExit else { return }
-                            scrollToLatestMessageOnOpen(proxy: proxy)
+                            requestScrollToBottom(proxy: proxy)
                         }
                     }
                 }
@@ -363,19 +373,19 @@ struct ChatView: View {
         // 键盘弹起/收起：只触发滚动，不手动改变布局（避免与系统键盘避让“双重计算”导致顶飞）
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { _ in
             if let proxy = chatScrollProxy {
-                scrollToLatestMessageOnOpen(proxy: proxy)
+                requestScrollToBottom(proxy: proxy)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
             if let proxy = chatScrollProxy {
-                scrollToLatestMessageOnOpen(proxy: proxy)
+                requestScrollToBottom(proxy: proxy)
             }
         }
         // 录音结束后补一次滚动，让用户回到最新位置（避免录音期间禁用 auto-scroll 后停留在中间）
         .onChange(of: inputViewModel.isRecording) { _, isRec in
             guard !isRec else { return }
             if let proxy = chatScrollProxy {
-                scrollToLatestMessageOnOpen(proxy: proxy)
+                requestScrollToBottom(proxy: proxy)
             }
         }
         .onAppear {
@@ -488,6 +498,13 @@ struct ChatView: View {
 
             // 首页通知栏：初始化今日日程
             bootstrapTodayScheduleNotice()
+
+            // 登录后首次进入聊天：确保最终落在最底部（proxy 可能尚未准备好，这里会自动兜底）
+            requestScrollToBottom(animated: false)
+        }
+        .onDisappear {
+            scrollToBottomTask?.cancel()
+            scrollToMessageTask?.cancel()
         }
         .onChange(of: appState.isAgentTyping) { _, newValue in
             inputViewModel.isAgentTyping = newValue
@@ -495,7 +512,7 @@ struct ChatView: View {
         .onChange(of: meetingRecordingManager.isRecording) { _, _ in
             // 录音开始/结束时，尽量保持最新内容可见
             if let proxy = chatScrollProxy {
-                scrollToLatestMessageOnOpen(proxy: proxy)
+                requestScrollToBottom(proxy: proxy)
             }
         }
         // 远端日程变更（创建/更新/删除）后强刷，确保通知栏及时更新
@@ -510,7 +527,7 @@ struct ChatView: View {
             refreshTodaySchedules(force: true)
             // 若此时 ScrollView 仍在内存中，补一次滚动到最新（避免刷新后停在中间）
             if let proxy = chatScrollProxy {
-                scrollToLatestMessageOnOpen(proxy: proxy)
+                requestScrollToBottom(proxy: proxy)
             }
         }
         // 系统显著时间变化（含跨天/时区变化）时强刷
@@ -1176,14 +1193,31 @@ struct ChatView: View {
     }
     
     // MARK: - Helper Methods
-    
-    /// 自动滚动到“最新位置”（统一滚到底部锚点，确保最后一条是用户消息时也能到最底）
-    private func scrollToLatestMessageOnOpen(proxy: ScrollViewProxy) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
-            // 如果有待滚动的搜索结果，跳过自动滚到底部，避免覆盖搜索跳转
-            guard self.pendingScrollToMessageId == nil else { return }
-            withAnimation(.easeInOut(duration: 0.22)) {
-                proxy.scrollTo("bottomID", anchor: .bottom)
+
+    /// 统一的“滚到底部”入口：去抖 + 可取消，避免多处 asyncAfter 互相打架导致不稳定。
+    private func requestScrollToBottom(proxy: ScrollViewProxy? = nil, animated: Bool = true) {
+        // 如果有待滚动的搜索结果，跳过自动滚到底部，避免覆盖搜索跳转
+        guard pendingScrollToMessageId == nil else { return }
+
+        let p = proxy ?? chatScrollProxy
+        guard let p else {
+            shouldScrollToBottomWhenProxyReady = true
+            return
+        }
+
+        scrollToBottomTask?.cancel()
+        scrollToBottomTask = Task { @MainActor in
+            // 给 SwiftUI 一点布局收敛时间（safeAreaInset / preference / header 动画都会触发多次 layout）
+            try? await Task.sleep(nanoseconds: 120_000_000)
+            guard !Task.isCancelled else { return }
+            guard pendingScrollToMessageId == nil else { return }
+
+            if animated {
+                withAnimation(.easeInOut(duration: 0.22)) {
+                    p.scrollTo("bottomID", anchor: .bottom)
+                }
+            } else {
+                p.scrollTo("bottomID", anchor: .bottom)
             }
         }
     }

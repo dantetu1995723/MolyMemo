@@ -6,6 +6,8 @@ import Foundation
 @Model
 final class Expense {
     var id: UUID
+    /// 账号隔离键（建议用手机号或 userId）。旧库可能为空，迁移时会补齐。
+    var ownerKey: String?
     var amount: Double  // 金额
     var title: String  // 抬头/标题
     var category: String?  // 类别（餐饮、交通、住宿等）
@@ -33,9 +35,11 @@ final class Expense {
         occurredAt: Date,
         notes: String? = nil,
         imageData: [Data]? = nil,
-        textAttachments: [String]? = nil
+        textAttachments: [String]? = nil,
+        ownerKey: String? = nil
     ) {
         self.id = UUID()
+        self.ownerKey = ownerKey
         self.amount = amount
         self.title = title
         self.category = category

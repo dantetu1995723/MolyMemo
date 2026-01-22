@@ -4,6 +4,8 @@ import SwiftData
 @Model
 final class Meeting {
     var id: UUID
+    /// 账号隔离键（建议用手机号或 userId）。旧库可能为空，迁移时会补齐。
+    var ownerKey: String?
     var title: String
     var content: String  // 会议纪要文字内容
     var audioFilePath: String?  // 音频文件路径
@@ -15,9 +17,11 @@ final class Meeting {
         content: String = "",
         audioFilePath: String? = nil,
         createdAt: Date = Date(),
-        duration: TimeInterval = 0
+        duration: TimeInterval = 0,
+        ownerKey: String? = nil
     ) {
         self.id = UUID()
+        self.ownerKey = ownerKey
         self.title = title
         self.content = content
         self.audioFilePath = audioFilePath

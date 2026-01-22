@@ -24,7 +24,8 @@ struct ContactListView: View {
     
     // 分组的联系人
     private var groupedContacts: [(String, [Contact])] {
-        let contacts = allContacts
+        let owner = appState.chatOwnerKey
+        let contacts = allContacts.filter { ($0.ownerKey ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == owner }
         
         // 按首字母分组
         let grouped = Dictionary(grouping: contacts) { $0.nameInitial }

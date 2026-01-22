@@ -6,6 +6,8 @@ import Foundation
 @Model
 final class TodoItem {
     var id: UUID
+    /// 账号隔离键（建议用手机号或 userId）。旧库可能为空，迁移时会补齐。
+    var ownerKey: String?
     var title: String
     var taskDescription: String
     var startTime: Date
@@ -34,9 +36,11 @@ final class TodoItem {
         reminderTime: Date? = nil,
         imageData: [Data]? = nil,
         textAttachments: [String]? = nil,
-        syncToCalendar: Bool = true
+        syncToCalendar: Bool = true,
+        ownerKey: String? = nil
     ) {
         self.id = UUID()
+        self.ownerKey = ownerKey
         self.title = title
         self.taskDescription = taskDescription
         self.startTime = startTime

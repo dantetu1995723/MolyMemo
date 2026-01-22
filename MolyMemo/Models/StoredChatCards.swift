@@ -9,12 +9,15 @@ final class StoredScheduleCardBatch {
     var id: UUID
     var createdAt: Date
     var sourceMessageId: UUID?
+    /// 账号隔离键（建议用手机号或 userId）。旧库可能为空，迁移时会补齐。
+    var ownerKey: String?
     @Attribute(.externalStorage) var encodedEvents: Data
 
-    init(events: [ScheduleEvent], sourceMessageId: UUID? = nil, createdAt: Date = Date()) {
+    init(events: [ScheduleEvent], ownerKey: String? = nil, sourceMessageId: UUID? = nil, createdAt: Date = Date()) {
         self.id = UUID()
         self.createdAt = createdAt
         self.sourceMessageId = sourceMessageId
+        self.ownerKey = ownerKey
         self.encodedEvents = (try? JSONEncoder().encode(events)) ?? Data()
     }
 
@@ -33,12 +36,15 @@ final class StoredContactCardBatch {
     var id: UUID
     var createdAt: Date
     var sourceMessageId: UUID?
+    /// 账号隔离键（建议用手机号或 userId）。旧库可能为空，迁移时会补齐。
+    var ownerKey: String?
     @Attribute(.externalStorage) var encodedContacts: Data
 
-    init(contacts: [ContactCard], sourceMessageId: UUID? = nil, createdAt: Date = Date()) {
+    init(contacts: [ContactCard], ownerKey: String? = nil, sourceMessageId: UUID? = nil, createdAt: Date = Date()) {
         self.id = UUID()
         self.createdAt = createdAt
         self.sourceMessageId = sourceMessageId
+        self.ownerKey = ownerKey
         self.encodedContacts = (try? JSONEncoder().encode(contacts)) ?? Data()
     }
 
@@ -57,12 +63,15 @@ final class StoredInvoiceCardBatch {
     var id: UUID
     var createdAt: Date
     var sourceMessageId: UUID?
+    /// 账号隔离键（建议用手机号或 userId）。旧库可能为空，迁移时会补齐。
+    var ownerKey: String?
     @Attribute(.externalStorage) var encodedInvoices: Data
 
-    init(invoices: [InvoiceCard], sourceMessageId: UUID? = nil, createdAt: Date = Date()) {
+    init(invoices: [InvoiceCard], ownerKey: String? = nil, sourceMessageId: UUID? = nil, createdAt: Date = Date()) {
         self.id = UUID()
         self.createdAt = createdAt
         self.sourceMessageId = sourceMessageId
+        self.ownerKey = ownerKey
         self.encodedInvoices = (try? JSONEncoder().encode(invoices)) ?? Data()
     }
 
@@ -81,12 +90,15 @@ final class StoredMeetingCardBatch {
     var id: UUID
     var createdAt: Date
     var sourceMessageId: UUID?
+    /// 账号隔离键（建议用手机号或 userId）。旧库可能为空，迁移时会补齐。
+    var ownerKey: String?
     @Attribute(.externalStorage) var encodedMeetings: Data
 
-    init(meetings: [MeetingCard], sourceMessageId: UUID? = nil, createdAt: Date = Date()) {
+    init(meetings: [MeetingCard], ownerKey: String? = nil, sourceMessageId: UUID? = nil, createdAt: Date = Date()) {
         self.id = UUID()
         self.createdAt = createdAt
         self.sourceMessageId = sourceMessageId
+        self.ownerKey = ownerKey
         self.encodedMeetings = (try? JSONEncoder().encode(meetings)) ?? Data()
     }
 

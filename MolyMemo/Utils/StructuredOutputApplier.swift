@@ -10,6 +10,9 @@ struct StructuredOutputApplier {
         if let taskId = output.taskId, !taskId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             message.notes = taskId
         }
+        if let mid = output.messageId, !mid.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            message.remoteMessageId = mid
+        }
 
         // tool 中间态（用于 loading 卡片）
         message.isContactToolRunning = output.isContactToolRunning

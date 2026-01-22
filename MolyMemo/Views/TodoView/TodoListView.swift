@@ -319,9 +319,12 @@ struct TodoListView: View {
     // 当前选中日期的全部事项
     private var currentDayTodos: [TodoItem] {
         let calendar = Calendar.current
+        let owner = appState.chatOwnerKey
         return allTodos.filter { todo in
-            calendar.isDate(todo.startTime, inSameDayAs: selectedDate)
-        }.sorted { $0.startTime < $1.startTime }
+            let okOwner = (todo.ownerKey ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == owner
+            return okOwner && calendar.isDate(todo.startTime, inSameDayAs: selectedDate)
+        }
+        .sorted { $0.startTime < $1.startTime }
     }
     
     // 全天事项

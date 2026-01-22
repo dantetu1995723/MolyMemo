@@ -4,6 +4,8 @@ import Foundation
 struct BackendChatStructuredOutput: Equatable {
     var text: String = ""
     var taskId: String? = nil
+    /// 后端 message_id（用于“重新生成”等需要引用后端消息ID的场景）
+    var messageId: String? = nil
 
     /// 是否为流式增量（delta）输出：为 true 时，AppState 应进行“追加/合并”，而不是覆盖整条消息
     var isDelta: Bool = false
@@ -28,6 +30,7 @@ struct BackendChatStructuredOutput: Equatable {
     var isEmpty: Bool {
         text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
         (taskId?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) &&
+        (messageId?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) &&
         segments.isEmpty &&
         scheduleEvents.isEmpty &&
         deletedScheduleRemoteIds.isEmpty &&

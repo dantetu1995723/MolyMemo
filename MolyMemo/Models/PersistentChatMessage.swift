@@ -6,6 +6,8 @@ import UIKit
 @Model
 final class PersistentChatMessage {
     var id: UUID
+    /// 账号隔离键（建议用手机号或 userId）。旧库可能为空，迁移时会补齐。
+    var ownerKey: String?
     var roleRawValue: String
     var content: String
     var timestamp: Date
@@ -19,6 +21,7 @@ final class PersistentChatMessage {
     
     init(
         id: UUID,
+        ownerKey: String? = nil,
         roleRawValue: String,
         content: String,
         timestamp: Date,
@@ -29,6 +32,7 @@ final class PersistentChatMessage {
         isInterrupted: Bool = false
     ) {
         self.id = id
+        self.ownerKey = ownerKey
         self.roleRawValue = roleRawValue
         self.content = content
         self.timestamp = timestamp
@@ -43,7 +47,7 @@ final class PersistentChatMessage {
 // 扩展：转换方法（不在 @Model 类内部）
 extension PersistentChatMessage {
     // 从 ChatMessage 创建 PersistentChatMessage
-    static func from(_ message: ChatMessage) -> PersistentChatMessage {
+    static func from(_ message: ChatMessage, ownerKey: String?) -> PersistentChatMessage {
         let roleValue = message.role == .user ? "user" : "agent"
         let messageTypeValue: String
         switch message.messageType {
@@ -71,6 +75,7 @@ extension PersistentChatMessage {
         
         return PersistentChatMessage(
             id: message.id,
+            ownerKey: ownerKey,
             roleRawValue: roleValue,
             content: message.content,
             timestamp: message.timestamp,

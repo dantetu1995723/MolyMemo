@@ -18,9 +18,28 @@ enum ContactCardLocalSync {
     /// 根据 card 在本地查找或创建 `Contact`，并把 card 的“有值字段”补齐写回。
     /// - Parameters:
     ///   - reviveIfObsolete: 当该卡片来自“明确的创建/更新链路”时允许把本地 soft-delete 的联系人复活。
-    static func findOrCreateContact(from card: ContactCard, allContacts: [Contact], modelContext: ModelContext, reviveIfObsolete: Bool = false) -> Contact {
+    static func findOrCreateContact(
+        from card: ContactCard,
+        ownerKey: String? = nil,
+        allContacts: [Contact],
+        modelContext: ModelContext,
+        reviveIfObsolete: Bool = false
+    ) -> Contact {
+        let ownerKeyValue: String? = {
+            let k = (ownerKey ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            return k.isEmpty ? nil : k
+        }()
+        func ensureOwner(_ contact: Contact) {
+            guard let ownerKeyValue else { return }
+            if (contact.ownerKey ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                contact.ownerKey = ownerKeyValue
+                try? modelContext.save()
+            }
+        }
+        
         // 1) 优先按本地 id 命中（我们在创建时会对齐 id）
         if let existing = allContacts.first(where: { $0.id == card.id }) {
+            ensureOwner(existing)
             applyCard(card, to: existing, modelContext: modelContext, reviveIfObsolete: reviveIfObsolete)
             return existing
         }
@@ -29,6 +48,7 @@ enum ContactCardLocalSync {
         let rid = trimmed(card.remoteId)
         if !rid.isEmpty {
             if let existing = allContacts.first(where: { trimmed($0.remoteId) == rid }) {
+                ensureOwner(existing)
                 applyCard(card, to: existing, modelContext: modelContext, reviveIfObsolete: reviveIfObsolete)
                 return existing
             }
@@ -37,6 +57,7 @@ enum ContactCardLocalSync {
                 if trimmed(existing.remoteId).isEmpty {
                     existing.remoteId = rid
                 }
+                ensureOwner(existing)
                 applyCard(card, to: existing, modelContext: modelContext, reviveIfObsolete: reviveIfObsolete)
                 return existing
             }
@@ -47,6 +68,7 @@ enum ContactCardLocalSync {
         if !phone.isEmpty,
            let existing = allContacts.first(where: { $0.name == card.name && trimmed($0.phoneNumber) == phone })
         {
+            ensureOwner(existing)
             applyCard(card, to: existing, modelContext: modelContext, reviveIfObsolete: reviveIfObsolete)
             return existing
         }
@@ -54,6 +76,7 @@ enum ContactCardLocalSync {
         // 4) 新建（用 card 直接填充，保证详情页可用）
         let newContact = Contact(
             name: card.name,
+            ownerKey: ownerKeyValue,
             remoteId: {
                 let rid = trimmed(card.remoteId)
                 return rid.isEmpty ? nil : rid

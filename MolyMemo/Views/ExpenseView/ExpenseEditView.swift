@@ -6,6 +6,7 @@ import PhotosUI
 struct ExpenseEditView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var appState: AppState
     
     @State private var title: String
     @State private var amount: String
@@ -202,6 +203,7 @@ struct ExpenseEditView: View {
         guard let amountValue = Double(amount) else { return }
         
         HapticFeedback.medium()
+        let owner = appState.chatOwnerKey
         
         // 准备图片数据
         let imageDataArray = selectedImages.compactMap { $0.jpegData(compressionQuality: 0.8) }
@@ -210,6 +212,9 @@ struct ExpenseEditView: View {
         
         if let expense = expense {
             // 更新现有报销
+            if (expense.ownerKey ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                expense.ownerKey = owner
+            }
             expense.title = title
             expense.amount = amountValue
             expense.category = category.isEmpty ? nil : category
@@ -229,7 +234,8 @@ struct ExpenseEditView: View {
                 occurredAt: occurredAt,
                 notes: nil,
                 imageData: imageDataArray.isEmpty ? nil : imageDataArray,
-                textAttachments: nil
+                textAttachments: nil,
+                ownerKey: owner
             )
             modelContext.insert(newExpense)
             targetExpense = newExpense
@@ -246,7 +252,8 @@ struct ExpenseEditView: View {
                 startTime: todoStartTime,
                 endTime: todoEndTime,
                 reminderTime: todoReminderTime,
-                syncToCalendar: true
+                syncToCalendar: true,
+                ownerKey: owner
             )
             
             // 建立双向关联

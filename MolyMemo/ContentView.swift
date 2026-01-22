@@ -10,6 +10,15 @@ struct ContentView: View {
     @State private var showModuleContainer = false
     @State private var imageHeroPreview: ImageHeroPreviewState? = nil
     
+    private func syncChatAccountBinding() {
+        if authStore.isLoggedIn {
+            let key = AuthStore.normalizePhoneInput(authStore.rememberedPhone ?? authStore.phone)
+            appState.switchChatAccount(ownerKey: key, modelContext: modelContext, preloadLimit: 80)
+        } else {
+            appState.switchChatAccount(ownerKey: "", modelContext: modelContext, preloadLimit: 0)
+        }
+    }
+    
     var body: some View {
         ZStack {
             Group {
@@ -33,6 +42,8 @@ struct ContentView: View {
                     LiveRecordingView()
                 }
                 .onAppear {
+                    // 先绑定账号，再处理跨进程 pending（否则 ownerKey 为空会被跳过）
+                    syncChatAccountBinding()
                     // 快捷指令/AppIntent：主App前台处理 pending（聊天更新 / 待发送截图）
                     appState.processPendingChatUpdateIfNeeded(modelContext: modelContext)
                     appState.processPendingScreenshotIfNeeded(modelContext: modelContext)
@@ -65,6 +76,19 @@ struct ContentView: View {
             }
         }
         .ignoresSafeArea()
+        .onAppear {
+            // 绑定“账号 -> 本地聊天历史”：防止切账号仍显示上个账号的内存历史
+            syncChatAccountBinding()
+        }
+        .onChange(of: authStore.isLoggedIn) { _, _ in
+            syncChatAccountBinding()
+        }
+        .onChange(of: authStore.phone) { _, _ in
+            // 登录态下手机号变化意味着“账号切换/重新登录”
+            if authStore.isLoggedIn {
+                syncChatAccountBinding()
+            }
+        }
     }
 }
 

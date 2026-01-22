@@ -519,6 +519,9 @@ struct ChatMessage: Identifiable, Equatable {
     var invoices: [InvoiceCard]? = nil // 发票卡片列表
     var meetings: [MeetingCard]? = nil // 会议纪要卡片列表
     var notes: String? = nil  // 临时存储数据（如待处理的报销信息）
+    /// 后端 message_id（用于“重新生成”等需要引用后端消息ID的场景）
+    /// - 仅运行态：不落 SwiftData（PersistentChatMessage 不会保存该字段）
+    var remoteMessageId: String? = nil
     var isContactToolRunning: Bool = false // tool 中间态：用于联系人创建 loading
     var isScheduleToolRunning: Bool = false // tool 中间态：用于日程创建/更新 loading
     /// 仅运行态：本地音频（用于测试在聊天里展示“原录音”）。
@@ -590,6 +593,7 @@ struct ChatMessage: Identifiable, Equatable {
         lhs.contacts == rhs.contacts &&
         lhs.invoices == rhs.invoices &&
         lhs.meetings == rhs.meetings &&
+        lhs.remoteMessageId == rhs.remoteMessageId &&
         lhs.isContactToolRunning == rhs.isContactToolRunning &&
         lhs.isScheduleToolRunning == rhs.isScheduleToolRunning &&
         lhs.showIntentSelection == rhs.showIntentSelection &&
@@ -804,8 +808,13 @@ class AppState: ObservableObject {
 
         // 3) 工具箱联系人库：确保本地 Contact 存在，并标记为 obsolete（不硬删）
         do {
-            let all = try modelContext.fetch(FetchDescriptor<Contact>())
-            let local = ContactCardLocalSync.findOrCreateContact(from: card, allContacts: all, modelContext: modelContext)
+            let owner = Self.normalizeChatOwnerKey(chatOwnerKey)
+            let all = try modelContext.fetch(
+                FetchDescriptor<Contact>(predicate: #Predicate<Contact> { c in
+                    c.ownerKey == owner
+                })
+            )
+            let local = ContactCardLocalSync.findOrCreateContact(from: card, ownerKey: chatOwnerKey, allContacts: all, modelContext: modelContext)
             if !local.isObsolete {
                 local.isObsolete = true
                 local.lastModified = Date()
@@ -1033,6 +1042,8 @@ class AppState: ObservableObject {
     @Published var sessionStartTime: Date = Date()  // 当前session开始时间
     
     // 聊天室状态 - 保存对话历史
+    /// 当前聊天账号隔离键（建议用手机号或 userId）。为空表示未绑定账号（不读写本地聊天历史）。
+    @Published private(set) var chatOwnerKey: String = ""
     @Published var chatMessages: [ChatMessage] = []
     @Published var isAgentTyping: Bool = false
     @Published var selectedImages: [UIImage] = []
@@ -1430,9 +1441,14 @@ class AppState: ObservableObject {
             let allowReviveFromThisMessage = msg.reviveContactsForNextCards || pendingContactReviveForNextCards
             if !incoming.isEmpty {
                 do {
-                    var all = try modelContext.fetch(FetchDescriptor<Contact>())
+                    let owner = Self.normalizeChatOwnerKey(chatOwnerKey)
+                    var all = try modelContext.fetch(
+                        FetchDescriptor<Contact>(predicate: #Predicate<Contact> { c in
+                            c.ownerKey == owner
+                        })
+                    )
                     for card in incoming {
-                        let local = ContactCardLocalSync.findOrCreateContact(from: card, allContacts: all, modelContext: modelContext, reviveIfObsolete: allowReviveFromThisMessage)
+                        let local = ContactCardLocalSync.findOrCreateContact(from: card, ownerKey: chatOwnerKey, allContacts: all, modelContext: modelContext, reviveIfObsolete: allowReviveFromThisMessage)
                         if !all.contains(where: { $0.id == local.id }) {
                             all.append(local)
                         }
@@ -1543,7 +1559,12 @@ class AppState: ObservableObject {
         }()
         guard hasAggregate || hasSegments else { return }
 
-        let all: [Contact] = (try? modelContext.fetch(FetchDescriptor<Contact>())) ?? []
+        let owner = Self.normalizeChatOwnerKey(chatOwnerKey)
+        let all: [Contact] = (try? modelContext.fetch(
+            FetchDescriptor<Contact>(predicate: #Predicate<Contact> { c in
+                c.ownerKey == owner
+            })
+        )) ?? []
         let obsoleteContacts = all.filter { $0.isObsolete }
         guard !obsoleteContacts.isEmpty else { return }
 
@@ -1806,10 +1827,191 @@ class AppState: ObservableObject {
     }
     
     // MARK: - SwiftData 持久化方法
+    
+    /// 切换聊天历史所属账号：清空内存 + 只加载该账号的本地记录。
+    /// - Note: 旧版本落盘数据没有 ownerKey，这里会在首次绑定时把“遗留数据”一次性归属到当前账号，避免跨账号串历史。
+    @MainActor
+    func switchChatAccount(ownerKey raw: String, modelContext: ModelContext, preloadLimit: Int = 80) {
+        let key = Self.normalizeChatOwnerKey(raw)
+        
+        // ownerKey 为空：视为未登录/未绑定，不读写聊天历史
+        if key.isEmpty {
+            chatOwnerKey = ""
+            chatMessages.removeAll()
+            pendingAnimatedAgentMessageId = nil
+            isAgentTyping = false
+            return
+        }
+        
+        // 同账号：若内存为空，补一次加载；否则不动（避免 UI 抖动）
+        if key == chatOwnerKey {
+            if chatMessages.isEmpty {
+                migrateLegacyChatDataIfNeeded(ownerKey: key, modelContext: modelContext)
+                loadRecentMessages(modelContext: modelContext, limit: preloadLimit)
+            }
+            return
+        }
+        
+        // 切换账号：清空内存，避免“看见上个账号的历史”
+        chatOwnerKey = key
+        chatMessages.removeAll()
+        pendingAnimatedAgentMessageId = nil
+        isAgentTyping = false
+        
+        // 旧数据迁移 + 懒加载最近记录
+        migrateLegacyChatDataIfNeeded(ownerKey: key, modelContext: modelContext)
+        loadRecentMessages(modelContext: modelContext, limit: preloadLimit)
+    }
+    
+    private static func normalizeChatOwnerKey(_ raw: String) -> String {
+        raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+    }
+    
+    /// 把旧库（ownerKey 为空）的一次性归属给当前账号，防止跨账号串历史。
+    /// - Important: 由于旧版本完全没有账号维度，这里只能把“当前设备上的遗留本地历史”归到“首次登录的账号”。
+    @MainActor
+    private func migrateLegacyChatDataIfNeeded(ownerKey: String, modelContext: ModelContext) {
+        let key = Self.normalizeChatOwnerKey(ownerKey)
+        guard !key.isEmpty else { return }
+        
+        // 进程内去重：同一账号只做一次迁移扫描（避免频繁 fetch/save）
+        struct MigrationCache {
+            static var migratedOwnerKeys: Set<String> = []
+        }
+        if MigrationCache.migratedOwnerKeys.contains(key) { return }
+        MigrationCache.migratedOwnerKeys.insert(key)
+        
+        func assignOwnerKeyToLegacy<T>(_ type: T.Type, fetch: () throws -> [Any], apply: (Any) -> Void) {
+            do {
+                let items = try fetch()
+                guard !items.isEmpty else { return }
+                for x in items { apply(x) }
+            } catch {
+            }
+        }
+        
+        // 1) PersistentChatMessage：ownerKey == nil / ""
+        assignOwnerKeyToLegacy(PersistentChatMessage.self, fetch: {
+            try modelContext.fetch(FetchDescriptor<PersistentChatMessage>(predicate: #Predicate { $0.ownerKey == nil }))
+        }, apply: { any in
+            (any as? PersistentChatMessage)?.ownerKey = key
+        })
+        assignOwnerKeyToLegacy(PersistentChatMessage.self, fetch: {
+            try modelContext.fetch(FetchDescriptor<PersistentChatMessage>(predicate: #Predicate { $0.ownerKey == "" }))
+        }, apply: { any in
+            (any as? PersistentChatMessage)?.ownerKey = key
+        })
+        
+        // 2) 卡片批次：ownerKey == nil / ""
+        assignOwnerKeyToLegacy(StoredScheduleCardBatch.self, fetch: {
+            try modelContext.fetch(FetchDescriptor<StoredScheduleCardBatch>(predicate: #Predicate { $0.ownerKey == nil }))
+        }, apply: { any in
+            (any as? StoredScheduleCardBatch)?.ownerKey = key
+        })
+        assignOwnerKeyToLegacy(StoredScheduleCardBatch.self, fetch: {
+            try modelContext.fetch(FetchDescriptor<StoredScheduleCardBatch>(predicate: #Predicate { $0.ownerKey == "" }))
+        }, apply: { any in
+            (any as? StoredScheduleCardBatch)?.ownerKey = key
+        })
+        
+        assignOwnerKeyToLegacy(StoredContactCardBatch.self, fetch: {
+            try modelContext.fetch(FetchDescriptor<StoredContactCardBatch>(predicate: #Predicate { $0.ownerKey == nil }))
+        }, apply: { any in
+            (any as? StoredContactCardBatch)?.ownerKey = key
+        })
+        assignOwnerKeyToLegacy(StoredContactCardBatch.self, fetch: {
+            try modelContext.fetch(FetchDescriptor<StoredContactCardBatch>(predicate: #Predicate { $0.ownerKey == "" }))
+        }, apply: { any in
+            (any as? StoredContactCardBatch)?.ownerKey = key
+        })
+        
+        assignOwnerKeyToLegacy(StoredInvoiceCardBatch.self, fetch: {
+            try modelContext.fetch(FetchDescriptor<StoredInvoiceCardBatch>(predicate: #Predicate { $0.ownerKey == nil }))
+        }, apply: { any in
+            (any as? StoredInvoiceCardBatch)?.ownerKey = key
+        })
+        assignOwnerKeyToLegacy(StoredInvoiceCardBatch.self, fetch: {
+            try modelContext.fetch(FetchDescriptor<StoredInvoiceCardBatch>(predicate: #Predicate { $0.ownerKey == "" }))
+        }, apply: { any in
+            (any as? StoredInvoiceCardBatch)?.ownerKey = key
+        })
+        
+        assignOwnerKeyToLegacy(StoredMeetingCardBatch.self, fetch: {
+            try modelContext.fetch(FetchDescriptor<StoredMeetingCardBatch>(predicate: #Predicate { $0.ownerKey == nil }))
+        }, apply: { any in
+            (any as? StoredMeetingCardBatch)?.ownerKey = key
+        })
+        assignOwnerKeyToLegacy(StoredMeetingCardBatch.self, fetch: {
+            try modelContext.fetch(FetchDescriptor<StoredMeetingCardBatch>(predicate: #Predicate { $0.ownerKey == "" }))
+        }, apply: { any in
+            (any as? StoredMeetingCardBatch)?.ownerKey = key
+        })
+        
+        // 3) 其它用户数据模型：ownerKey == nil / ""
+        assignOwnerKeyToLegacy(TodoItem.self, fetch: {
+            try modelContext.fetch(FetchDescriptor<TodoItem>(predicate: #Predicate { $0.ownerKey == nil }))
+        }, apply: { any in
+            (any as? TodoItem)?.ownerKey = key
+        })
+        assignOwnerKeyToLegacy(TodoItem.self, fetch: {
+            try modelContext.fetch(FetchDescriptor<TodoItem>(predicate: #Predicate { $0.ownerKey == "" }))
+        }, apply: { any in
+            (any as? TodoItem)?.ownerKey = key
+        })
+        
+        assignOwnerKeyToLegacy(Contact.self, fetch: {
+            try modelContext.fetch(FetchDescriptor<Contact>(predicate: #Predicate { $0.ownerKey == nil }))
+        }, apply: { any in
+            (any as? Contact)?.ownerKey = key
+        })
+        assignOwnerKeyToLegacy(Contact.self, fetch: {
+            try modelContext.fetch(FetchDescriptor<Contact>(predicate: #Predicate { $0.ownerKey == "" }))
+        }, apply: { any in
+            (any as? Contact)?.ownerKey = key
+        })
+        
+        assignOwnerKeyToLegacy(Expense.self, fetch: {
+            try modelContext.fetch(FetchDescriptor<Expense>(predicate: #Predicate { $0.ownerKey == nil }))
+        }, apply: { any in
+            (any as? Expense)?.ownerKey = key
+        })
+        assignOwnerKeyToLegacy(Expense.self, fetch: {
+            try modelContext.fetch(FetchDescriptor<Expense>(predicate: #Predicate { $0.ownerKey == "" }))
+        }, apply: { any in
+            (any as? Expense)?.ownerKey = key
+        })
+        
+        assignOwnerKeyToLegacy(CompanyInfo.self, fetch: {
+            try modelContext.fetch(FetchDescriptor<CompanyInfo>(predicate: #Predicate { $0.ownerKey == nil }))
+        }, apply: { any in
+            (any as? CompanyInfo)?.ownerKey = key
+        })
+        assignOwnerKeyToLegacy(CompanyInfo.self, fetch: {
+            try modelContext.fetch(FetchDescriptor<CompanyInfo>(predicate: #Predicate { $0.ownerKey == "" }))
+        }, apply: { any in
+            (any as? CompanyInfo)?.ownerKey = key
+        })
+        
+        assignOwnerKeyToLegacy(Meeting.self, fetch: {
+            try modelContext.fetch(FetchDescriptor<Meeting>(predicate: #Predicate { $0.ownerKey == nil }))
+        }, apply: { any in
+            (any as? Meeting)?.ownerKey = key
+        })
+        assignOwnerKeyToLegacy(Meeting.self, fetch: {
+            try modelContext.fetch(FetchDescriptor<Meeting>(predicate: #Predicate { $0.ownerKey == "" }))
+        }, apply: { any in
+            (any as? Meeting)?.ownerKey = key
+        })
+        
+        do { try modelContext.save() } catch {}
+    }
 
     // MARK: - 聊天卡片批次持久化（按 message.id 关联）
 
     private func persistCardBatchesIfNeeded(for message: ChatMessage, modelContext: ModelContext) {
+        let owner = Self.normalizeChatOwnerKey(chatOwnerKey)
+        guard !owner.isEmpty else { return }
         do {
             try upsertOrDeleteScheduleBatch(for: message, modelContext: modelContext)
             try upsertOrDeleteContactBatch(for: message, modelContext: modelContext)
@@ -1820,13 +2022,16 @@ class AppState: ObservableObject {
     }
 
     private func upsertOrDeleteScheduleBatch(for message: ChatMessage, modelContext: ModelContext) throws {
+        let owner = Self.normalizeChatOwnerKey(chatOwnerKey)
+        guard !owner.isEmpty else { return }
         let mid: UUID? = message.id
         let descriptor = FetchDescriptor<StoredScheduleCardBatch>(
             predicate: #Predicate<StoredScheduleCardBatch> { batch in
                 batch.sourceMessageId == mid
             }
         )
-        let existing = try modelContext.fetch(descriptor).first
+        let existingAll = try modelContext.fetch(descriptor)
+        let existing = existingAll.first(where: { ($0.ownerKey ?? "") == owner || ($0.ownerKey ?? "").isEmpty })
 
         let events = (message.scheduleEvents ?? []).dedup(by: ChatCardStableId.schedule)
         if events.isEmpty {
@@ -1836,20 +2041,24 @@ class AppState: ObservableObject {
 
         if let existing {
             existing.createdAt = message.timestamp
+            if (existing.ownerKey ?? "").isEmpty { existing.ownerKey = owner }
             existing.update(events: events)
         } else {
-            modelContext.insert(StoredScheduleCardBatch(events: events, sourceMessageId: message.id, createdAt: message.timestamp))
+            modelContext.insert(StoredScheduleCardBatch(events: events, ownerKey: owner, sourceMessageId: message.id, createdAt: message.timestamp))
         }
     }
 
     private func upsertOrDeleteContactBatch(for message: ChatMessage, modelContext: ModelContext) throws {
+        let owner = Self.normalizeChatOwnerKey(chatOwnerKey)
+        guard !owner.isEmpty else { return }
         let mid: UUID? = message.id
         let descriptor = FetchDescriptor<StoredContactCardBatch>(
             predicate: #Predicate<StoredContactCardBatch> { batch in
                 batch.sourceMessageId == mid
             }
         )
-        let existing = try modelContext.fetch(descriptor).first
+        let existingAll = try modelContext.fetch(descriptor)
+        let existing = existingAll.first(where: { ($0.ownerKey ?? "") == owner || ($0.ownerKey ?? "").isEmpty })
 
         let cards = (message.contacts ?? []).dedup(by: ChatCardStableId.contact)
         if cards.isEmpty {
@@ -1859,20 +2068,24 @@ class AppState: ObservableObject {
 
         if let existing {
             existing.createdAt = message.timestamp
+            if (existing.ownerKey ?? "").isEmpty { existing.ownerKey = owner }
             existing.update(contacts: cards)
         } else {
-            modelContext.insert(StoredContactCardBatch(contacts: cards, sourceMessageId: message.id, createdAt: message.timestamp))
+            modelContext.insert(StoredContactCardBatch(contacts: cards, ownerKey: owner, sourceMessageId: message.id, createdAt: message.timestamp))
         }
     }
 
     private func upsertOrDeleteInvoiceBatch(for message: ChatMessage, modelContext: ModelContext) throws {
+        let owner = Self.normalizeChatOwnerKey(chatOwnerKey)
+        guard !owner.isEmpty else { return }
         let mid: UUID? = message.id
         let descriptor = FetchDescriptor<StoredInvoiceCardBatch>(
             predicate: #Predicate<StoredInvoiceCardBatch> { batch in
                 batch.sourceMessageId == mid
             }
         )
-        let existing = try modelContext.fetch(descriptor).first
+        let existingAll = try modelContext.fetch(descriptor)
+        let existing = existingAll.first(where: { ($0.ownerKey ?? "") == owner || ($0.ownerKey ?? "").isEmpty })
 
         let cards = (message.invoices ?? []).dedup(by: ChatCardStableId.invoice)
         if cards.isEmpty {
@@ -1882,20 +2095,24 @@ class AppState: ObservableObject {
 
         if let existing {
             existing.createdAt = message.timestamp
+            if (existing.ownerKey ?? "").isEmpty { existing.ownerKey = owner }
             existing.update(invoices: cards)
         } else {
-            modelContext.insert(StoredInvoiceCardBatch(invoices: cards, sourceMessageId: message.id, createdAt: message.timestamp))
+            modelContext.insert(StoredInvoiceCardBatch(invoices: cards, ownerKey: owner, sourceMessageId: message.id, createdAt: message.timestamp))
         }
     }
 
     private func upsertOrDeleteMeetingBatch(for message: ChatMessage, modelContext: ModelContext) throws {
+        let owner = Self.normalizeChatOwnerKey(chatOwnerKey)
+        guard !owner.isEmpty else { return }
         let mid: UUID? = message.id
         let descriptor = FetchDescriptor<StoredMeetingCardBatch>(
             predicate: #Predicate<StoredMeetingCardBatch> { batch in
                 batch.sourceMessageId == mid
             }
         )
-        let existing = try modelContext.fetch(descriptor).first
+        let existingAll = try modelContext.fetch(descriptor)
+        let existing = existingAll.first(where: { ($0.ownerKey ?? "") == owner || ($0.ownerKey ?? "").isEmpty })
 
         let cards = (message.meetings ?? []).dedup(by: ChatCardStableId.meeting)
         if cards.isEmpty {
@@ -1905,13 +2122,16 @@ class AppState: ObservableObject {
 
         if let existing {
             existing.createdAt = message.timestamp
+            if (existing.ownerKey ?? "").isEmpty { existing.ownerKey = owner }
             existing.update(meetings: cards)
         } else {
-            modelContext.insert(StoredMeetingCardBatch(meetings: cards, sourceMessageId: message.id, createdAt: message.timestamp))
+            modelContext.insert(StoredMeetingCardBatch(meetings: cards, ownerKey: owner, sourceMessageId: message.id, createdAt: message.timestamp))
         }
     }
 
     func hydrateCardBatchesIfNeeded(for messages: inout [ChatMessage], modelContext: ModelContext) {
+        let owner = Self.normalizeChatOwnerKey(chatOwnerKey)
+        guard !owner.isEmpty else { return }
         let ids = Set(messages.map { $0.id })
         guard !ids.isEmpty else { return }
 
@@ -1927,28 +2147,28 @@ class AppState: ObservableObject {
             let scheduleBatches = try modelContext.fetch(
                 FetchDescriptor<StoredScheduleCardBatch>(
                     predicate: #Predicate<StoredScheduleCardBatch> { batch in
-                        batch.createdAt >= minTs && batch.createdAt <= maxTs
+                        batch.ownerKey == owner && batch.createdAt >= minTs && batch.createdAt <= maxTs
                     }
                 )
             )
             let contactBatches = try modelContext.fetch(
                 FetchDescriptor<StoredContactCardBatch>(
                     predicate: #Predicate<StoredContactCardBatch> { batch in
-                        batch.createdAt >= minTs && batch.createdAt <= maxTs
+                        batch.ownerKey == owner && batch.createdAt >= minTs && batch.createdAt <= maxTs
                     }
                 )
             )
             let invoiceBatches = try modelContext.fetch(
                 FetchDescriptor<StoredInvoiceCardBatch>(
                     predicate: #Predicate<StoredInvoiceCardBatch> { batch in
-                        batch.createdAt >= minTs && batch.createdAt <= maxTs
+                        batch.ownerKey == owner && batch.createdAt >= minTs && batch.createdAt <= maxTs
                     }
                 )
             )
             let meetingBatches = try modelContext.fetch(
                 FetchDescriptor<StoredMeetingCardBatch>(
                     predicate: #Predicate<StoredMeetingCardBatch> { batch in
-                        batch.createdAt >= minTs && batch.createdAt <= maxTs
+                        batch.ownerKey == owner && batch.createdAt >= minTs && batch.createdAt <= maxTs
                     }
                 )
             )
@@ -1988,7 +2208,15 @@ class AppState: ObservableObject {
     
     /// 从本地存储加载聊天记录
     func loadMessagesFromStorage(modelContext: ModelContext) {
+        let owner = Self.normalizeChatOwnerKey(chatOwnerKey)
+        guard !owner.isEmpty else {
+            chatMessages = []
+            return
+        }
         let descriptor = FetchDescriptor<PersistentChatMessage>(
+            predicate: #Predicate<PersistentChatMessage> { msg in
+                msg.ownerKey == owner
+            },
             sortBy: [SortDescriptor(\.timestamp, order: .forward)]
         )
         
@@ -2011,7 +2239,12 @@ class AppState: ObservableObject {
 
     /// 从本地存储“增量刷新”最近 N 条消息，并与当前内存消息做 upsert 合并（避免整包替换导致 UI 大幅跳动）。
     func upsertLatestMessagesFromStorage(modelContext: ModelContext, limit: Int = 120) {
+        let owner = Self.normalizeChatOwnerKey(chatOwnerKey)
+        guard !owner.isEmpty else { return }
         var descriptor = FetchDescriptor<PersistentChatMessage>(
+            predicate: #Predicate<PersistentChatMessage> { msg in
+                msg.ownerKey == owner
+            },
             sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
         )
         descriptor.fetchLimit = max(0, limit)
@@ -2079,6 +2312,8 @@ class AppState: ObservableObject {
     /// 兜底处理：当 AppIntent 通过 `openAppWhenRun` 启动了主App，但 Darwin 通知在监听注册前发出而丢失，
     /// 或者 UI 还未订阅进程内通知时，这里主动读取 App Group 的 pending 状态来完成一次刷新。
     func processPendingChatUpdateIfNeeded(modelContext: ModelContext) {
+        let owner = Self.normalizeChatOwnerKey(chatOwnerKey)
+        guard !owner.isEmpty else { return }
         guard let defaults = UserDefaults(suiteName: ChatSharedDefaults.suite) else { return }
 
         let ts = defaults.double(forKey: ChatSharedDefaults.lastUpdateTimestampKey)
@@ -2094,17 +2329,16 @@ class AppState: ObservableObject {
     
     /// 保存单条消息到本地存储
     func saveMessageToStorage(_ message: ChatMessage, modelContext: ModelContext) {
+        let owner = Self.normalizeChatOwnerKey(chatOwnerKey)
+        guard !owner.isEmpty else { return }
         do {
             // Upsert：避免同 id 重复插入导致历史加载/ForEach duplicate id
             let mid = message.id
-            let descriptor = FetchDescriptor<PersistentChatMessage>(
-                predicate: #Predicate<PersistentChatMessage> { msg in
-                    msg.id == mid
-                }
-            )
+            let descriptor = FetchDescriptor<PersistentChatMessage>(predicate: #Predicate<PersistentChatMessage> { msg in msg.id == mid })
             let existingAll = try modelContext.fetch(descriptor)
-            if let existing = existingAll.first {
-                let updated = PersistentChatMessage.from(message)
+            let existing = existingAll.first(where: { ($0.ownerKey ?? "") == owner || ($0.ownerKey ?? "").isEmpty })
+            if let existing {
+                let updated = PersistentChatMessage.from(message, ownerKey: owner)
                 existing.roleRawValue = updated.roleRawValue
                 existing.content = updated.content
                 existing.timestamp = updated.timestamp
@@ -2113,15 +2347,18 @@ class AppState: ObservableObject {
                 existing.encodedImageData = updated.encodedImageData
                 existing.encodedSegments = updated.encodedSegments
                 existing.isInterrupted = updated.isInterrupted
+                if (existing.ownerKey ?? "").isEmpty { existing.ownerKey = owner }
 
                 // ✅ 兼容旧版本：如果历史里同 id 有重复记录，保留第一条并删除其余，避免重启加载被旧记录覆盖
                 if existingAll.count > 1 {
                     for extra in existingAll.dropFirst() {
-                        modelContext.delete(extra)
+                        // 只清同账号 / legacy 的重复，避免误删其它账号数据
+                        let ok = ((extra.ownerKey ?? "") == owner) || ((extra.ownerKey ?? "").isEmpty)
+                        if ok { modelContext.delete(extra) }
                     }
                 }
             } else {
-                modelContext.insert(PersistentChatMessage.from(message))
+                modelContext.insert(PersistentChatMessage.from(message, ownerKey: owner))
             }
 
             // 同步保存卡片批次（按 message.id）
@@ -2208,8 +2445,13 @@ class AppState: ObservableObject {
 
         // ✅ 同步到本地联系人库：让工具箱“联系人列表/详情”第一次打开就能读到更新后的字段
         do {
-            let all = try modelContext.fetch(FetchDescriptor<Contact>())
-            _ = ContactCardLocalSync.findOrCreateContact(from: updated, allContacts: all, modelContext: modelContext)
+            let owner = Self.normalizeChatOwnerKey(chatOwnerKey)
+            let all = try modelContext.fetch(
+                FetchDescriptor<Contact>(predicate: #Predicate<Contact> { c in
+                    c.ownerKey == owner
+                })
+            )
+            _ = ContactCardLocalSync.findOrCreateContact(from: updated, ownerKey: chatOwnerKey, allContacts: all, modelContext: modelContext)
         } catch {
         }
 
@@ -2446,13 +2688,15 @@ class AppState: ObservableObject {
     
     /// 批次加载更早的消息（每次50条）
     func loadOlderMessages(modelContext: ModelContext, before timestamp: Date, limit: Int = 50) {
+        let owner = Self.normalizeChatOwnerKey(chatOwnerKey)
+        guard !owner.isEmpty else { return }
         guard !isLoadingOlderMessages else { return }
 
         isLoadingOlderMessages = true
 
         var descriptor = FetchDescriptor<PersistentChatMessage>(
             predicate: #Predicate<PersistentChatMessage> { message in
-                message.timestamp < timestamp
+                message.ownerKey == owner && message.timestamp < timestamp
             },
             sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
         )
@@ -2487,7 +2731,15 @@ class AppState: ObservableObject {
 
     /// 加载最近的 N 条消息（懒加载，保持实现简单，避免跨 actor 捕获 ModelContext）
     func loadRecentMessages(modelContext: ModelContext, limit: Int = 50) {
+        let owner = Self.normalizeChatOwnerKey(chatOwnerKey)
+        guard !owner.isEmpty else {
+            chatMessages = []
+            return
+        }
         var descriptor = FetchDescriptor<PersistentChatMessage>(
+            predicate: #Predicate<PersistentChatMessage> { msg in
+                msg.ownerKey == owner
+            },
             sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
         )
         descriptor.fetchLimit = limit
@@ -2512,6 +2764,8 @@ class AppState: ObservableObject {
     ///   - 若内存不为空：只追加“比最后一条更晚”的新消息，避免重复加载/插入
     /// - limit：仅用于“增量追加”的单次最大拉取数量（防止极端情况下前台一次性追加过多）
     func refreshChatMessagesFromStorageIfNeeded(modelContext: ModelContext, limit: Int = 80) {
+        let owner = Self.normalizeChatOwnerKey(chatOwnerKey)
+        guard !owner.isEmpty else { return }
         let cap = max(10, limit)
 
         // 1) 首次：内存为空 -> 只加载最近 cap 条，避免首次进入聊天室同步拉全量导致卡顿
@@ -2524,7 +2778,7 @@ class AppState: ObservableObject {
         let lastTs = chatMessages.last?.timestamp ?? Date.distantPast
         var descriptor = FetchDescriptor<PersistentChatMessage>(
             predicate: #Predicate<PersistentChatMessage> { msg in
-                msg.timestamp > lastTs
+                msg.ownerKey == owner && msg.timestamp > lastTs
             },
             sortBy: [SortDescriptor(\.timestamp, order: .forward)]
         )

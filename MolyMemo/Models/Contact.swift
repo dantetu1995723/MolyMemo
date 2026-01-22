@@ -6,6 +6,8 @@ import Foundation
 @Model
 final class Contact {
     var id: UUID
+    /// 账号隔离键（建议用手机号或 userId）。旧库可能为空，迁移时会补齐。
+    var ownerKey: String?
     /// 后端 contact id（字符串/数字/uuid 都可能）；用于与后端详情/更新/删除对齐
     var remoteId: String?
     /// 系统通讯录（CNContact）identifier：仅用于单向同步/匹配系统联系人详情
@@ -38,6 +40,7 @@ final class Contact {
     
     init(
         name: String,
+        ownerKey: String? = nil,
         remoteId: String? = nil,
         systemContactIdentifier: String? = nil,
         phoneNumber: String? = nil,
@@ -57,6 +60,7 @@ final class Contact {
         textAttachments: [String]? = nil
     ) {
         self.id = UUID()
+        self.ownerKey = ownerKey
         self.remoteId = remoteId
         self.systemContactIdentifier = systemContactIdentifier
         self.name = name
