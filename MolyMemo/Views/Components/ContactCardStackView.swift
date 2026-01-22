@@ -30,157 +30,20 @@ struct ContactCardStackView: View {
     private let pageSwipeVelocityThreshold: CGFloat = 800
     
     var body: some View {
+        let canHorizontalPage = contacts.count > 1
+        
         VStack(alignment: .leading, spacing: 8) {
             // Card Stack
-            ZStack {
-                if contacts.isEmpty {
-                    Text("无人脉信息")
-                        .foregroundColor(.gray)
-                        .frame(width: cardWidth, height: cardHeight)
-                        .background(Color.white)
-                        .cornerRadius(12)
+            Group {
+                if canHorizontalPage {
+                    cardStack
+                        // 横滑翻页：与日程一致（不阻塞长按），竖滑放行给外层 ScrollView
+                        .simultaneousGesture(horizontalPagingGesture)
                 } else {
-                    ForEach(0..<contacts.count, id: \.self) { index in
-                        // Calculate relative index for cyclic view
-                        let relativeIndex = getRelativeIndex(index)
-                        let focusScale: CGFloat = (index == currentIndex
-                                                   ? (showMenu ? 1.05 : (isPressingCurrentCard ? 0.985 : 1.0))
-                                                   : 1.0)
-                        let scale = getScale(relativeIndex) * focusScale
-                        
-                        // Only show relevant cards for performance
-                        if relativeIndex < 4 || relativeIndex == contacts.count - 1 {
-                            ContactCardView(contact: $contacts[index])
-                                .frame(width: cardWidth, height: cardHeight)
-                                .scaleEffect(scale)
-                                .rotationEffect(.degrees(getRotation(relativeIndex)))
-                                .offset(x: getOffsetX(relativeIndex), y: 0)
-                                .zIndex(getZIndex(relativeIndex))
-                                .shadow(color: Color.black.opacity(showMenu && index == currentIndex ? 0.14 : 0.10),
-                                        radius: showMenu && index == currentIndex ? 14 : 10,
-                                        x: 0,
-                                        y: showMenu && index == currentIndex ? 8 : 5)
-                                .animation(.spring(response: 0.28, dampingFraction: 0.78), value: isPressingCurrentCard)
-                                .animation(.spring(response: 0.35, dampingFraction: 0.72), value: showMenu)
-                                .contentShape(Rectangle())
-                                // 短按：未选中时打开详情；选中（菜单打开）时再次短按取消选中
-                                .onTapGesture {
-                                    guard index == currentIndex else { return }
-                                    if showMenu {
-                                        withAnimation { showMenu = false }
-                                        return
-                                    }
-                                    guard CACurrentMediaTime() - lastMenuOpenedAt > 0.18 else { return }
-                                    guard contacts.indices.contains(index) else { return }
-                                    // 🚫 废弃卡片不允许再打开详情，避免误编辑旧版本
-                                    guard !contacts[index].isObsolete else { return }
-                                    onOpenDetail?(contacts[index])
-                                }
-                                // 长按：打开胶囊菜单（与日程一致）
-                                .onLongPressGesture(
-                                    minimumDuration: 0.08,
-                                    maximumDistance: 28,
-                                    perform: {
-                                        guard !contacts[index].isObsolete else { return } // 🚫 废弃卡片不触发菜单
-                                        guard index == currentIndex else { return }
-                                        guard !showMenu else { return }
-                                        lastMenuOpenedAt = CACurrentMediaTime()
-                                        HapticFeedback.selection()
-                                        withAnimation(.spring(response: 0.26, dampingFraction: 0.82)) {
-                                            showMenu = true
-                                        }
-                                    },
-                                    onPressingChanged: { pressing in
-                                        guard !contacts[index].isObsolete else { return }
-                                        guard index == currentIndex else { return }
-                                        if showMenu { return }
-                                        isPressingCurrentCard = pressing
-                                    }
-                                )
-                                // 胶囊菜单（规格/位置与日程一致：左上角、半透明、offset -60）
-                                .overlay(alignment: .topLeading) {
-                                    if showMenu && index == currentIndex {
-                                        CardCapsuleMenuView(
-                                            onEdit: {
-                                                guard contacts.indices.contains(index) else { return }
-                                                let contact = contacts[index]
-                                                withAnimation { showMenu = false }
-                                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                                                    onOpenDetail?(contact)
-                                                }
-                                            },
-                                            onDelete: {
-                                                guard contacts.indices.contains(index) else { return }
-                                                let contact = contacts[index]
-                                                withAnimation { showMenu = false }
-                                                if let onDeleteRequest {
-                                                    onDeleteRequest(contact)
-                                                } else {
-                                                    withAnimation {
-                                                        contacts.remove(at: index)
-                                                        if contacts.isEmpty {
-                                                            currentIndex = 0
-                                                        } else {
-                                                            currentIndex = currentIndex % contacts.count
-                                                        }
-                                                    }
-                                                }
-                                            },
-                                            onDismiss: {
-                                                withAnimation { showMenu = false }
-                                            },
-                                            onRescanAsSchedule: {
-                                                guard contacts.indices.contains(index) else { return }
-                                                triggerRescanCreateSchedule(from: contacts[index])
-                                            },
-                                            onRescanAsContact: {
-                                                guard contacts.indices.contains(index) else { return }
-                                                triggerRescanCreateContact(from: contacts[index])
-                                            }
-                                        )
-                                        // 让胶囊跟随卡片缩放后的左边缘（默认缩放 anchor 是中心，leading 会向左/右移动半个增量）
-                                        .offset(x: -(cardWidth * (scale - 1) / 2), y: -60)
-                                        .transition(.opacity)
-                                        .zIndex(1000)
-                                    }
-                                }
-                                .allowsHitTesting(index == currentIndex)
-                        }
-                    }
+                    // 单张卡片：不响应左右滑动（避免卡片跟手位移/翻页），多张保持现有逻辑
+                    cardStack
                 }
             }
-            .frame(height: cardHeight + 20)
-            // 横滑翻页：与日程一致（不阻塞长按），竖滑放行给外层 ScrollView
-            .simultaneousGesture(
-                DragGesture(minimumDistance: 20)
-                    .onChanged { value in
-                        guard !contacts.isEmpty else { return }
-                        let dx = value.translation.width
-                        let dy = value.translation.height
-                        guard abs(dx) > abs(dy) else { return }
-                        isParentScrollDisabled = true
-                        dragOffset = CGSize(width: dx, height: 0)
-                        if showMenu { withAnimation { showMenu = false } }
-                    }
-                    .onEnded { value in
-                        defer {
-                            isParentScrollDisabled = false
-                            withAnimation(.spring()) { dragOffset = .zero }
-                        }
-                        guard !contacts.isEmpty else { return }
-                        let dx = value.translation.width
-                        let dy = value.translation.height
-                        guard abs(dx) > abs(dy) else { return }
-                        let vx = (value.predictedEndTranslation.width - dx) * 10 // 粗略速度量级
-                        withAnimation(.spring()) {
-                            if dx > pageSwipeDistanceThreshold || vx > pageSwipeVelocityThreshold {
-                                currentIndex = (currentIndex - 1 + contacts.count) % contacts.count
-                            } else if dx < -pageSwipeDistanceThreshold || vx < -pageSwipeVelocityThreshold {
-                                currentIndex = (currentIndex + 1) % contacts.count
-                            }
-                        }
-                    }
-            )
             
             // Pagination Dots
             if contacts.count > 1 {
@@ -198,6 +61,163 @@ struct ContactCardStackView: View {
             if showMenu { withAnimation { showMenu = false } }
             isPressingCurrentCard = false
         }
+    }
+    
+    private var cardStack: some View {
+        ZStack {
+            if contacts.isEmpty {
+                Text("无人脉信息")
+                    .foregroundColor(.gray)
+                    .frame(width: cardWidth, height: cardHeight)
+                    .background(Color.white)
+                    .cornerRadius(12)
+            } else {
+                ForEach(0..<contacts.count, id: \.self) { index in
+                    // Calculate relative index for cyclic view
+                    let relativeIndex = getRelativeIndex(index)
+                    let focusScale: CGFloat = (index == currentIndex
+                                               ? (showMenu ? 1.05 : (isPressingCurrentCard ? 0.985 : 1.0))
+                                               : 1.0)
+                    let scale = getScale(relativeIndex) * focusScale
+                    
+                    // Only show relevant cards for performance
+                    if relativeIndex < 4 || relativeIndex == contacts.count - 1 {
+                        ContactCardView(contact: $contacts[index])
+                            .frame(width: cardWidth, height: cardHeight)
+                            .scaleEffect(scale)
+                            .rotationEffect(.degrees(getRotation(relativeIndex)))
+                            .offset(x: getOffsetX(relativeIndex), y: 0)
+                            .zIndex(getZIndex(relativeIndex))
+                            .shadow(color: Color.black.opacity(showMenu && index == currentIndex ? 0.14 : 0.10),
+                                    radius: showMenu && index == currentIndex ? 14 : 10,
+                                    x: 0,
+                                    y: showMenu && index == currentIndex ? 8 : 5)
+                            .animation(.spring(response: 0.28, dampingFraction: 0.78), value: isPressingCurrentCard)
+                            .animation(.spring(response: 0.35, dampingFraction: 0.72), value: showMenu)
+                            .contentShape(Rectangle())
+                            // 短按：未选中时打开详情；选中（菜单打开）时再次短按取消选中
+                            .onTapGesture {
+                                guard index == currentIndex else { return }
+                                if showMenu {
+                                    withAnimation { showMenu = false }
+                                    return
+                                }
+                                guard CACurrentMediaTime() - lastMenuOpenedAt > 0.18 else { return }
+                                guard contacts.indices.contains(index) else { return }
+                                // 🚫 废弃卡片不允许再打开详情，避免误编辑旧版本
+                                guard !contacts[index].isObsolete else { return }
+                                onOpenDetail?(contacts[index])
+                            }
+                            // 长按：打开胶囊菜单（与日程一致）
+                            .onLongPressGesture(
+                                minimumDuration: 0.08,
+                                maximumDistance: 28,
+                                perform: {
+                                    guard !contacts[index].isObsolete else { return } // 🚫 废弃卡片不触发菜单
+                                    guard index == currentIndex else { return }
+                                    guard !showMenu else { return }
+                                    lastMenuOpenedAt = CACurrentMediaTime()
+                                    HapticFeedback.selection()
+                                    withAnimation(.spring(response: 0.26, dampingFraction: 0.82)) {
+                                        showMenu = true
+                                    }
+                                },
+                                onPressingChanged: { pressing in
+                                    guard !contacts[index].isObsolete else { return }
+                                    guard index == currentIndex else { return }
+                                    if showMenu { return }
+                                    isPressingCurrentCard = pressing
+                                }
+                            )
+                            // 胶囊菜单（规格/位置与日程一致：左上角、半透明、offset -60）
+                            .overlay(alignment: .topLeading) {
+                                if showMenu && index == currentIndex {
+                                    CardCapsuleMenuView(
+                                        onEdit: {
+                                            guard contacts.indices.contains(index) else { return }
+                                            let contact = contacts[index]
+                                            withAnimation { showMenu = false }
+                                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                                onOpenDetail?(contact)
+                                            }
+                                        },
+                                        onDelete: {
+                                            guard contacts.indices.contains(index) else { return }
+                                            let contact = contacts[index]
+                                            withAnimation { showMenu = false }
+                                            if let onDeleteRequest {
+                                                onDeleteRequest(contact)
+                                            } else {
+                                                withAnimation {
+                                                    contacts.remove(at: index)
+                                                    if contacts.isEmpty {
+                                                        currentIndex = 0
+                                                    } else {
+                                                        currentIndex = currentIndex % contacts.count
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        onDismiss: {
+                                            withAnimation { showMenu = false }
+                                        },
+                                        onRescanAsSchedule: {
+                                            guard contacts.indices.contains(index) else { return }
+                                            triggerRescanCreateSchedule(from: contacts[index])
+                                        },
+                                        onRescanAsContact: {
+                                            guard contacts.indices.contains(index) else { return }
+                                            triggerRescanCreateContact(from: contacts[index])
+                                        }
+                                    )
+                                    // 让胶囊跟随卡片缩放后的左边缘（默认缩放 anchor 是中心，leading 会向左/右移动半个增量）
+                                    .offset(x: -(cardWidth * (scale - 1) / 2), y: -60)
+                                    .transition(.opacity)
+                                    .zIndex(1000)
+                                }
+                            }
+                            .allowsHitTesting(index == currentIndex)
+                    }
+                }
+            }
+        }
+        .frame(height: cardHeight + 20)
+    }
+    
+    private var horizontalPagingGesture: some Gesture {
+        DragGesture(minimumDistance: 20)
+            .onChanged { value in
+                // 单张/空：不做任何横向响应
+                guard contacts.count > 1 else { return }
+                
+                let dx = value.translation.width
+                let dy = value.translation.height
+                guard abs(dx) > abs(dy) else { return }
+                isParentScrollDisabled = true
+                dragOffset = CGSize(width: dx, height: 0)
+                if showMenu { withAnimation { showMenu = false } }
+            }
+            .onEnded { value in
+                // 单张/空：不做任何横向响应
+                guard contacts.count > 1 else { return }
+                
+                defer {
+                    isParentScrollDisabled = false
+                    withAnimation(.spring()) { dragOffset = .zero }
+                }
+                guard !contacts.isEmpty else { return }
+                let dx = value.translation.width
+                let dy = value.translation.height
+                guard abs(dx) > abs(dy) else { return }
+                let vx = (value.predictedEndTranslation.width - dx) * 10 // 粗略速度量级
+                withAnimation(.spring()) {
+                    if dx > pageSwipeDistanceThreshold || vx > pageSwipeVelocityThreshold {
+                        currentIndex = (currentIndex - 1 + contacts.count) % contacts.count
+                    } else if dx < -pageSwipeDistanceThreshold || vx < -pageSwipeVelocityThreshold {
+                        currentIndex = (currentIndex + 1) % contacts.count
+                    }
+                }
+            }
     }
     
     // MARK: - Helper Functions
@@ -318,19 +338,6 @@ struct ContactCardLoadingStackView: View {
                     .shadow(color: Color.black.opacity(0.10), radius: 10, x: 0, y: 5)
             }
             .frame(height: cardHeight + 20)
-            // loading 卡片不需要翻页，但要与外层手势保持一致：一旦横向拖动，仍禁用外层滚动
-            .simultaneousGesture(
-                DragGesture(minimumDistance: 20)
-                    .onChanged { value in
-                        let dx = value.translation.width
-                        let dy = value.translation.height
-                        guard abs(dx) > abs(dy) else { return }
-                        isParentScrollDisabled = true
-                    }
-                    .onEnded { _ in
-                        isParentScrollDisabled = false
-                    }
-            )
         }
     }
 }

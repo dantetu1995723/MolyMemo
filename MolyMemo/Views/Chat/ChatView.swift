@@ -123,7 +123,6 @@ struct ChatView: View {
     
     var body: some View {
         GeometryReader { geometry in
-            let bottomAvoidHeight = max(bottomInputBaseHeight, inputTotalHeight)
             ZStack(alignment: .bottom) {
                 // 背景
                 backgroundView
@@ -136,9 +135,6 @@ struct ChatView: View {
                             LazyVStack(spacing: 24) {
                                 // 聊天内容
                                 normalChatContent
-                                
-                                // 底部垫高 (确保最后一条消息不被输入框遮挡)
-                                Color.clear.frame(height: 20)
                             }
                             .padding(.horizontal, 24)
                             .padding(.vertical, 10)
@@ -159,8 +155,15 @@ struct ChatView: View {
                             // 调整：紧凑布局后，高度从 96 减小到 84
                             Color.clear.frame(height: geometry.safeAreaInsets.top + 84)
                         }
-                        .safeAreaInset(edge: .bottom) {
-                            Color.clear.frame(height: bottomAvoidHeight)
+                        .safeAreaInset(edge: .bottom, spacing: 0) {
+                            ChatInputView(viewModel: inputViewModel, namespace: inputNamespace)
+                                .onPreferenceChange(ChatInputTotalHeightPreferenceKey.self) { h in
+                                    // 避免 0/异常值导致抖动；最少保持 baseHeight
+                                    let clamped = max(bottomInputBaseHeight, h)
+                                    if abs(inputTotalHeight - clamped) > 0.5 {
+                                        inputTotalHeight = clamped
+                                    }
+                                }
                         }
                         .onTapGesture {
                             #if DEBUG
@@ -201,40 +204,12 @@ struct ChatView: View {
                 }
                 .zIndex(0)
                 .ignoresSafeArea(edges: .top) // 让聊天区域延伸到顶部，通过 safeAreaInset 统一控制间距
-                // 裁剪 + 虚化聊天内容区域：
-                .mask(
-                    VStack(spacing: 0) {
-                        let fadeHeight: CGFloat = 20
-                        Color.white
-                        LinearGradient(
-                            gradient: Gradient(colors: [
-                                Color.white,
-                                Color.white.opacity(0.0)
-                            ]),
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                        .frame(height: fadeHeight)
-                        Color.clear.frame(height: bottomAvoidHeight)
-                    }
-                )
                 
-                // 2. 底部输入区域
-                ChatInputView(viewModel: inputViewModel, namespace: inputNamespace)
-                    .zIndex(101)
-                    .onPreferenceChange(ChatInputTotalHeightPreferenceKey.self) { h in
-                        // 避免 0/异常值导致抖动；最少保持 baseHeight
-                        let clamped = max(bottomInputBaseHeight, h)
-                        if abs(inputTotalHeight - clamped) > 0.5 {
-                            inputTotalHeight = clamped
-                        }
-                    }
-                
-                // 3. 首页通知栏展开时的全局蒙层
+                // 2. 首页通知栏展开时的全局蒙层
                 if isTodayScheduleExpanded {
                     Color.black.opacity(0.4)
                         .ignoresSafeArea()
-                        .zIndex(105) 
+                        .zIndex(105)
                         .transition(.opacity)
                         .onTapGesture {
                             withAnimation(.easeOut(duration: 0.2)) {
@@ -243,7 +218,7 @@ struct ChatView: View {
                         }
                 }
 
-                // 4. 顶部固定区域 (常驻顶部，不受蒙层影响)
+                // 3. 顶部固定区域 (常驻顶部，不受蒙层影响)
                 VStack(spacing: 0) {
                     VStack(spacing: 0) {
                         // 手动避让顶部安全区域（灵动岛/刘海）

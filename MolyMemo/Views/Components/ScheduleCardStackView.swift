@@ -32,65 +32,21 @@ struct ScheduleCardStackView: View {
     private let pageSwipeThreshold: CGFloat = 50
     
     var body: some View {
+        let canHorizontalPage = events.count > 1
+        
         VStack(alignment: .leading, spacing: 8) {
             // 卡片堆叠区域
-            ZStack {
-                if events.isEmpty {
-                    Text("无日程")
-                        .foregroundColor(.gray)
-                        .frame(width: cardWidth, height: cardHeight)
-                        .background(Color.white)
-                        .cornerRadius(12)
+            Group {
+                if canHorizontalPage {
+                    cardStack
+                        // 横滑翻页：用 DragGesture(minDistance: 20) 让竖滑先给 ScrollView
+                        // 关键：必须用 simultaneousGesture，不能用 gesture，否则会阻塞子视图的 onLongPressGesture（体感像“要等很久”）
+                        .simultaneousGesture(horizontalPagingGesture)
                 } else {
-                    ForEach(0..<events.count, id: \.self) { index in
-                        let relativeIndex = getRelativeIndex(index)
-                        
-                        if relativeIndex < 4 || relativeIndex == events.count - 1 {
-                            cardView(for: index, relativeIndex: relativeIndex)
-                        }
-                    }
+                    // 单张卡片：不响应左右滑动（避免卡片跟手位移/翻页），多张保持现有逻辑
+                    cardStack
                 }
             }
-            .frame(width: cardWidth, height: cardHeight)
-            .frame(height: cardHeight + 20)
-            // 横滑翻页：用 DragGesture(minimumDistance: 20) 让竖滑先给 ScrollView
-            // 关键：必须用 simultaneousGesture，不能用 gesture，否则会阻塞子视图的 onLongPressGesture（体感像“要等很久”）
-            .simultaneousGesture(
-                DragGesture(minimumDistance: 20)
-                    .onChanged { value in
-                        // 只处理横向意图
-                        let dx = value.translation.width
-                        let dy = value.translation.height
-                        guard abs(dx) > abs(dy) else { return }
-                        
-                        isParentScrollDisabled = true
-                        dragOffset = dx
-                        if showMenu { withAnimation { showMenu = false } }
-                    }
-                    .onEnded { value in
-                        defer {
-                            isParentScrollDisabled = false
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                dragOffset = 0
-                            }
-                        }
-                        
-                        let dx = value.translation.width
-                        let dy = value.translation.height
-                        guard abs(dx) > abs(dy) else { return }
-                        guard !events.isEmpty else { return }
-                        
-                        let velocity = value.predictedEndTranslation.width - dx
-                        
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                            if dx > pageSwipeThreshold || velocity > 200 {
-                                currentIndex = (currentIndex - 1 + events.count) % events.count
-                            } else if dx < -pageSwipeThreshold || velocity < -200 {
-                                currentIndex = (currentIndex + 1) % events.count
-                            }
-                        }
-                    }
-            )
             
             // Pagination Dots
             if events.count > 1 {
@@ -115,6 +71,71 @@ struct ScheduleCardStackView: View {
         .task(id: prefetchSignature) {
             await prefetchDetailsIfNeeded()
         }
+    }
+    
+    private var cardStack: some View {
+        ZStack {
+            if events.isEmpty {
+                Text("无日程")
+                    .foregroundColor(.gray)
+                    .frame(width: cardWidth, height: cardHeight)
+                    .background(Color.white)
+                    .cornerRadius(12)
+            } else {
+                ForEach(0..<events.count, id: \.self) { index in
+                    let relativeIndex = getRelativeIndex(index)
+                    
+                    if relativeIndex < 4 || relativeIndex == events.count - 1 {
+                        cardView(for: index, relativeIndex: relativeIndex)
+                    }
+                }
+            }
+        }
+        .frame(width: cardWidth, height: cardHeight)
+        .frame(height: cardHeight + 20)
+    }
+    
+    private var horizontalPagingGesture: some Gesture {
+        DragGesture(minimumDistance: 20)
+            .onChanged { value in
+                // 单张/空：不做任何横向响应
+                guard events.count > 1 else { return }
+                
+                // 只处理横向意图
+                let dx = value.translation.width
+                let dy = value.translation.height
+                guard abs(dx) > abs(dy) else { return }
+                
+                isParentScrollDisabled = true
+                dragOffset = dx
+                if showMenu { withAnimation { showMenu = false } }
+            }
+            .onEnded { value in
+                // 单张/空：不做任何横向响应
+                guard events.count > 1 else { return }
+                
+                defer {
+                    isParentScrollDisabled = false
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        dragOffset = 0
+                    }
+                }
+                
+                let dx = value.translation.width
+                let dy = value.translation.height
+                guard abs(dx) > abs(dy) else { return }
+                guard !events.isEmpty else { return }
+                
+                let velocity = value.predictedEndTranslation.width - dx
+                
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                    if dx > pageSwipeThreshold || velocity > 200 {
+                        currentIndex = (currentIndex - 1 + events.count) % events.count
+                    } else if dx < -pageSwipeThreshold || velocity < -200 {
+                        currentIndex = (currentIndex + 1) % events.count
+                    }
+                }
+            }
     }
     
     // MARK: - 单张卡片视图（含手势）
@@ -353,18 +374,6 @@ struct ScheduleCardLoadingStackView: View {
                     .shadow(color: Color.black.opacity(0.10), radius: 10, x: 0, y: 5)
             }
             .frame(height: cardHeight + 20)
-            .simultaneousGesture(
-                DragGesture(minimumDistance: 20)
-                    .onChanged { value in
-                        let dx = value.translation.width
-                        let dy = value.translation.height
-                        guard abs(dx) > abs(dy) else { return }
-                        isParentScrollDisabled = true
-                    }
-                    .onEnded { _ in
-                        isParentScrollDisabled = false
-                    }
-            )
         }
     }
 }

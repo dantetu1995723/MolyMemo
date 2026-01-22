@@ -54,6 +54,14 @@ struct ChatInputView: View {
                 if !isLocked && viewModel.inputText.isEmpty && viewModel.selectedImage == nil {
                     ToolboxButton(onTap: {
                         DebugProbe.log("ToolboxButton tapped")
+                        // 根治：点击工具箱前必须先收起键盘/清焦点。
+                        // 否则输入框仍保持 first responder，push 到工具箱再返回时键盘不会自动收回。
+                        if isFocused { isFocused = false }
+                        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                        // 进入工具箱时顺带收起附加面板，避免返回后出现“键盘 + 面板”叠加态。
+                        if viewModel.showMenu {
+                            withAnimation { viewModel.showMenu = false }
+                        }
                         viewModel.onBoxTap?()
                     })
                         .opacity(viewModel.isRecording ? 0 : 1)
