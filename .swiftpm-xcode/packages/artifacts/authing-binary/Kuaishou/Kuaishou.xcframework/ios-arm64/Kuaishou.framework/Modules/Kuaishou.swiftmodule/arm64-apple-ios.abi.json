@@ -1,0 +1,1074 @@
+{
+  "ABIRoot": {
+    "kind": "Root",
+    "name": "TopLevel",
+    "printedName": "TopLevel",
+    "children": [
+      {
+        "kind": "Import",
+        "name": "Foundation",
+        "printedName": "Foundation",
+        "declKind": "Import",
+        "moduleName": "Kuaishou",
+        "declAttributes": [
+          "RawDocComment"
+        ]
+      },
+      {
+        "kind": "Import",
+        "name": "Guard",
+        "printedName": "Guard",
+        "declKind": "Import",
+        "moduleName": "Kuaishou"
+      },
+      {
+        "kind": "TypeDecl",
+        "name": "Kuaishou",
+        "printedName": "Kuaishou",
+        "children": [
+          {
+            "kind": "Function",
+            "name": "register",
+            "printedName": "register(appId:universalLink:)",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Void",
+                "printedName": "()"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "String",
+                "printedName": "Swift.String",
+                "usr": "s:SS"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "String",
+                "printedName": "Swift.String",
+                "usr": "s:SS"
+              }
+            ],
+            "declKind": "Func",
+            "usr": "s:8KuaishouAAC8register5appId13universalLinkySS_SStFZ",
+            "mangledName": "$s8KuaishouAAC8register5appId13universalLinkySS_SStFZ",
+            "moduleName": "Kuaishou",
+            "static": true,
+            "declAttributes": [
+              "Final",
+              "AccessControl"
+            ],
+            "funcSelfKind": "NonMutating"
+          },
+          {
+            "kind": "Function",
+            "name": "handleOpenUniversalLink",
+            "printedName": "handleOpenUniversalLink(_:)",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Bool",
+                "printedName": "Swift.Bool",
+                "usr": "s:Sb"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "NSUserActivity",
+                "printedName": "Foundation.NSUserActivity",
+                "usr": "c:objc(cs)NSUserActivity"
+              }
+            ],
+            "declKind": "Func",
+            "usr": "s:8KuaishouAAC23handleOpenUniversalLinkySbSo14NSUserActivityCFZ",
+            "mangledName": "$s8KuaishouAAC23handleOpenUniversalLinkySbSo14NSUserActivityCFZ",
+            "moduleName": "Kuaishou",
+            "static": true,
+            "declAttributes": [
+              "Final",
+              "AccessControl"
+            ],
+            "funcSelfKind": "NonMutating"
+          },
+          {
+            "kind": "Function",
+            "name": "handleOpenUrl",
+            "printedName": "handleOpenUrl(url:)",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Bool",
+                "printedName": "Swift.Bool",
+                "usr": "s:Sb"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "URL",
+                "printedName": "Foundation.URL",
+                "usr": "s:10Foundation3URLV"
+              }
+            ],
+            "declKind": "Func",
+            "usr": "s:8KuaishouAAC13handleOpenUrl3urlSb10Foundation3URLV_tFZ",
+            "mangledName": "$s8KuaishouAAC13handleOpenUrl3urlSb10Foundation3URLV_tFZ",
+            "moduleName": "Kuaishou",
+            "static": true,
+            "declAttributes": [
+              "Final",
+              "AccessControl"
+            ],
+            "funcSelfKind": "NonMutating"
+          },
+          {
+            "kind": "Function",
+            "name": "login",
+            "printedName": "login(viewController:_:completion:)",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Void",
+                "printedName": "()"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "UIViewController",
+                "printedName": "UIKit.UIViewController",
+                "usr": "c:objc(cs)UIViewController"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "String",
+                "printedName": "Swift.String",
+                "hasDefaultArg": true,
+                "usr": "s:SS"
+              },
+              {
+                "kind": "TypeFunc",
+                "name": "Function",
+                "printedName": "(Swift.Int, Swift.String?, Guard.UserInfo?) -> ()",
+                "children": [
+                  {
+                    "kind": "TypeNominal",
+                    "name": "Void",
+                    "printedName": "()"
+                  },
+                  {
+                    "kind": "TypeNominal",
+                    "name": "Tuple",
+                    "printedName": "(Swift.Int, Swift.String?, Guard.UserInfo?)",
+                    "children": [
+                      {
+                        "kind": "TypeNominal",
+                        "name": "Int",
+                        "printedName": "Swift.Int",
+                        "usr": "s:Si"
+                      },
+                      {
+                        "kind": "TypeNominal",
+                        "name": "Optional",
+                        "printedName": "Swift.String?",
+                        "children": [
+                          {
+                            "kind": "TypeNominal",
+                            "name": "String",
+                            "printedName": "Swift.String",
+                            "usr": "s:SS"
+                          }
+                        ],
+                        "usr": "s:Sq"
+                      },
+                      {
+                        "kind": "TypeNominal",
+                        "name": "Optional",
+                        "printedName": "Guard.UserInfo?",
+                        "children": [
+                          {
+                            "kind": "TypeNominal",
+                            "name": "UserInfo",
+                            "printedName": "Guard.UserInfo",
+                            "usr": "c:@M@Guard@objc(cs)UserInfo"
+                          }
+                        ],
+                        "usr": "s:Sq"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "declKind": "Func",
+            "usr": "s:8KuaishouAAC5login14viewController_10completionySo06UIViewD0C_SSySi_SSSg5Guard8UserInfoCSgtctFZ",
+            "mangledName": "$s8KuaishouAAC5login14viewController_10completionySo06UIViewD0C_SSySi_SSSg5Guard8UserInfoCSgtctFZ",
+            "moduleName": "Kuaishou",
+            "static": true,
+            "declAttributes": [
+              "Final",
+              "AccessControl"
+            ],
+            "funcSelfKind": "NonMutating"
+          },
+          {
+            "kind": "Constructor",
+            "name": "init",
+            "printedName": "init()",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Kuaishou",
+                "printedName": "Kuaishou.Kuaishou",
+                "usr": "s:8KuaishouAAC"
+              }
+            ],
+            "declKind": "Constructor",
+            "usr": "s:8KuaishouAACABycfc",
+            "mangledName": "$s8KuaishouAACABycfc",
+            "moduleName": "Kuaishou",
+            "implicit": true,
+            "init_kind": "Designated"
+          }
+        ],
+        "declKind": "Class",
+        "usr": "s:8KuaishouAAC",
+        "mangledName": "$s8KuaishouAAC",
+        "moduleName": "Kuaishou",
+        "isOpen": true,
+        "declAttributes": [
+          "AccessControl"
+        ],
+        "hasMissingDesignatedInitializers": true
+      },
+      {
+        "kind": "Import",
+        "name": "Foundation",
+        "printedName": "Foundation",
+        "declKind": "Import",
+        "moduleName": "Kuaishou",
+        "declAttributes": [
+          "RawDocComment"
+        ]
+      },
+      {
+        "kind": "Import",
+        "name": "Guard",
+        "printedName": "Guard",
+        "declKind": "Import",
+        "moduleName": "Kuaishou"
+      },
+      {
+        "kind": "TypeDecl",
+        "name": "KuaishouSinInDelegate",
+        "printedName": "KuaishouSinInDelegate",
+        "children": [
+          {
+            "kind": "Var",
+            "name": "shared",
+            "printedName": "shared",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "KuaishouSinInDelegate",
+                "printedName": "Kuaishou.KuaishouSinInDelegate",
+                "usr": "c:@M@Kuaishou@objc(cs)KuaishouSinInDelegate"
+              }
+            ],
+            "declKind": "Var",
+            "usr": "c:@M@Kuaishou@objc(cs)KuaishouSinInDelegate(cpy)shared",
+            "mangledName": "$s8Kuaishou0A13SinInDelegateC6sharedACvpZ",
+            "moduleName": "Kuaishou",
+            "static": true,
+            "declAttributes": [
+              "HasInitialValue",
+              "Final",
+              "HasStorage",
+              "AccessControl",
+              "ObjC"
+            ],
+            "isLet": true,
+            "hasStorage": true,
+            "accessors": [
+              {
+                "kind": "Accessor",
+                "name": "Get",
+                "printedName": "Get()",
+                "children": [
+                  {
+                    "kind": "TypeNominal",
+                    "name": "KuaishouSinInDelegate",
+                    "printedName": "Kuaishou.KuaishouSinInDelegate",
+                    "usr": "c:@M@Kuaishou@objc(cs)KuaishouSinInDelegate"
+                  }
+                ],
+                "declKind": "Accessor",
+                "usr": "c:@M@Kuaishou@objc(cs)KuaishouSinInDelegate(cm)shared",
+                "mangledName": "$s8Kuaishou0A13SinInDelegateC6sharedACvgZ",
+                "moduleName": "Kuaishou",
+                "static": true,
+                "implicit": true,
+                "declAttributes": [
+                  "Final",
+                  "ObjC"
+                ],
+                "accessorKind": "get"
+              }
+            ]
+          },
+          {
+            "kind": "Var",
+            "name": "receiveCallBack",
+            "printedName": "receiveCallBack",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Optional",
+                "printedName": "((Swift.Int, Swift.String?, Guard.UserInfo?) -> ())?",
+                "children": [
+                  {
+                    "kind": "TypeFunc",
+                    "name": "Function",
+                    "printedName": "(Swift.Int, Swift.String?, Guard.UserInfo?) -> ()",
+                    "children": [
+                      {
+                        "kind": "TypeNominal",
+                        "name": "Void",
+                        "printedName": "()"
+                      },
+                      {
+                        "kind": "TypeNominal",
+                        "name": "Tuple",
+                        "printedName": "(Swift.Int, Swift.String?, Guard.UserInfo?)",
+                        "children": [
+                          {
+                            "kind": "TypeNominal",
+                            "name": "Int",
+                            "printedName": "Swift.Int",
+                            "usr": "s:Si"
+                          },
+                          {
+                            "kind": "TypeNominal",
+                            "name": "Optional",
+                            "printedName": "Swift.String?",
+                            "children": [
+                              {
+                                "kind": "TypeNominal",
+                                "name": "String",
+                                "printedName": "Swift.String",
+                                "usr": "s:SS"
+                              }
+                            ],
+                            "usr": "s:Sq"
+                          },
+                          {
+                            "kind": "TypeNominal",
+                            "name": "Optional",
+                            "printedName": "Guard.UserInfo?",
+                            "children": [
+                              {
+                                "kind": "TypeNominal",
+                                "name": "UserInfo",
+                                "printedName": "Guard.UserInfo",
+                                "usr": "c:@M@Guard@objc(cs)UserInfo"
+                              }
+                            ],
+                            "usr": "s:Sq"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ],
+                "usr": "s:Sq"
+              }
+            ],
+            "declKind": "Var",
+            "usr": "s:8Kuaishou0A13SinInDelegateC15receiveCallBackySi_SSSg5Guard8UserInfoCSgtcSgvp",
+            "mangledName": "$s8Kuaishou0A13SinInDelegateC15receiveCallBackySi_SSSg5Guard8UserInfoCSgtcSgvp",
+            "moduleName": "Kuaishou",
+            "isOpen": true,
+            "declAttributes": [
+              "HasInitialValue",
+              "HasStorage"
+            ],
+            "fixedbinaryorder": 0,
+            "hasStorage": true,
+            "accessors": [
+              {
+                "kind": "Accessor",
+                "name": "Get",
+                "printedName": "Get()",
+                "children": [
+                  {
+                    "kind": "TypeNominal",
+                    "name": "Optional",
+                    "printedName": "((Swift.Int, Swift.String?, Guard.UserInfo?) -> ())?",
+                    "children": [
+                      {
+                        "kind": "TypeFunc",
+                        "name": "Function",
+                        "printedName": "(Swift.Int, Swift.String?, Guard.UserInfo?) -> ()",
+                        "children": [
+                          {
+                            "kind": "TypeNominal",
+                            "name": "Void",
+                            "printedName": "()"
+                          },
+                          {
+                            "kind": "TypeNominal",
+                            "name": "Tuple",
+                            "printedName": "(Swift.Int, Swift.String?, Guard.UserInfo?)",
+                            "children": [
+                              {
+                                "kind": "TypeNominal",
+                                "name": "Int",
+                                "printedName": "Swift.Int",
+                                "usr": "s:Si"
+                              },
+                              {
+                                "kind": "TypeNominal",
+                                "name": "Optional",
+                                "printedName": "Swift.String?",
+                                "children": [
+                                  {
+                                    "kind": "TypeNominal",
+                                    "name": "String",
+                                    "printedName": "Swift.String",
+                                    "usr": "s:SS"
+                                  }
+                                ],
+                                "usr": "s:Sq"
+                              },
+                              {
+                                "kind": "TypeNominal",
+                                "name": "Optional",
+                                "printedName": "Guard.UserInfo?",
+                                "children": [
+                                  {
+                                    "kind": "TypeNominal",
+                                    "name": "UserInfo",
+                                    "printedName": "Guard.UserInfo",
+                                    "usr": "c:@M@Guard@objc(cs)UserInfo"
+                                  }
+                                ],
+                                "usr": "s:Sq"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ],
+                    "usr": "s:Sq"
+                  }
+                ],
+                "declKind": "Accessor",
+                "usr": "s:8Kuaishou0A13SinInDelegateC15receiveCallBackySi_SSSg5Guard8UserInfoCSgtcSgvg",
+                "mangledName": "$s8Kuaishou0A13SinInDelegateC15receiveCallBackySi_SSSg5Guard8UserInfoCSgtcSgvg",
+                "moduleName": "Kuaishou",
+                "implicit": true,
+                "isOpen": true,
+                "accessorKind": "get"
+              },
+              {
+                "kind": "Accessor",
+                "name": "Set",
+                "printedName": "Set()",
+                "children": [
+                  {
+                    "kind": "TypeNominal",
+                    "name": "Void",
+                    "printedName": "()"
+                  },
+                  {
+                    "kind": "TypeNominal",
+                    "name": "Optional",
+                    "printedName": "((Swift.Int, Swift.String?, Guard.UserInfo?) -> ())?",
+                    "children": [
+                      {
+                        "kind": "TypeFunc",
+                        "name": "Function",
+                        "printedName": "(Swift.Int, Swift.String?, Guard.UserInfo?) -> ()",
+                        "children": [
+                          {
+                            "kind": "TypeNominal",
+                            "name": "Void",
+                            "printedName": "()"
+                          },
+                          {
+                            "kind": "TypeNominal",
+                            "name": "Tuple",
+                            "printedName": "(Swift.Int, Swift.String?, Guard.UserInfo?)",
+                            "children": [
+                              {
+                                "kind": "TypeNominal",
+                                "name": "Int",
+                                "printedName": "Swift.Int",
+                                "usr": "s:Si"
+                              },
+                              {
+                                "kind": "TypeNominal",
+                                "name": "Optional",
+                                "printedName": "Swift.String?",
+                                "children": [
+                                  {
+                                    "kind": "TypeNominal",
+                                    "name": "String",
+                                    "printedName": "Swift.String",
+                                    "usr": "s:SS"
+                                  }
+                                ],
+                                "usr": "s:Sq"
+                              },
+                              {
+                                "kind": "TypeNominal",
+                                "name": "Optional",
+                                "printedName": "Guard.UserInfo?",
+                                "children": [
+                                  {
+                                    "kind": "TypeNominal",
+                                    "name": "UserInfo",
+                                    "printedName": "Guard.UserInfo",
+                                    "usr": "c:@M@Guard@objc(cs)UserInfo"
+                                  }
+                                ],
+                                "usr": "s:Sq"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ],
+                    "usr": "s:Sq"
+                  }
+                ],
+                "declKind": "Accessor",
+                "usr": "s:8Kuaishou0A13SinInDelegateC15receiveCallBackySi_SSSg5Guard8UserInfoCSgtcSgvs",
+                "mangledName": "$s8Kuaishou0A13SinInDelegateC15receiveCallBackySi_SSSg5Guard8UserInfoCSgtcSgvs",
+                "moduleName": "Kuaishou",
+                "implicit": true,
+                "isOpen": true,
+                "accessorKind": "set"
+              },
+              {
+                "kind": "Accessor",
+                "name": "Modify",
+                "printedName": "Modify()",
+                "children": [
+                  {
+                    "kind": "TypeNominal",
+                    "name": "Void",
+                    "printedName": "()"
+                  }
+                ],
+                "declKind": "Accessor",
+                "usr": "s:8Kuaishou0A13SinInDelegateC15receiveCallBackySi_SSSg5Guard8UserInfoCSgtcSgvM",
+                "mangledName": "$s8Kuaishou0A13SinInDelegateC15receiveCallBackySi_SSSg5Guard8UserInfoCSgtcSgvM",
+                "moduleName": "Kuaishou",
+                "implicit": true,
+                "isOpen": true,
+                "accessorKind": "_modify"
+              }
+            ]
+          },
+          {
+            "kind": "Var",
+            "name": "authViewController",
+            "printedName": "authViewController",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "ImplicitlyUnwrappedOptional",
+                "printedName": "Guard.AuthViewController?",
+                "children": [
+                  {
+                    "kind": "TypeNominal",
+                    "name": "AuthViewController",
+                    "printedName": "Guard.AuthViewController",
+                    "usr": "c:@M@Guard@objc(cs)AuthViewController"
+                  }
+                ],
+                "usr": "s:Sq"
+              }
+            ],
+            "declKind": "Var",
+            "usr": "s:8Kuaishou0A13SinInDelegateC18authViewController33_12A9B39ED00945EFC14CE169FF610877LL5Guard04AuthfG0CSgvp",
+            "mangledName": "$s8Kuaishou0A13SinInDelegateC18authViewController33_12A9B39ED00945EFC14CE169FF610877LL5Guard04AuthfG0CSgvp",
+            "moduleName": "Kuaishou",
+            "isInternal": true,
+            "declAttributes": [
+              "HasInitialValue",
+              "HasStorage",
+              "AccessControl"
+            ],
+            "fixedbinaryorder": 1,
+            "hasStorage": true
+          },
+          {
+            "kind": "Function",
+            "name": "register",
+            "printedName": "register(appId:universalLink:)",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Void",
+                "printedName": "()"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "String",
+                "printedName": "Swift.String",
+                "usr": "s:SS"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "String",
+                "printedName": "Swift.String",
+                "usr": "s:SS"
+              }
+            ],
+            "declKind": "Func",
+            "usr": "s:8Kuaishou0A13SinInDelegateC8register5appId13universalLinkySS_SStF",
+            "mangledName": "$s8Kuaishou0A13SinInDelegateC8register5appId13universalLinkySS_SStF",
+            "moduleName": "Kuaishou",
+            "isOpen": true,
+            "declAttributes": [
+              "AccessControl"
+            ],
+            "funcSelfKind": "NonMutating"
+          },
+          {
+            "kind": "Function",
+            "name": "handleOpenUniversalLink",
+            "printedName": "handleOpenUniversalLink(_:)",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Bool",
+                "printedName": "Swift.Bool",
+                "usr": "s:Sb"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "NSUserActivity",
+                "printedName": "Foundation.NSUserActivity",
+                "usr": "c:objc(cs)NSUserActivity"
+              }
+            ],
+            "declKind": "Func",
+            "usr": "s:8Kuaishou0A13SinInDelegateC23handleOpenUniversalLinkySbSo14NSUserActivityCF",
+            "mangledName": "$s8Kuaishou0A13SinInDelegateC23handleOpenUniversalLinkySbSo14NSUserActivityCF",
+            "moduleName": "Kuaishou",
+            "isOpen": true,
+            "declAttributes": [
+              "AccessControl"
+            ],
+            "funcSelfKind": "NonMutating"
+          },
+          {
+            "kind": "Function",
+            "name": "handleOpenUrl",
+            "printedName": "handleOpenUrl(url:)",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Bool",
+                "printedName": "Swift.Bool",
+                "usr": "s:Sb"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "URL",
+                "printedName": "Foundation.URL",
+                "usr": "s:10Foundation3URLV"
+              }
+            ],
+            "declKind": "Func",
+            "usr": "s:8Kuaishou0A13SinInDelegateC13handleOpenUrl3urlSb10Foundation3URLV_tF",
+            "mangledName": "$s8Kuaishou0A13SinInDelegateC13handleOpenUrl3urlSb10Foundation3URLV_tF",
+            "moduleName": "Kuaishou",
+            "isOpen": true,
+            "declAttributes": [
+              "AccessControl"
+            ],
+            "funcSelfKind": "NonMutating"
+          },
+          {
+            "kind": "Function",
+            "name": "login",
+            "printedName": "login(viewController:_:completion:)",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Void",
+                "printedName": "()"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "UIViewController",
+                "printedName": "UIKit.UIViewController",
+                "usr": "c:objc(cs)UIViewController"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "String",
+                "printedName": "Swift.String",
+                "hasDefaultArg": true,
+                "usr": "s:SS"
+              },
+              {
+                "kind": "TypeFunc",
+                "name": "Function",
+                "printedName": "(Swift.Int, Swift.String?, Guard.UserInfo?) -> ()",
+                "children": [
+                  {
+                    "kind": "TypeNominal",
+                    "name": "Void",
+                    "printedName": "()"
+                  },
+                  {
+                    "kind": "TypeNominal",
+                    "name": "Tuple",
+                    "printedName": "(Swift.Int, Swift.String?, Guard.UserInfo?)",
+                    "children": [
+                      {
+                        "kind": "TypeNominal",
+                        "name": "Int",
+                        "printedName": "Swift.Int",
+                        "usr": "s:Si"
+                      },
+                      {
+                        "kind": "TypeNominal",
+                        "name": "Optional",
+                        "printedName": "Swift.String?",
+                        "children": [
+                          {
+                            "kind": "TypeNominal",
+                            "name": "String",
+                            "printedName": "Swift.String",
+                            "usr": "s:SS"
+                          }
+                        ],
+                        "usr": "s:Sq"
+                      },
+                      {
+                        "kind": "TypeNominal",
+                        "name": "Optional",
+                        "printedName": "Guard.UserInfo?",
+                        "children": [
+                          {
+                            "kind": "TypeNominal",
+                            "name": "UserInfo",
+                            "printedName": "Guard.UserInfo",
+                            "usr": "c:@M@Guard@objc(cs)UserInfo"
+                          }
+                        ],
+                        "usr": "s:Sq"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "declKind": "Func",
+            "usr": "s:8Kuaishou0A13SinInDelegateC5login14viewController_10completionySo06UIViewG0C_SSySi_SSSg5Guard8UserInfoCSgtctF",
+            "mangledName": "$s8Kuaishou0A13SinInDelegateC5login14viewController_10completionySo06UIViewG0C_SSySi_SSSg5Guard8UserInfoCSgtctF",
+            "moduleName": "Kuaishou",
+            "isOpen": true,
+            "declAttributes": [
+              "AccessControl"
+            ],
+            "funcSelfKind": "NonMutating"
+          },
+          {
+            "kind": "Function",
+            "name": "ksApiDidReceive",
+            "printedName": "ksApiDidReceive(_:)",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Void",
+                "printedName": "()"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "KSBaseResponse",
+                "printedName": "Kuaishou.KSBaseResponse",
+                "usr": "c:objc(cs)KSBaseResponse"
+              }
+            ],
+            "declKind": "Func",
+            "usr": "c:@M@Kuaishou@objc(cs)KuaishouSinInDelegate(im)ksApiDidReceiveResponse:",
+            "mangledName": "$s8Kuaishou0A13SinInDelegateC15ksApiDidReceiveyySo14KSBaseResponseCF",
+            "moduleName": "Kuaishou",
+            "isOpen": true,
+            "objc_name": "ksApiDidReceiveResponse:",
+            "declAttributes": [
+              "ObjC"
+            ],
+            "funcSelfKind": "NonMutating"
+          }
+        ],
+        "declKind": "Class",
+        "usr": "c:@M@Kuaishou@objc(cs)KuaishouSinInDelegate",
+        "mangledName": "$s8Kuaishou0A13SinInDelegateC",
+        "moduleName": "Kuaishou",
+        "isOpen": true,
+        "declAttributes": [
+          "ObjC"
+        ],
+        "superclassUsr": "c:objc(cs)NSObject",
+        "inheritsConvenienceInitializers": true,
+        "superclassNames": [
+          "ObjectiveC.NSObject"
+        ],
+        "conformances": [
+          {
+            "kind": "Conformance",
+            "name": "Equatable",
+            "printedName": "Equatable",
+            "usr": "s:SQ",
+            "mangledName": "$sSQ"
+          },
+          {
+            "kind": "Conformance",
+            "name": "Hashable",
+            "printedName": "Hashable",
+            "usr": "s:SH",
+            "mangledName": "$sSH"
+          },
+          {
+            "kind": "Conformance",
+            "name": "CVarArg",
+            "printedName": "CVarArg",
+            "usr": "s:s7CVarArgP",
+            "mangledName": "$ss7CVarArgP"
+          },
+          {
+            "kind": "Conformance",
+            "name": "_KeyValueCodingAndObservingPublishing",
+            "printedName": "_KeyValueCodingAndObservingPublishing",
+            "usr": "s:10Foundation37_KeyValueCodingAndObservingPublishingP",
+            "mangledName": "$s10Foundation37_KeyValueCodingAndObservingPublishingP"
+          },
+          {
+            "kind": "Conformance",
+            "name": "_KeyValueCodingAndObserving",
+            "printedName": "_KeyValueCodingAndObserving",
+            "usr": "s:10Foundation27_KeyValueCodingAndObservingP",
+            "mangledName": "$s10Foundation27_KeyValueCodingAndObservingP"
+          },
+          {
+            "kind": "Conformance",
+            "name": "CustomStringConvertible",
+            "printedName": "CustomStringConvertible",
+            "usr": "s:s23CustomStringConvertibleP",
+            "mangledName": "$ss23CustomStringConvertibleP"
+          },
+          {
+            "kind": "Conformance",
+            "name": "CustomDebugStringConvertible",
+            "printedName": "CustomDebugStringConvertible",
+            "usr": "s:s28CustomDebugStringConvertibleP",
+            "mangledName": "$ss28CustomDebugStringConvertibleP"
+          }
+        ]
+      },
+      {
+        "kind": "Import",
+        "name": "Foundation",
+        "printedName": "Foundation",
+        "declKind": "Import",
+        "moduleName": "Kuaishou",
+        "declAttributes": [
+          "RawDocComment"
+        ]
+      },
+      {
+        "kind": "Import",
+        "name": "Guard",
+        "printedName": "Guard",
+        "declKind": "Import",
+        "moduleName": "Kuaishou"
+      },
+      {
+        "kind": "TypeDecl",
+        "name": "KuaishouLoginButton",
+        "printedName": "KuaishouLoginButton",
+        "children": [
+          {
+            "kind": "Constructor",
+            "name": "init",
+            "printedName": "init(frame:)",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "KuaishouLoginButton",
+                "printedName": "Kuaishou.KuaishouLoginButton",
+                "usr": "c:@M@Kuaishou@objc(cs)KuaishouLoginButton"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "CGRect",
+                "printedName": "CoreFoundation.CGRect",
+                "usr": "c:@S@CGRect"
+              }
+            ],
+            "declKind": "Constructor",
+            "usr": "c:@M@Kuaishou@objc(cs)KuaishouLoginButton(im)initWithFrame:",
+            "mangledName": "$s8Kuaishou0A11LoginButtonC5frameACSo6CGRectV_tcfc",
+            "moduleName": "Kuaishou",
+            "overriding": true,
+            "objc_name": "initWithFrame:",
+            "declAttributes": [
+              "Dynamic",
+              "ObjC",
+              "Custom",
+              "Override",
+              "AccessControl"
+            ],
+            "init_kind": "Designated"
+          },
+          {
+            "kind": "Constructor",
+            "name": "init",
+            "printedName": "init(coder:)",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Optional",
+                "printedName": "Kuaishou.KuaishouLoginButton?",
+                "children": [
+                  {
+                    "kind": "TypeNominal",
+                    "name": "KuaishouLoginButton",
+                    "printedName": "Kuaishou.KuaishouLoginButton",
+                    "usr": "c:@M@Kuaishou@objc(cs)KuaishouLoginButton"
+                  }
+                ],
+                "usr": "s:Sq"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "NSCoder",
+                "printedName": "Foundation.NSCoder",
+                "usr": "c:objc(cs)NSCoder"
+              }
+            ],
+            "declKind": "Constructor",
+            "usr": "c:@M@Kuaishou@objc(cs)KuaishouLoginButton(im)initWithCoder:",
+            "mangledName": "$s8Kuaishou0A11LoginButtonC5coderACSgSo7NSCoderC_tcfc",
+            "moduleName": "Kuaishou",
+            "overriding": true,
+            "objc_name": "initWithCoder:",
+            "declAttributes": [
+              "Dynamic",
+              "ObjC",
+              "Custom",
+              "AccessControl",
+              "Required"
+            ],
+            "init_kind": "Designated"
+          }
+        ],
+        "declKind": "Class",
+        "usr": "c:@M@Kuaishou@objc(cs)KuaishouLoginButton",
+        "mangledName": "$s8Kuaishou0A11LoginButtonC",
+        "moduleName": "Kuaishou",
+        "isOpen": true,
+        "declAttributes": [
+          "Custom",
+          "ObjC"
+        ],
+        "superclassUsr": "c:@M@Guard@objc(cs)SocialLoginButton",
+        "inheritsConvenienceInitializers": true,
+        "superclassNames": [
+          "Guard.SocialLoginButton",
+          "Guard.Button",
+          "UIKit.UIButton",
+          "UIKit.UIControl",
+          "UIKit.UIView",
+          "UIKit.UIResponder",
+          "ObjectiveC.NSObject"
+        ],
+        "conformances": [
+          {
+            "kind": "Conformance",
+            "name": "AttributedViewProtocol",
+            "printedName": "AttributedViewProtocol",
+            "usr": "s:5Guard22AttributedViewProtocolP",
+            "mangledName": "$s5Guard22AttributedViewProtocolP"
+          },
+          {
+            "kind": "Conformance",
+            "name": "Equatable",
+            "printedName": "Equatable",
+            "usr": "s:SQ",
+            "mangledName": "$sSQ"
+          },
+          {
+            "kind": "Conformance",
+            "name": "Hashable",
+            "printedName": "Hashable",
+            "usr": "s:SH",
+            "mangledName": "$sSH"
+          },
+          {
+            "kind": "Conformance",
+            "name": "CVarArg",
+            "printedName": "CVarArg",
+            "usr": "s:s7CVarArgP",
+            "mangledName": "$ss7CVarArgP"
+          },
+          {
+            "kind": "Conformance",
+            "name": "_KeyValueCodingAndObservingPublishing",
+            "printedName": "_KeyValueCodingAndObservingPublishing",
+            "usr": "s:10Foundation37_KeyValueCodingAndObservingPublishingP",
+            "mangledName": "$s10Foundation37_KeyValueCodingAndObservingPublishingP"
+          },
+          {
+            "kind": "Conformance",
+            "name": "_KeyValueCodingAndObserving",
+            "printedName": "_KeyValueCodingAndObserving",
+            "usr": "s:10Foundation27_KeyValueCodingAndObservingP",
+            "mangledName": "$s10Foundation27_KeyValueCodingAndObservingP"
+          },
+          {
+            "kind": "Conformance",
+            "name": "CustomStringConvertible",
+            "printedName": "CustomStringConvertible",
+            "usr": "s:s23CustomStringConvertibleP",
+            "mangledName": "$ss23CustomStringConvertibleP"
+          },
+          {
+            "kind": "Conformance",
+            "name": "CustomDebugStringConvertible",
+            "printedName": "CustomDebugStringConvertible",
+            "usr": "s:s28CustomDebugStringConvertibleP",
+            "mangledName": "$ss28CustomDebugStringConvertibleP"
+          },
+          {
+            "kind": "Conformance",
+            "name": "__DefaultCustomPlaygroundQuickLookable",
+            "printedName": "__DefaultCustomPlaygroundQuickLookable",
+            "usr": "s:s38__DefaultCustomPlaygroundQuickLookableP",
+            "mangledName": "$ss38__DefaultCustomPlaygroundQuickLookableP"
+          }
+        ]
+      }
+    ],
+    "json_format_version": 8
+  },
+  "ConstValues": [
+    {
+      "filePath": "\/Users\/JN\/Documents\/Authing\/guard-ios-demo\/Kuaishou\/Kuaishou\/Kuaishou.swift",
+      "kind": "StringLiteral",
+      "offset": 701,
+      "length": 11,
+      "value": "\"user_info\""
+    },
+    {
+      "filePath": "\/Users\/JN\/Documents\/Authing\/guard-ios-demo\/Kuaishou\/Kuaishou\/KuaishouSinInDelegate.swift",
+      "kind": "StringLiteral",
+      "offset": 865,
+      "length": 11,
+      "value": "\"user_info\""
+    }
+  ]
+}

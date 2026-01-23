@@ -1,0 +1,27 @@
+// swift-interface-format-version: 1.0
+// swift-compiler-version: Apple Swift version 5.7.2 (swiftlang-5.7.2.135.5 clang-1400.0.29.51)
+// swift-module-flags: -target arm64-apple-ios11.4 -enable-objc-interop -enable-library-evolution -swift-version 5 -enforce-exclusivity=checked -Onone -module-name OneAuth
+// swift-module-flags-ignorable: -enable-bare-slash-regex
+import Foundation
+import Guard
+@_exported import OneAuth
+import Swift
+import _Concurrency
+import _StringProcessing
+@_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class OneAuthButton : Guard.SocialLoginButton {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc deinit
+}
+@_hasMissingDesignatedInitializers open class OneAuth {
+  public static var available: Swift.Bool
+  public static var isClickOtherButton: Swift.Bool
+  public static var bizId: Swift.String? {
+    get
+    set
+  }
+  public static var loading: UIKit.UIActivityIndicatorView
+  public static func register(businessId: Swift.String, _ configUrl: Swift.String? = nil, _ extData: Swift.String? = nil)
+  public static func start(_ vc: UIKit.UIViewController, model: Any? = nil, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  @objc deinit
+}

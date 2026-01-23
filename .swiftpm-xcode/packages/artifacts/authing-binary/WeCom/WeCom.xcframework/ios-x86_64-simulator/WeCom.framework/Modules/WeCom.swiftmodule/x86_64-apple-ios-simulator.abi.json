@@ -1,0 +1,722 @@
+{
+  "ABIRoot": {
+    "kind": "Root",
+    "name": "TopLevel",
+    "printedName": "TopLevel",
+    "children": [
+      {
+        "kind": "Import",
+        "name": "Foundation",
+        "printedName": "Foundation",
+        "declKind": "Import",
+        "moduleName": "WeCom",
+        "declAttributes": [
+          "RawDocComment"
+        ]
+      },
+      {
+        "kind": "Import",
+        "name": "Guard",
+        "printedName": "Guard",
+        "declKind": "Import",
+        "moduleName": "WeCom"
+      },
+      {
+        "kind": "TypeDecl",
+        "name": "WeCom",
+        "printedName": "WeCom",
+        "children": [
+          {
+            "kind": "Function",
+            "name": "registerApp",
+            "printedName": "registerApp(appId:corpId:agentId:isProxyDevelopment:)",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Void",
+                "printedName": "()"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "String",
+                "printedName": "Swift.String",
+                "usr": "s:SS"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "String",
+                "printedName": "Swift.String",
+                "usr": "s:SS"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "String",
+                "printedName": "Swift.String",
+                "usr": "s:SS"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "Bool",
+                "printedName": "Swift.Bool",
+                "usr": "s:Sb"
+              }
+            ],
+            "declKind": "Func",
+            "usr": "s:5WeComAAC11registerApp5appId04corpF005agentF018isProxyDevelopmentySS_S2SSbtFZ",
+            "mangledName": "$s5WeComAAC11registerApp5appId04corpF005agentF018isProxyDevelopmentySS_S2SSbtFZ",
+            "moduleName": "WeCom",
+            "static": true,
+            "declAttributes": [
+              "Final",
+              "AccessControl",
+              "RawDocComment"
+            ],
+            "funcSelfKind": "NonMutating"
+          },
+          {
+            "kind": "Function",
+            "name": "login",
+            "printedName": "login(completion:)",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Void",
+                "printedName": "()"
+              },
+              {
+                "kind": "TypeFunc",
+                "name": "Function",
+                "printedName": "(Swift.Int, Swift.String?, Guard.UserInfo?) -> ()",
+                "children": [
+                  {
+                    "kind": "TypeNominal",
+                    "name": "Void",
+                    "printedName": "()"
+                  },
+                  {
+                    "kind": "TypeNominal",
+                    "name": "Tuple",
+                    "printedName": "(Swift.Int, Swift.String?, Guard.UserInfo?)",
+                    "children": [
+                      {
+                        "kind": "TypeNominal",
+                        "name": "Int",
+                        "printedName": "Swift.Int",
+                        "usr": "s:Si"
+                      },
+                      {
+                        "kind": "TypeNominal",
+                        "name": "Optional",
+                        "printedName": "Swift.String?",
+                        "children": [
+                          {
+                            "kind": "TypeNominal",
+                            "name": "String",
+                            "printedName": "Swift.String",
+                            "usr": "s:SS"
+                          }
+                        ],
+                        "usr": "s:Sq"
+                      },
+                      {
+                        "kind": "TypeNominal",
+                        "name": "Optional",
+                        "printedName": "Guard.UserInfo?",
+                        "children": [
+                          {
+                            "kind": "TypeNominal",
+                            "name": "UserInfo",
+                            "printedName": "Guard.UserInfo",
+                            "usr": "c:@M@Guard@objc(cs)UserInfo"
+                          }
+                        ],
+                        "usr": "s:Sq"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "declKind": "Func",
+            "usr": "s:5WeComAAC5login10completionyySi_SSSg5Guard8UserInfoCSgtc_tFZ",
+            "mangledName": "$s5WeComAAC5login10completionyySi_SSSg5Guard8UserInfoCSgtc_tFZ",
+            "moduleName": "WeCom",
+            "static": true,
+            "declAttributes": [
+              "Final",
+              "AccessControl",
+              "RawDocComment"
+            ],
+            "funcSelfKind": "NonMutating"
+          },
+          {
+            "kind": "Function",
+            "name": "handleOpenURL",
+            "printedName": "handleOpenURL(url:)",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Bool",
+                "printedName": "Swift.Bool",
+                "usr": "s:Sb"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "URL",
+                "printedName": "Foundation.URL",
+                "usr": "s:10Foundation3URLV"
+              }
+            ],
+            "declKind": "Func",
+            "usr": "s:5WeComAAC13handleOpenURL3urlSb10Foundation0E0V_tFZ",
+            "mangledName": "$s5WeComAAC13handleOpenURL3urlSb10Foundation0E0V_tFZ",
+            "moduleName": "WeCom",
+            "static": true,
+            "declAttributes": [
+              "Final",
+              "AccessControl",
+              "RawDocComment"
+            ],
+            "funcSelfKind": "NonMutating"
+          },
+          {
+            "kind": "Constructor",
+            "name": "init",
+            "printedName": "init()",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "WeCom",
+                "printedName": "WeCom.WeCom",
+                "usr": "s:5WeComAAC"
+              }
+            ],
+            "declKind": "Constructor",
+            "usr": "s:5WeComAACABycfc",
+            "mangledName": "$s5WeComAACABycfc",
+            "moduleName": "WeCom",
+            "implicit": true,
+            "init_kind": "Designated"
+          }
+        ],
+        "declKind": "Class",
+        "usr": "s:5WeComAAC",
+        "mangledName": "$s5WeComAAC",
+        "moduleName": "WeCom",
+        "isOpen": true,
+        "declAttributes": [
+          "AccessControl"
+        ],
+        "hasMissingDesignatedInitializers": true
+      },
+      {
+        "kind": "TypeDecl",
+        "name": "WeComDelegate",
+        "printedName": "WeComDelegate",
+        "children": [
+          {
+            "kind": "Var",
+            "name": "shared",
+            "printedName": "shared",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "WeComDelegate",
+                "printedName": "WeCom.WeComDelegate",
+                "usr": "c:@M@WeCom@objc(cs)WeComDelegate"
+              }
+            ],
+            "declKind": "Var",
+            "usr": "c:@M@WeCom@objc(cs)WeComDelegate(cpy)shared",
+            "mangledName": "$s5WeCom0aB8DelegateC6sharedACvpZ",
+            "moduleName": "WeCom",
+            "static": true,
+            "declAttributes": [
+              "HasInitialValue",
+              "Final",
+              "HasStorage",
+              "AccessControl",
+              "ObjC"
+            ],
+            "isLet": true,
+            "hasStorage": true,
+            "accessors": [
+              {
+                "kind": "Accessor",
+                "name": "Get",
+                "printedName": "Get()",
+                "children": [
+                  {
+                    "kind": "TypeNominal",
+                    "name": "WeComDelegate",
+                    "printedName": "WeCom.WeComDelegate",
+                    "usr": "c:@M@WeCom@objc(cs)WeComDelegate"
+                  }
+                ],
+                "declKind": "Accessor",
+                "usr": "c:@M@WeCom@objc(cs)WeComDelegate(cm)shared",
+                "mangledName": "$s5WeCom0aB8DelegateC6sharedACvgZ",
+                "moduleName": "WeCom",
+                "static": true,
+                "implicit": true,
+                "declAttributes": [
+                  "Final",
+                  "ObjC"
+                ],
+                "accessorKind": "get"
+              }
+            ]
+          },
+          {
+            "kind": "Var",
+            "name": "isProxyDevelopment",
+            "printedName": "isProxyDevelopment",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Bool",
+                "printedName": "Swift.Bool",
+                "usr": "s:Sb"
+              }
+            ],
+            "declKind": "Var",
+            "usr": "s:5WeCom0aB8DelegateC18isProxyDevelopment33_A8C95CF6FEB1BC095390BCC4638DF69ALLSbvp",
+            "mangledName": "$s5WeCom0aB8DelegateC18isProxyDevelopment33_A8C95CF6FEB1BC095390BCC4638DF69ALLSbvp",
+            "moduleName": "WeCom",
+            "isInternal": true,
+            "declAttributes": [
+              "HasInitialValue",
+              "HasStorage",
+              "AccessControl"
+            ],
+            "fixedbinaryorder": 0,
+            "hasStorage": true
+          },
+          {
+            "kind": "Var",
+            "name": "receiveCallBack",
+            "printedName": "receiveCallBack",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Optional",
+                "printedName": "((Swift.Int, Swift.String?, Guard.UserInfo?) -> ())?",
+                "children": [
+                  {
+                    "kind": "TypeFunc",
+                    "name": "Function",
+                    "printedName": "(Swift.Int, Swift.String?, Guard.UserInfo?) -> ()",
+                    "children": [
+                      {
+                        "kind": "TypeNominal",
+                        "name": "Void",
+                        "printedName": "()"
+                      },
+                      {
+                        "kind": "TypeNominal",
+                        "name": "Tuple",
+                        "printedName": "(Swift.Int, Swift.String?, Guard.UserInfo?)",
+                        "children": [
+                          {
+                            "kind": "TypeNominal",
+                            "name": "Int",
+                            "printedName": "Swift.Int",
+                            "usr": "s:Si"
+                          },
+                          {
+                            "kind": "TypeNominal",
+                            "name": "Optional",
+                            "printedName": "Swift.String?",
+                            "children": [
+                              {
+                                "kind": "TypeNominal",
+                                "name": "String",
+                                "printedName": "Swift.String",
+                                "usr": "s:SS"
+                              }
+                            ],
+                            "usr": "s:Sq"
+                          },
+                          {
+                            "kind": "TypeNominal",
+                            "name": "Optional",
+                            "printedName": "Guard.UserInfo?",
+                            "children": [
+                              {
+                                "kind": "TypeNominal",
+                                "name": "UserInfo",
+                                "printedName": "Guard.UserInfo",
+                                "usr": "c:@M@Guard@objc(cs)UserInfo"
+                              }
+                            ],
+                            "usr": "s:Sq"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ],
+                "usr": "s:Sq"
+              }
+            ],
+            "declKind": "Var",
+            "usr": "s:5WeCom0aB8DelegateC15receiveCallBack33_A8C95CF6FEB1BC095390BCC4638DF69ALLySi_SSSg5Guard8UserInfoCSgtcSgvp",
+            "mangledName": "$s5WeCom0aB8DelegateC15receiveCallBack33_A8C95CF6FEB1BC095390BCC4638DF69ALLySi_SSSg5Guard8UserInfoCSgtcSgvp",
+            "moduleName": "WeCom",
+            "isInternal": true,
+            "declAttributes": [
+              "HasInitialValue",
+              "HasStorage",
+              "AccessControl"
+            ],
+            "fixedbinaryorder": 1,
+            "hasStorage": true
+          },
+          {
+            "kind": "Function",
+            "name": "sendRequest",
+            "printedName": "sendRequest()",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Void",
+                "printedName": "()"
+              }
+            ],
+            "declKind": "Func",
+            "usr": "c:@M@WeCom@objc(cs)WeComDelegate(im)sendRequest",
+            "mangledName": "$s5WeCom0aB8DelegateC11sendRequestyyF",
+            "moduleName": "WeCom",
+            "isOpen": true,
+            "declAttributes": [
+              "ObjC"
+            ],
+            "funcSelfKind": "NonMutating"
+          },
+          {
+            "kind": "Function",
+            "name": "onResp",
+            "printedName": "onResp(_:)",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Void",
+                "printedName": "()"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "ImplicitlyUnwrappedOptional",
+                "printedName": "WeCom.WWKBaseResp?",
+                "children": [
+                  {
+                    "kind": "TypeNominal",
+                    "name": "WWKBaseResp",
+                    "printedName": "WeCom.WWKBaseResp",
+                    "usr": "c:objc(cs)WWKBaseResp"
+                  }
+                ],
+                "usr": "s:Sq"
+              }
+            ],
+            "declKind": "Func",
+            "usr": "c:@M@WeCom@objc(cs)WeComDelegate(im)onResp:",
+            "mangledName": "$s5WeCom0aB8DelegateC6onRespyySo07WWKBaseE0CSgF",
+            "moduleName": "WeCom",
+            "isOpen": true,
+            "objc_name": "onResp:",
+            "declAttributes": [
+              "ObjC"
+            ],
+            "funcSelfKind": "NonMutating"
+          }
+        ],
+        "declKind": "Class",
+        "usr": "c:@M@WeCom@objc(cs)WeComDelegate",
+        "mangledName": "$s5WeCom0aB8DelegateC",
+        "moduleName": "WeCom",
+        "isOpen": true,
+        "declAttributes": [
+          "ObjC"
+        ],
+        "superclassUsr": "c:objc(cs)NSObject",
+        "inheritsConvenienceInitializers": true,
+        "superclassNames": [
+          "ObjectiveC.NSObject"
+        ],
+        "conformances": [
+          {
+            "kind": "Conformance",
+            "name": "Equatable",
+            "printedName": "Equatable",
+            "usr": "s:SQ",
+            "mangledName": "$sSQ"
+          },
+          {
+            "kind": "Conformance",
+            "name": "Hashable",
+            "printedName": "Hashable",
+            "usr": "s:SH",
+            "mangledName": "$sSH"
+          },
+          {
+            "kind": "Conformance",
+            "name": "CVarArg",
+            "printedName": "CVarArg",
+            "usr": "s:s7CVarArgP",
+            "mangledName": "$ss7CVarArgP"
+          },
+          {
+            "kind": "Conformance",
+            "name": "_KeyValueCodingAndObservingPublishing",
+            "printedName": "_KeyValueCodingAndObservingPublishing",
+            "usr": "s:10Foundation37_KeyValueCodingAndObservingPublishingP",
+            "mangledName": "$s10Foundation37_KeyValueCodingAndObservingPublishingP"
+          },
+          {
+            "kind": "Conformance",
+            "name": "_KeyValueCodingAndObserving",
+            "printedName": "_KeyValueCodingAndObserving",
+            "usr": "s:10Foundation27_KeyValueCodingAndObservingP",
+            "mangledName": "$s10Foundation27_KeyValueCodingAndObservingP"
+          },
+          {
+            "kind": "Conformance",
+            "name": "CustomStringConvertible",
+            "printedName": "CustomStringConvertible",
+            "usr": "s:s23CustomStringConvertibleP",
+            "mangledName": "$ss23CustomStringConvertibleP"
+          },
+          {
+            "kind": "Conformance",
+            "name": "CustomDebugStringConvertible",
+            "printedName": "CustomDebugStringConvertible",
+            "usr": "s:s28CustomDebugStringConvertibleP",
+            "mangledName": "$ss28CustomDebugStringConvertibleP"
+          }
+        ]
+      },
+      {
+        "kind": "Import",
+        "name": "Foundation",
+        "printedName": "Foundation",
+        "declKind": "Import",
+        "moduleName": "WeCom",
+        "declAttributes": [
+          "RawDocComment"
+        ]
+      },
+      {
+        "kind": "Import",
+        "name": "Guard",
+        "printedName": "Guard",
+        "declKind": "Import",
+        "moduleName": "WeCom"
+      },
+      {
+        "kind": "TypeDecl",
+        "name": "WeComLoginButton",
+        "printedName": "WeComLoginButton",
+        "children": [
+          {
+            "kind": "Constructor",
+            "name": "init",
+            "printedName": "init(frame:)",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "WeComLoginButton",
+                "printedName": "WeCom.WeComLoginButton",
+                "usr": "s:5WeCom0aB11LoginButtonC"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "CGRect",
+                "printedName": "CoreFoundation.CGRect",
+                "usr": "c:@S@CGRect"
+              }
+            ],
+            "declKind": "Constructor",
+            "usr": "s:5WeCom0aB11LoginButtonC5frameACSo6CGRectV_tcfc",
+            "mangledName": "$s5WeCom0aB11LoginButtonC5frameACSo6CGRectV_tcfc",
+            "moduleName": "WeCom",
+            "overriding": true,
+            "objc_name": "initWithFrame:",
+            "declAttributes": [
+              "Dynamic",
+              "ObjC",
+              "Custom",
+              "Override",
+              "AccessControl"
+            ],
+            "init_kind": "Designated"
+          },
+          {
+            "kind": "Constructor",
+            "name": "init",
+            "printedName": "init(coder:)",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Optional",
+                "printedName": "WeCom.WeComLoginButton?",
+                "children": [
+                  {
+                    "kind": "TypeNominal",
+                    "name": "WeComLoginButton",
+                    "printedName": "WeCom.WeComLoginButton",
+                    "usr": "s:5WeCom0aB11LoginButtonC"
+                  }
+                ],
+                "usr": "s:Sq"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "NSCoder",
+                "printedName": "Foundation.NSCoder",
+                "usr": "c:objc(cs)NSCoder"
+              }
+            ],
+            "declKind": "Constructor",
+            "usr": "s:5WeCom0aB11LoginButtonC5coderACSgSo7NSCoderC_tcfc",
+            "mangledName": "$s5WeCom0aB11LoginButtonC5coderACSgSo7NSCoderC_tcfc",
+            "moduleName": "WeCom",
+            "overriding": true,
+            "objc_name": "initWithCoder:",
+            "declAttributes": [
+              "Dynamic",
+              "ObjC",
+              "Custom",
+              "AccessControl",
+              "Required"
+            ],
+            "init_kind": "Designated"
+          },
+          {
+            "kind": "Function",
+            "name": "weComLoginComplete",
+            "printedName": "weComLoginComplete(notification:)",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Void",
+                "printedName": "()"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "Notification",
+                "printedName": "Foundation.Notification",
+                "usr": "s:10Foundation12NotificationV"
+              }
+            ],
+            "declKind": "Func",
+            "usr": "s:5WeCom0aB11LoginButtonC02webC8Complete12notificationy10Foundation12NotificationV_tF",
+            "mangledName": "$s5WeCom0aB11LoginButtonC02webC8Complete12notificationy10Foundation12NotificationV_tF",
+            "moduleName": "WeCom",
+            "isOpen": true,
+            "objc_name": "weComLoginCompleteWithNotification:",
+            "declAttributes": [
+              "Custom",
+              "ObjC"
+            ],
+            "funcSelfKind": "NonMutating"
+          }
+        ],
+        "declKind": "Class",
+        "usr": "s:5WeCom0aB11LoginButtonC",
+        "mangledName": "$s5WeCom0aB11LoginButtonC",
+        "moduleName": "WeCom",
+        "isOpen": true,
+        "declAttributes": [
+          "Custom",
+          "AccessControl"
+        ],
+        "superclassUsr": "c:@M@Guard@objc(cs)SocialLoginButton",
+        "inheritsConvenienceInitializers": true,
+        "superclassNames": [
+          "Guard.SocialLoginButton",
+          "Guard.Button",
+          "UIKit.UIButton",
+          "UIKit.UIControl",
+          "UIKit.UIView",
+          "UIKit.UIResponder",
+          "ObjectiveC.NSObject"
+        ],
+        "conformances": [
+          {
+            "kind": "Conformance",
+            "name": "AttributedViewProtocol",
+            "printedName": "AttributedViewProtocol",
+            "usr": "s:5Guard22AttributedViewProtocolP",
+            "mangledName": "$s5Guard22AttributedViewProtocolP"
+          },
+          {
+            "kind": "Conformance",
+            "name": "Equatable",
+            "printedName": "Equatable",
+            "usr": "s:SQ",
+            "mangledName": "$sSQ"
+          },
+          {
+            "kind": "Conformance",
+            "name": "Hashable",
+            "printedName": "Hashable",
+            "usr": "s:SH",
+            "mangledName": "$sSH"
+          },
+          {
+            "kind": "Conformance",
+            "name": "CVarArg",
+            "printedName": "CVarArg",
+            "usr": "s:s7CVarArgP",
+            "mangledName": "$ss7CVarArgP"
+          },
+          {
+            "kind": "Conformance",
+            "name": "_KeyValueCodingAndObservingPublishing",
+            "printedName": "_KeyValueCodingAndObservingPublishing",
+            "usr": "s:10Foundation37_KeyValueCodingAndObservingPublishingP",
+            "mangledName": "$s10Foundation37_KeyValueCodingAndObservingPublishingP"
+          },
+          {
+            "kind": "Conformance",
+            "name": "_KeyValueCodingAndObserving",
+            "printedName": "_KeyValueCodingAndObserving",
+            "usr": "s:10Foundation27_KeyValueCodingAndObservingP",
+            "mangledName": "$s10Foundation27_KeyValueCodingAndObservingP"
+          },
+          {
+            "kind": "Conformance",
+            "name": "CustomStringConvertible",
+            "printedName": "CustomStringConvertible",
+            "usr": "s:s23CustomStringConvertibleP",
+            "mangledName": "$ss23CustomStringConvertibleP"
+          },
+          {
+            "kind": "Conformance",
+            "name": "CustomDebugStringConvertible",
+            "printedName": "CustomDebugStringConvertible",
+            "usr": "s:s28CustomDebugStringConvertibleP",
+            "mangledName": "$ss28CustomDebugStringConvertibleP"
+          },
+          {
+            "kind": "Conformance",
+            "name": "__DefaultCustomPlaygroundQuickLookable",
+            "printedName": "__DefaultCustomPlaygroundQuickLookable",
+            "usr": "s:s38__DefaultCustomPlaygroundQuickLookableP",
+            "mangledName": "$ss38__DefaultCustomPlaygroundQuickLookableP"
+          }
+        ]
+      }
+    ],
+    "json_format_version": 8
+  },
+  "ConstValues": [
+    {
+      "filePath": "\/Users\/JN\/Documents\/Authing\/guard-ios-demo\/WeCom\/WeCom\/WeCom.swift",
+      "kind": "BooleanLiteral",
+      "offset": 1496,
+      "length": 5,
+      "value": "false"
+    }
+  ]
+}

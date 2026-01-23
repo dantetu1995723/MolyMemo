@@ -47,6 +47,22 @@
 				<string>molymemo</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>feishu-sso</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<!-- 飞书移动端 SSO SDK 回跳 scheme：AppID 去掉下划线 -->
+				<string>clia9fa1ef2c4381cb1</string>
+			</array>
+		</dict>
+	</array>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>lark</string>
+		<string>feishu</string>
 	</array>
 	<key>UIAppFonts</key>
 	<array>

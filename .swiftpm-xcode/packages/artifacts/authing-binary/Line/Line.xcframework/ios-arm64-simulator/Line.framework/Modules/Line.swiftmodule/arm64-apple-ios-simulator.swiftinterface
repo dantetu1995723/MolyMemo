@@ -1,0 +1,1796 @@
+// swift-interface-format-version: 1.0
+// swift-compiler-version: Apple Swift version 5.8 (swiftlang-5.8.0.124.2 clang-1403.0.22.11.100)
+// swift-module-flags: -target arm64-apple-ios13.0-simulator -enable-objc-interop -enable-library-evolution -swift-version 5 -enforce-exclusivity=checked -Onone -module-name Line
+// swift-module-flags-ignorable: -enable-bare-slash-regex
+import CommonCrypto
+import Foundation
+import Guard
+@_exported import Line
+import SafariServices
+import Security
+import Swift
+import UIKit
+import _Concurrency
+import _StringProcessing
+public protocol MessageConvertible {
+  var message: Line.Message { get }
+}
+public protocol AltTextMessageConvertible {
+  func messageWithAltText(_ text: Swift.String) -> Line.Message
+}
+public protocol TemplateMessageConvertible : Line.AltTextMessageConvertible {
+  var payload: Line.TemplateMessagePayload { get }
+}
+extension Line.TemplateMessageConvertible {
+  public func messageWithAltText(_ text: Swift.String) -> Line.Message
+}
+public protocol FlexMessageConvertible : Line.AltTextMessageConvertible {
+  var container: Line.FlexMessageContainer { get }
+}
+extension Line.FlexMessageConvertible {
+  public func messageWithAltText(_ text: Swift.String) -> Line.Message
+}
+public protocol FlexMessageComponentConvertible {
+  var component: Line.FlexMessageComponent { get }
+}
+public protocol MessageActionConvertible {
+  var action: Line.MessageAction { get }
+}
+public protocol MessageActionContainer {
+  var action: Line.MessageAction? { get set }
+}
+extension Line.MessageActionContainer {
+  public mutating func setAction(_ value: (any Line.MessageActionConvertible)?)
+}
+public struct GetUserProfileRequest : Line.Request {
+  public init()
+  public let method: Line.HTTPMethod
+  public let path: Swift.String
+  public let authentication: Line.AuthenticateMethod
+  public typealias Response = Line.UserProfile
+}
+public enum LineSDKError : Swift.Error {
+  public enum RequestErrorReason {
+    case missingURL
+    case lackOfAccessToken
+    case jsonEncodingFailed(any Swift.Error)
+    case invalidParameter([Line.LineSDKError.RequestErrorReason.ParameterItem])
+  }
+  public enum ResponseErrorReason {
+    public struct APIErrorDetail {
+      public let code: Swift.Int
+      public let error: Line.APIError?
+      public let raw: Foundation.HTTPURLResponse
+      public let rawString: Swift.String?
+    }
+    case URLSessionError(any Swift.Error)
+    case nonHTTPURLResponse
+    case dataParsingFailed(any Any.Type, Foundation.Data, (any Swift.Error)?)
+    case invalidHTTPStatusAPIError(detail: Line.LineSDKError.ResponseErrorReason.APIErrorDetail)
+  }
+  public enum AuthorizeErrorReason {
+    case exhaustedLoginFlow
+    case malformedHierarchy
+    case userCancelled
+    case forceStopped
+    case callbackURLSchemeNotMatching
+    case invalidSourceApplication
+    case malformedRedirectURL(url: Foundation.URL, message: Swift.String?)
+    case invalidLineURLResultCode(Swift.String)
+    case lineClientError(code: Swift.String, message: Swift.String?)
+    case responseStateValueNotMatching(expected: Swift.String, got: Swift.String?)
+    case webLoginError(error: Swift.String, description: Swift.String?)
+    case keychainOperation(status: Darwin.OSStatus)
+    case invalidDataInKeychain
+    case lackOfIDToken(raw: Swift.String?)
+    case JWTPublicKeyNotFound(keyID: Swift.String?)
+    case cryptoError(error: Line.CryptoError)
+  }
+  public enum GeneralErrorReason {
+    case conversionError(string: Swift.String, encoding: Swift.String.Encoding)
+    case parameterError(parameterName: Swift.String, description: Swift.String)
+    case notOriginalTask(token: Swift.UInt)
+    case processDiscarded(Line.LoginProcess)
+  }
+  case requestFailed(reason: Line.LineSDKError.RequestErrorReason)
+  case responseFailed(reason: Line.LineSDKError.ResponseErrorReason)
+  case authorizeFailed(reason: Line.LineSDKError.AuthorizeErrorReason)
+  case generalError(reason: Line.LineSDKError.GeneralErrorReason)
+  case untypedError(error: any Swift.Error)
+}
+extension Line.LineSDKError {
+  public var isRequestError: Swift.Bool {
+    get
+  }
+  public var isResponseError: Swift.Bool {
+    get
+  }
+  public var isAuthorizeError: Swift.Bool {
+    get
+  }
+  public var isGeneralError: Swift.Bool {
+    get
+  }
+}
+extension Line.LineSDKError {
+  public var isUserCancelled: Swift.Bool {
+    get
+  }
+  public var isBadRequest: Swift.Bool {
+    get
+  }
+  public var isRefreshTokenError: Swift.Bool {
+    get
+  }
+  public var isPermissionError: Swift.Bool {
+    get
+  }
+  public var isTokenError: Swift.Bool {
+    get
+  }
+  public func isResponseError(statusCode: Swift.Int) -> Swift.Bool
+  public var isURLSessionTimeOut: Swift.Bool {
+    get
+  }
+  public func isURLSessionErrorCode(sessionErrorCode code: Swift.Int) -> Swift.Bool
+}
+extension Line.LineSDKError : Foundation.LocalizedError {
+  public var errorDescription: Swift.String? {
+    get
+  }
+}
+extension Line.LineSDKError : Foundation.CustomNSError {
+  public var errorCode: Swift.Int {
+    get
+  }
+  public var errorUserInfo: [Swift.String : Any] {
+    get
+  }
+  public static var errorDomain: Swift.String {
+    get
+  }
+}
+extension Line.LineSDKError.RequestErrorReason {
+  public struct ParameterItem {
+    public let name: Swift.String
+    public let value: Swift.String
+    public let description: Swift.String
+  }
+}
+public enum LineSDKErrorUserInfoKey : Swift.String {
+  case underlyingError
+  case statusCode
+  case resultCode
+  case type
+  case data
+  case APIError
+  case raw
+  case url
+  case message
+  case status
+  case text
+  case encoding
+  case parameterName
+  case reason
+  case index
+  case key
+  case got
+  case process
+  public init?(rawValue: Swift.String)
+  public typealias RawValue = Swift.String
+  public var rawValue: Swift.String {
+    get
+  }
+}
+public struct Constant {
+  public static let SDKVersion: Swift.String
+}
+public struct AccessTokenVerifyResult : Swift.Codable {
+  public let channelID: Swift.String
+  public let permissions: [Line.LoginPermission]
+  public let expiresIn: Foundation.TimeInterval
+  public init(from decoder: any Swift.Decoder) throws
+  public func encode(to encoder: any Swift.Encoder) throws
+}
+public enum API {
+  public static func getProfile(callbackQueue queue: Line.CallbackQueue = .currentMainOrAsync, completionHandler completion: @escaping (Swift.Result<Line.UserProfile, Line.LineSDKError>) -> Swift.Void)
+  public static func getBotFriendshipStatus(callbackQueue queue: Line.CallbackQueue = .currentMainOrAsync, completionHandler completion: @escaping (Swift.Result<Line.GetBotFriendshipStatusRequest.Response, Line.LineSDKError>) -> Swift.Void)
+}
+public struct GetOpenChatRoomStatusRequest : Line.Request {
+  public enum Status : Swift.String, Swift.Codable {
+    case alive
+    case deleted
+    case suspended
+    case undefined
+    public init(from decoder: any Swift.Decoder) throws
+    public init?(rawValue: Swift.String)
+    public typealias RawValue = Swift.String
+    public var rawValue: Swift.String {
+      get
+    }
+  }
+  public struct Response : Swift.Codable {
+    public let status: Line.GetOpenChatRoomStatusRequest.Status
+    public func encode(to encoder: any Swift.Encoder) throws
+    public init(from decoder: any Swift.Decoder) throws
+  }
+  public let method: Line.HTTPMethod
+  public var path: Swift.String {
+    get
+  }
+  public let authentication: Line.AuthenticateMethod
+  public let openChatId: Line.EntityID
+  public init(openChatId: Line.EntityID) throws
+}
+public struct GetFriendsRequest : Line.Request {
+  public enum Sort : Swift.String {
+    case name
+    case relation
+    public init?(rawValue: Swift.String)
+    public typealias RawValue = Swift.String
+    public var rawValue: Swift.String {
+      get
+    }
+  }
+  public init(sort: Line.GetFriendsRequest.Sort? = nil, pageToken: Swift.String? = nil)
+  public let method: Line.HTTPMethod
+  public let path: Swift.String
+  public let authentication: Line.AuthenticateMethod
+  public var parameters: [Swift.String : Any]? {
+    get
+  }
+  public struct Response : Swift.Decodable {
+    public let friends: [Line.User]
+    public let pageToken: Swift.String?
+    public init(from decoder: any Swift.Decoder) throws
+  }
+}
+public struct GetShareGroupsRequest : Line.Request {
+  public init(pageToken: Swift.String? = nil)
+  public let method: Line.HTTPMethod
+  public let path: Swift.String
+  public let authentication: Line.AuthenticateMethod
+  public var parameters: [Swift.String : Any]? {
+    get
+  }
+  public struct Response : Swift.Decodable {
+    public let groups: [Line.Group]
+    public let pageToken: Swift.String?
+    public init(from decoder: any Swift.Decoder) throws
+  }
+}
+public protocol DefaultEnumCodable : Swift.Decodable, Swift.Encodable, Swift.RawRepresentable {
+  static var defaultCase: Self { get }
+}
+extension Line.DefaultEnumCodable where Self.RawValue : Swift.Decodable {
+  public init(from decoder: any Swift.Decoder) throws
+}
+public enum Message : Swift.Codable {
+  case text(Line.TextMessage)
+  case image(Line.ImageMessage)
+  case video(Line.VideoMessage)
+  case audio(Line.AudioMessage)
+  case location(Line.LocationMessage)
+  case template(Line.TemplateMessage)
+  case flex(Line.FlexMessage)
+  case unknown
+  public init(from decoder: any Swift.Decoder) throws
+  public func encode(to encoder: any Swift.Encoder) throws
+  public var asTextMessage: Line.TextMessage? {
+    get
+  }
+  public var asImageMessage: Line.ImageMessage? {
+    get
+  }
+  public var asVideoMessage: Line.VideoMessage? {
+    get
+  }
+  public var asAudioMessage: Line.AudioMessage? {
+    get
+  }
+  public var asLocationMessage: Line.LocationMessage? {
+    get
+  }
+  public var asTemplateMessage: Line.TemplateMessage? {
+    get
+  }
+  public var asFlexMessage: Line.FlexMessage? {
+    get
+  }
+}
+extension Line.Message : Line.MessageConvertible {
+  public var message: Line.Message {
+    get
+  }
+}
+public struct FlexFillerComponent : Swift.Codable {
+  public init()
+  public func encode(to encoder: any Swift.Encoder) throws
+  public init(from decoder: any Swift.Decoder) throws
+}
+extension Line.FlexFillerComponent : Line.FlexMessageComponentConvertible {
+  public var component: Line.FlexMessageComponent {
+    get
+  }
+}
+extension Foundation.NSNotification.Name {
+  public static let LineSDKAccessTokenDidUpdate: Foundation.Notification.Name
+  public static let LineSDKAccessTokenDidRemove: Foundation.Notification.Name
+}
+extension Line.LineSDKNotificationKey {
+  public static let oldAccessToken: Swift.String
+  public static let newAccessToken: Swift.String
+}
+@_hasMissingDesignatedInitializers public class AccessTokenStore {
+  public static var shared: Line.AccessTokenStore {
+    get
+  }
+  public var current: Line.AccessToken? {
+    get
+  }
+  @objc deinit
+}
+public struct LoginPermission : Swift.Hashable {
+  public let rawValue: Swift.String
+  public init(rawValue: Swift.String)
+  public static let openID: Line.LoginPermission
+  public static let profile: Line.LoginPermission
+  public static let oneTimeShare: Line.LoginPermission
+  public static let friends: Line.LoginPermission
+  public static let groups: Line.LoginPermission
+  public static let messageWrite: Line.LoginPermission
+  public static let openChatTermStatus: Line.LoginPermission
+  public static let openChatRoomCreateAndJoin: Line.LoginPermission
+  public static let openChatInfo: Line.LoginPermission
+  public func hash(into hasher: inout Swift.Hasher)
+  public static func == (a: Line.LoginPermission, b: Line.LoginPermission) -> Swift.Bool
+  public var hashValue: Swift.Int {
+    get
+  }
+}
+extension Line.LoginPermission {
+  public static let email: Line.LoginPermission
+}
+extension Line.LoginPermission {
+  public static let phone: Line.LoginPermission
+  public static let gender: Line.LoginPermission
+  public static let birthdate: Line.LoginPermission
+  public static let address: Line.LoginPermission
+  public static let realName: Line.LoginPermission
+}
+extension Line.LoginPermission {
+  public static let openChatPlugManagement: Line.LoginPermission
+  public static let openChatPlugInfo: Line.LoginPermission
+  public static let openChatPlugProfile: Line.LoginPermission
+  public static let openChatPlugSendMessage: Line.LoginPermission
+  public static let openChatPlugReceiveMessageEvent: Line.LoginPermission
+}
+extension Line.LoginPermission : Swift.CustomStringConvertible {
+  public var description: Swift.String {
+    get
+  }
+}
+@_hasMissingDesignatedInitializers public class Session {
+  public static var shared: Line.Session {
+    get
+  }
+  @discardableResult
+  public func send<T>(_ request: T, callbackQueue: Line.CallbackQueue = .currentMainOrAsync, completionHandler completion: ((Swift.Result<T.Response, Line.LineSDKError>) -> Swift.Void)? = nil) -> Line.SessionTask? where T : Line.Request
+  @objc deinit
+}
+@_hasMissingDesignatedInitializers public class SessionTask {
+  @objc deinit
+}
+public struct TemplateButtonsPayload : Swift.Codable {
+  public var text: Swift.String
+  public var title: Swift.String?
+  public var actions: [Line.MessageAction]
+  public var defaultAction: Line.MessageAction?
+  public var thumbnailImageURL: Foundation.URL?
+  public var imageAspectRatio: Line.TemplateMessagePayload.ImageAspectRatio?
+  public var imageContentMode: Line.TemplateMessagePayload.ImageContentMode?
+  public var imageBackgroundColor: Line.HexColor?
+  public var sender: Line.MessageSender?
+  public init(title: Swift.String? = nil, text: Swift.String, defaultAction: Line.MessageAction? = nil, thumbnailImageURL: Foundation.URL? = nil, imageAspectRatio: Line.TemplateMessagePayload.ImageAspectRatio? = nil, imageContentMode: Line.TemplateMessagePayload.ImageContentMode? = nil, imageBackgroundColor: Line.HexColor? = nil, sender: Line.MessageSender? = nil, actions: [any Line.MessageActionConvertible] = [])
+  public mutating func addAction(_ value: any Line.MessageActionConvertible)
+  public mutating func setDefaultAction(_ value: (any Line.MessageActionConvertible)?)
+  public func encode(to encoder: any Swift.Encoder) throws
+  public init(from decoder: any Swift.Decoder) throws
+}
+extension Line.TemplateButtonsPayload : Line.TemplateMessageConvertible {
+  public var payload: Line.TemplateMessagePayload {
+    get
+  }
+}
+public enum FlexMessageComponent : Swift.Codable {
+  case box(Line.FlexBoxComponent)
+  case text(Line.FlexTextComponent)
+  case button(Line.FlexButtonComponent)
+  case image(Line.FlexImageComponent)
+  case filler(Line.FlexFillerComponent)
+  case icon(Line.FlexIconComponent)
+  case separator(Line.FlexSeparatorComponent)
+  case spacer(Line.FlexSpacerComponent)
+  case unknown
+  public init(from decoder: any Swift.Decoder) throws
+  public func encode(to encoder: any Swift.Encoder) throws
+  public var asBoxComponent: Line.FlexBoxComponent? {
+    get
+  }
+  public var asTextComponent: Line.FlexTextComponent? {
+    get
+  }
+  public var asButtonComponent: Line.FlexButtonComponent? {
+    get
+  }
+  public var asImageComponent: Line.FlexImageComponent? {
+    get
+  }
+  public var asFillerComponent: Line.FlexFillerComponent? {
+    get
+  }
+  public var asIconComponent: Line.FlexIconComponent? {
+    get
+  }
+  public var asSeparatorComponent: Line.FlexSeparatorComponent? {
+    get
+  }
+  public var asSpacerComponent: Line.FlexSpacerComponent? {
+    get
+  }
+}
+extension Line.FlexMessageComponent : Line.FlexMessageComponentConvertible {
+  public var component: Line.FlexMessageComponent {
+    get
+  }
+}
+public struct PostMessageSendingTokenIssueRequest : Line.Request {
+  public typealias Response = Line.MessageSendingToken
+  public let userIDs: [Swift.String]
+  public init(userIDs: [Swift.String])
+  public let method: Line.HTTPMethod
+  public let path: Swift.String
+  public let authentication: Line.AuthenticateMethod
+  public var parameters: [Swift.String : Any]? {
+    get
+  }
+}
+public struct MessageSendingToken : Swift.Codable {
+  public let token: Swift.String
+  public init(value: Swift.String)
+  public func encode(to encoder: any Swift.Encoder) throws
+  public init(from decoder: any Swift.Decoder) throws
+}
+public struct UserProfile : Swift.Codable {
+  public let userID: Swift.String
+  public let displayName: Swift.String
+  public let pictureURL: Foundation.URL?
+  public var pictureURLLarge: Foundation.URL? {
+    get
+  }
+  public var pictureURLSmall: Foundation.URL? {
+    get
+  }
+  public let statusMessage: Swift.String?
+  public func encode(to encoder: any Swift.Encoder) throws
+  public init(from decoder: any Swift.Decoder) throws
+}
+public struct FlexMessage : Swift.Codable {
+  public var altText: Swift.String
+  public var contents: Line.FlexMessageContainer
+  public init(altText: Swift.String, container: any Line.FlexMessageConvertible)
+  public func encode(to encoder: any Swift.Encoder) throws
+  public init(from decoder: any Swift.Decoder) throws
+}
+extension Line.FlexMessage : Line.MessageConvertible {
+  public var message: Line.Message {
+    get
+  }
+}
+public struct PostSendMessagesRequest : Line.Request {
+  public let chatID: Swift.String
+  public let messages: [Line.Message]
+  public init(chatID: Swift.String, messages: [any Line.MessageConvertible])
+  public let method: Line.HTTPMethod
+  public let path: Swift.String
+  public let authentication: Line.AuthenticateMethod
+  public var parameters: [Swift.String : Any]? {
+    get
+  }
+  public struct Response : Swift.Decodable {
+    public let status: Line.MessageSendingStatus
+    public init(from decoder: any Swift.Decoder) throws
+  }
+}
+public enum MessageSendingStatus : Swift.Decodable, Swift.Equatable {
+  case ok
+  case discarded
+  case unknown(Swift.String)
+  public init(from decoder: any Swift.Decoder) throws
+  public var isOK: Swift.Bool {
+    get
+  }
+  public static func == (a: Line.MessageSendingStatus, b: Line.MessageSendingStatus) -> Swift.Bool
+}
+public enum ResultUtil {
+  public static func match<Success, Failure, Output>(result: Swift.Result<Success, Failure>, onSuccess: (Success) -> Output, onFailure: (Failure) -> Output) -> Output where Failure : Swift.Error
+  public static func matchSuccess<Success, Failure, Output>(result: Swift.Result<Success, Failure>, with folder: (Success?) -> Output) -> Output where Failure : Swift.Error
+  public static func matchFailure<Success, Failure, Output>(result: Swift.Result<Success, Failure>, with folder: ((any Swift.Error)?) -> Output) -> Output where Failure : Swift.Error
+  public static func match<Success, Failure, Output>(result: Swift.Result<Success, Failure>, with folder: (Success?, (any Swift.Error)?) -> Output) -> Output where Failure : Swift.Error
+}
+public struct GetShareFriendsRequest : Line.Request {
+  public enum Sort : Swift.String {
+    case name
+    case relation
+    public init?(rawValue: Swift.String)
+    public typealias RawValue = Swift.String
+    public var rawValue: Swift.String {
+      get
+    }
+  }
+  public init(sort: Line.GetShareFriendsRequest.Sort? = nil, pageToken: Swift.String? = nil)
+  public let method: Line.HTTPMethod
+  public let path: Swift.String
+  public let authentication: Line.AuthenticateMethod
+  public var parameters: [Swift.String : Any]? {
+    get
+  }
+  public struct Response : Swift.Decodable {
+    public let friends: [Line.User]
+    public let pageToken: Swift.String?
+    public init(from decoder: any Swift.Decoder) throws
+  }
+}
+public struct JWT : Swift.Equatable {
+  public static func == (lhs: Line.JWT, rhs: Line.JWT) -> Swift.Bool
+  public let payload: Line.JWT.Payload
+}
+extension Line.JWT {
+  public struct Payload {
+  }
+}
+extension Line.JWT.Payload {
+  public subscript<T>(key: Swift.String, type: T.Type) -> T? {
+    get
+  }
+  public var issuer: Swift.String? {
+    get
+  }
+  public var subject: Swift.String? {
+    get
+  }
+  public var audience: Swift.String? {
+    get
+  }
+  public var expiration: Foundation.Date? {
+    get
+  }
+  public var issueAt: Foundation.Date? {
+    get
+  }
+  public var amr: [Swift.String]? {
+    get
+  }
+}
+extension Line.JWT.Payload {
+  public var name: Swift.String? {
+    get
+  }
+  public var pictureURL: Foundation.URL? {
+    get
+  }
+  public var email: Swift.String? {
+    get
+  }
+}
+public struct APIError {
+  public let error: Swift.String
+  public let detail: Swift.String?
+}
+public struct AccessToken : Swift.Codable, Swift.Equatable {
+  public let value: Swift.String
+  public let createdAt: Foundation.Date
+  public let IDToken: Line.JWT?
+  public let IDTokenRaw: Swift.String?
+  @available(*, unavailable, message: "`refreshToken` is not publicly provided anymore. You should not access or store it yourself.")
+  public var refreshToken: Swift.String {
+    get
+  }
+  public let permissions: [Line.LoginPermission]
+  public var expiresAt: Foundation.Date {
+    get
+  }
+  public init(from decoder: any Swift.Decoder) throws
+  public func encode(to encoder: any Swift.Encoder) throws
+  public static func == (a: Line.AccessToken, b: Line.AccessToken) -> Swift.Bool
+}
+public struct Unit : Swift.Decodable {
+  public init(from decoder: any Swift.Decoder) throws
+}
+public struct FlexIconComponent : Swift.Codable {
+  public let url: Foundation.URL
+  public var margin: Line.FlexMessageComponent.Margin?
+  public var size: Line.FlexMessageComponent.Size?
+  public var aspectRatio: Line.FlexMessageComponent.AspectRatio?
+  public init(url: Foundation.URL) throws
+  public init(url: Foundation.URL, margin: Line.FlexMessageComponent.Margin? = nil, size: Line.FlexMessageComponent.Size? = nil, aspectRatio: Line.FlexMessageComponent.AspectRatio? = nil) throws
+  public func encode(to encoder: any Swift.Encoder) throws
+  public init(from decoder: any Swift.Decoder) throws
+}
+extension Line.FlexIconComponent : Line.FlexMessageComponentConvertible {
+  public var component: Line.FlexMessageComponent {
+    get
+  }
+}
+public struct FlexImageComponent : Swift.Codable, Line.MessageActionContainer {
+  public let url: Foundation.URL
+  public var flex: Line.FlexMessageComponent.Ratio?
+  public var margin: Line.FlexMessageComponent.Margin?
+  public var alignment: Line.FlexMessageComponent.Alignment?
+  public var gravity: Line.FlexMessageComponent.Gravity?
+  public var size: Line.FlexMessageComponent.Size?
+  public var aspectRatio: Line.FlexMessageComponent.AspectRatio?
+  public var aspectMode: Line.FlexMessageComponent.AspectMode?
+  public var backgroundColor: Line.HexColor?
+  public var action: Line.MessageAction?
+  public init(url: Foundation.URL, flex: Line.FlexMessageComponent.Ratio? = nil, margin: Line.FlexMessageComponent.Margin? = nil, alignment: Line.FlexMessageComponent.Alignment? = nil, gravity: Line.FlexMessageComponent.Gravity? = nil, size: Line.FlexMessageComponent.Size? = nil, aspectRatio: Line.FlexMessageComponent.AspectRatio? = nil, aspectMode: Line.FlexMessageComponent.AspectMode? = nil, backgroundColor: Line.HexColor? = nil, action: (any Line.MessageActionConvertible)? = nil) throws
+  public func encode(to encoder: any Swift.Encoder) throws
+  public init(from decoder: any Swift.Decoder) throws
+}
+extension Line.FlexImageComponent : Line.FlexMessageComponentConvertible {
+  public var component: Line.FlexMessageComponent {
+    get
+  }
+}
+public struct FlexBoxComponent : Swift.Codable, Line.MessageActionContainer {
+  public let layout: Line.FlexMessageComponent.Layout
+  public var contents: [Line.FlexMessageComponent]
+  public var flex: Line.FlexMessageComponent.Ratio?
+  public var spacing: Line.FlexMessageComponent.Spacing?
+  public var margin: Line.FlexMessageComponent.Margin?
+  public var action: Line.MessageAction?
+  public init(layout: Line.FlexMessageComponent.Layout, contents: [any Line.FlexMessageComponentConvertible] = [])
+  public init(layout: Line.FlexMessageComponent.Layout, flex: Line.FlexMessageComponent.Ratio? = nil, spacing: Line.FlexMessageComponent.Spacing? = nil, margin: Line.FlexMessageComponent.Margin? = nil, action: Line.MessageAction? = nil, contents: (() -> [any Line.FlexMessageComponentConvertible]))
+  public mutating func addComponent(_ value: any Line.FlexMessageComponentConvertible)
+  public mutating func removeFisrtComponent(where condition: (Line.FlexMessageComponent) throws -> Swift.Bool) rethrows -> Line.FlexMessageComponent?
+  public func encode(to encoder: any Swift.Encoder) throws
+  public init(from decoder: any Swift.Decoder) throws
+}
+extension Line.FlexBoxComponent : Line.FlexMessageComponentConvertible {
+  public var component: Line.FlexMessageComponent {
+    get
+  }
+}
+public struct HexColor : Swift.Codable {
+  public let rawValue: Swift.String
+  public let color: UIKit.UIColor
+  public init(_ color: UIKit.UIColor)
+  public init(rawValue: Swift.String, default: UIKit.UIColor)
+  public init(from decoder: any Swift.Decoder) throws
+  public func encode(to encoder: any Swift.Encoder) throws
+}
+extension Line.HexColor : Swift.Equatable {
+  public static func == (lhs: Line.HexColor, rhs: Line.HexColor) -> Swift.Bool
+}
+extension Line.HexColor : Swift.ExpressibleByStringLiteral {
+  public init(stringLiteral value: Swift.String)
+  public typealias ExtendedGraphemeClusterLiteralType = Swift.String
+  public typealias StringLiteralType = Swift.String
+  public typealias UnicodeScalarLiteralType = Swift.String
+}
+public struct ImageMessage : Swift.Codable {
+  public let originalContentURL: Foundation.URL
+  public let previewImageURL: Foundation.URL
+  public var animated: Swift.Bool?
+  public var fileExtension: Swift.String?
+  public var sender: Line.MessageSender?
+  public init(originalContentURL: Foundation.URL, previewImageURL: Foundation.URL, animated: Swift.Bool? = nil, fileExtension: Swift.String? = nil, sender: Line.MessageSender? = nil) throws
+  public func encode(to encoder: any Swift.Encoder) throws
+  public init(from decoder: any Swift.Decoder) throws
+}
+extension Line.ImageMessage : Line.MessageConvertible {
+  public var message: Line.Message {
+    get
+  }
+}
+extension Line.API {
+  @available(*, deprecated, renamed: "Auth.refreshAccessToken", message: "Auth-related APIs don't refresh access token automatically.\nMake sure you don't need token refreshing as a side effect, then use methods from `API.Auth` instead.")
+  public static func refreshAccessToken(callbackQueue queue: Line.CallbackQueue = .currentMainOrAsync, completionHandler completion: @escaping (Swift.Result<Line.AccessToken, Line.LineSDKError>) -> Swift.Void)
+  @available(*, deprecated, renamed: "Auth.revokeAccessToken", message: "Auth-related APIs don't refresh access tokens automatically.\nMake sure you don't need token refreshing as a side effect, then use methods from `API.Auth` instead.")
+  public static func revokeAccessToken(_ token: Swift.String? = nil, callbackQueue queue: Line.CallbackQueue = .currentMainOrAsync, completionHandler completion: @escaping (Swift.Result<(), Line.LineSDKError>) -> Swift.Void)
+  @available(*, deprecated, renamed: "Auth.revokeRefreshToken", message: "Auth-related APIs don't refresh access tokens automatically.\nMake sure you don't need token refreshing as a side effect, then use methods from `API.Auth` instead.")
+  public static func revokeRefreshToken(_ refreshToken: Swift.String? = nil, callbackQueue queue: Line.CallbackQueue = .currentMainOrAsync, completionHandler completion: @escaping (Swift.Result<(), Line.LineSDKError>) -> Swift.Void)
+  @available(*, deprecated, renamed: "Auth.verifyAccessToken", message: "Auth-related APIs don't refresh access tokens automatically.\nMake sure you don't need token refreshing as a side effect, then use methods from `API.Auth` instead.")
+  public static func verifyAccessToken(_ token: Swift.String? = nil, callbackQueue queue: Line.CallbackQueue = .currentMainOrAsync, completionHandler completion: @escaping (Swift.Result<Line.AccessTokenVerifyResult, Line.LineSDKError>) -> Swift.Void)
+}
+@available(*, deprecated, message: "Use `LoginManager.Parameters` type instead.")
+public struct LoginManagerOptions : Swift.OptionSet {
+  public let rawValue: Swift.Int
+  public init(rawValue: Swift.Int)
+  @available(*, deprecated, message: "Use `LoginManager.Parameters.onlyWebLogin` instead.")
+  public static let onlyWebLogin: Line.LoginManagerOptions
+  @available(*, deprecated, message: "Use `LoginManager.Parameters.botPromptStyle` instead.")
+  public static let botPromptNormal: Line.LoginManagerOptions
+  @available(*, deprecated, message: "Use `LoginManager.Parameters.botPromptStyle` instead.")
+  public static let botPromptAggressive: Line.LoginManagerOptions
+  public typealias ArrayLiteralElement = Line.LoginManagerOptions
+  public typealias Element = Line.LoginManagerOptions
+  public typealias RawValue = Swift.Int
+}
+public struct TemplateConfirmPayload : Swift.Codable {
+  public var text: Swift.String
+  public var confirmAction: Line.MessageAction {
+    get
+    set
+  }
+  public var cancelAction: Line.MessageAction {
+    get
+    set
+  }
+  public init(text: Swift.String, confirmAction: any Line.MessageActionConvertible, cancelAction: any Line.MessageActionConvertible)
+  public mutating func setConfirmAction(_ value: any Line.MessageActionConvertible)
+  public mutating func setCancelAction(_ value: any Line.MessageActionConvertible)
+  public func encode(to encoder: any Swift.Encoder) throws
+  public init(from decoder: any Swift.Decoder) throws
+}
+extension Line.TemplateConfirmPayload : Line.TemplateMessageConvertible {
+  public var payload: Line.TemplateMessagePayload {
+    get
+  }
+}
+public struct FlexBlockStyle : Swift.Codable {
+  public var backgroundColor: Line.HexColor?
+  public var separator: Swift.Bool?
+  public var separatorColor: Line.HexColor?
+  public init(backgroundColor: Line.HexColor? = nil, separator: Swift.Bool? = nil, separatorColor: Line.HexColor? = nil)
+  public func encode(to encoder: any Swift.Encoder) throws
+  public init(from decoder: any Swift.Decoder) throws
+}
+public struct GetOpenChatRoomMembershipStateRequest : Line.Request {
+  public enum State : Swift.String, Swift.Decodable {
+    case joined
+    case notJoined
+    case undefined
+    public init(from decoder: any Swift.Decoder) throws
+    public init?(rawValue: Swift.String)
+    public typealias RawValue = Swift.String
+    public var rawValue: Swift.String {
+      get
+    }
+  }
+  public struct Response : Swift.Decodable {
+    public let state: Line.GetOpenChatRoomMembershipStateRequest.State
+    public init(from decoder: any Swift.Decoder) throws
+  }
+  public let method: Line.HTTPMethod
+  public var path: Swift.String {
+    get
+  }
+  public let authentication: Line.AuthenticateMethod
+  public let openChatId: Line.EntityID
+  public init(openChatId: Line.EntityID) throws
+}
+public struct LoginResult {
+  public let accessToken: Line.AccessToken
+  public let permissions: Swift.Set<Line.LoginPermission>
+  public let userProfile: Line.UserProfile?
+  public let friendshipStatusChanged: Swift.Bool?
+  public let IDTokenNonce: Swift.String?
+}
+extension Line.LoginResult : Swift.Encodable {
+  public func encode(to encoder: any Swift.Encoder) throws
+}
+public enum CallbackQueue {
+  case asyncMain
+  case currentMainOrAsync
+  case untouch
+  case dispatch(Dispatch.DispatchQueue)
+  case operation(Foundation.OperationQueue)
+}
+public typealias EntityID = Swift.String
+public protocol RequestAdapter {
+  func adapted(_ request: Foundation.URLRequest) throws -> Foundation.URLRequest
+}
+public struct AnyRequestAdapter : Line.RequestAdapter {
+  public init(_ block: @escaping (Foundation.URLRequest) throws -> Foundation.URLRequest)
+  public func adapted(_ request: Foundation.URLRequest) throws -> Foundation.URLRequest
+}
+public struct LineSDKNotificationKey {
+}
+public struct User : Swift.Decodable {
+  public let userID: Swift.String
+  public var displayName: Swift.String {
+    get
+  }
+  public let displayNameOriginal: Swift.String
+  public let displayNameOverridden: Swift.String?
+  public let pictureURL: Foundation.URL?
+  public var pictureURLLarge: Foundation.URL? {
+    get
+  }
+  public var pictureURLSmall: Foundation.URL? {
+    get
+  }
+  public init(from decoder: any Swift.Decoder) throws
+}
+public struct GetBotFriendshipStatusRequest : Line.Request {
+  public let method: Line.HTTPMethod
+  public let path: Swift.String
+  public let authentication: Line.AuthenticateMethod
+  public init()
+  public struct Response : Swift.Codable {
+    public let friendFlag: Swift.Bool
+    public func encode(to encoder: any Swift.Encoder) throws
+    public init(from decoder: any Swift.Decoder) throws
+  }
+}
+public enum CryptoError : Swift.Error {
+  public enum AlgorithmsErrorReason {
+    case invalidDERKey(data: Foundation.Data, reason: Swift.String)
+    case invalidX509Header(data: Foundation.Data, index: Swift.Int, reason: Swift.String)
+    case createKeyFailed(data: Foundation.Data, reason: Swift.String)
+    case invalidPEMKey(string: Swift.String, reason: Swift.String)
+    case encryptingError((any Swift.Error)?)
+    case decryptingError((any Swift.Error)?)
+    case signingError((any Swift.Error)?)
+    case verifyingError((any Swift.Error)?, statusCode: Swift.Int?)
+    case invalidSignature(data: Foundation.Data)
+  }
+  public enum JWTErrorReason {
+    case malformedJWTFormat(string: Swift.String)
+    case unsupportedHeaderAlgorithm(name: Swift.String)
+    case claimVerifyingFailed(key: Swift.String, got: Swift.String, description: Swift.String)
+  }
+  public enum JWKErrorReason {
+    case unsupportedKeyType(Swift.String)
+  }
+  public enum GeneralErrorReason {
+    case base64ConversionFailed(string: Swift.String)
+    case dataConversionFailed(data: Foundation.Data, encoding: Swift.String.Encoding)
+    case stringConversionFailed(string: Swift.String, encoding: Swift.String.Encoding)
+    case operationNotSupported(reason: Swift.String)
+    case decodingFailed(string: Swift.String, type: any Any.Type)
+  }
+  case algorithmsFailed(reason: Line.CryptoError.AlgorithmsErrorReason)
+  case JWTFailed(reason: Line.CryptoError.JWTErrorReason)
+  case JWKFailed(reason: Line.CryptoError.JWKErrorReason)
+  case generalError(reason: Line.CryptoError.GeneralErrorReason)
+}
+extension Line.CryptoError : Foundation.LocalizedError {
+  public var errorDescription: Swift.String? {
+    get
+  }
+}
+extension Line.CryptoError : Foundation.CustomNSError {
+  public var errorUserInfo: [Swift.String : Any] {
+    get
+  }
+  public var errorCode: Swift.Int {
+    get
+  }
+  public static var errorDomain: Swift.String {
+    get
+  }
+}
+public struct GetVerifyTokenRequest : Line.Request {
+  public let accessToken: Swift.String
+  public init(accessToken: Swift.String)
+  public let method: Line.HTTPMethod
+  public let path: Swift.String
+  public let authentication: Line.AuthenticateMethod
+  public var parameters: Line.Parameters? {
+    get
+  }
+  public typealias Response = Line.AccessTokenVerifyResult
+}
+public struct Group : Swift.Decodable {
+  public let groupID: Swift.String
+  public let groupName: Swift.String
+  public let pictureURL: Foundation.URL?
+  public var pictureURLLarge: Foundation.URL? {
+    get
+  }
+  public var pictureURLSmall: Foundation.URL? {
+    get
+  }
+  public init(from decoder: any Swift.Decoder) throws
+}
+public enum TemplateMessagePayload : Swift.Codable {
+  case buttons(Line.TemplateButtonsPayload)
+  case confirm(Line.TemplateConfirmPayload)
+  case carousel(Line.TemplateCarouselPayload)
+  case imageCarousel(Line.TemplateImageCarouselPayload)
+  case unknown
+  public init(from decoder: any Swift.Decoder) throws
+  public func encode(to encoder: any Swift.Encoder) throws
+  public var asButtonsPayload: Line.TemplateButtonsPayload? {
+    get
+  }
+  public var asConfirmPayload: Line.TemplateConfirmPayload? {
+    get
+  }
+  public var asCarouselPayload: Line.TemplateCarouselPayload? {
+    get
+  }
+  public var asImageCarouselPayload: Line.TemplateImageCarouselPayload? {
+    get
+  }
+}
+extension Line.TemplateMessagePayload : Line.TemplateMessageConvertible {
+  public var payload: Line.TemplateMessagePayload {
+    get
+  }
+}
+public struct OpenChatRoomInfo : Swift.Decodable {
+  public let openChatId: Swift.String
+  public let url: Foundation.URL
+  public init(from decoder: any Swift.Decoder) throws
+}
+public struct PostOpenChatCreateRequest : Line.Request {
+  public typealias Response = Line.OpenChatRoomInfo
+  public let method: Line.HTTPMethod
+  public let path: Swift.String
+  public let authentication: Line.AuthenticateMethod
+  public let room: Line.OpenChatRoomCreatingItem
+  public init(room: Line.OpenChatRoomCreatingItem)
+  public var parameters: Line.Parameters? {
+    get
+  }
+}
+extension Line.API {
+  public enum Auth {
+    public static func refreshAccessToken(callbackQueue queue: Line.CallbackQueue = .currentMainOrAsync, completionHandler completion: @escaping (Swift.Result<Line.AccessToken, Line.LineSDKError>) -> Swift.Void)
+    public static func revokeAccessToken(_ token: Swift.String? = nil, callbackQueue queue: Line.CallbackQueue = .currentMainOrAsync, completionHandler completion: @escaping (Swift.Result<(), Line.LineSDKError>) -> Swift.Void)
+    public static func revokeRefreshToken(_ refreshToken: Swift.String? = nil, callbackQueue queue: Line.CallbackQueue = .currentMainOrAsync, completionHandler completion: @escaping (Swift.Result<(), Line.LineSDKError>) -> Swift.Void)
+    public static func verifyAccessToken(_ token: Swift.String? = nil, callbackQueue queue: Line.CallbackQueue = .currentMainOrAsync, completionHandler completion: @escaping (Swift.Result<Line.AccessTokenVerifyResult, Line.LineSDKError>) -> Swift.Void)
+  }
+}
+public protocol ResponsePipelineTerminator : AnyObject {
+  func parse<T>(request: T, data: Foundation.Data) throws -> T.Response where T : Line.Request
+}
+public protocol ResponsePipelineRedirector : AnyObject {
+  func shouldApply<T>(request: T, data: Foundation.Data, response: Foundation.HTTPURLResponse) -> Swift.Bool where T : Line.Request
+  func redirect<T>(request: T, data: Foundation.Data, response: Foundation.HTTPURLResponse, done closure: @escaping (Line.ResponsePipelineRedirectorAction) throws -> Swift.Void) throws where T : Line.Request
+}
+public enum ResponsePipelineRedirectorAction {
+  case restart
+  case restartWithout(Line.ResponsePipeline)
+  case stop(any Swift.Error)
+  case `continue`
+  case continueWith(Foundation.Data, Foundation.HTTPURLResponse)
+}
+public enum ResponsePipeline {
+  case terminator(any Line.ResponsePipelineTerminator)
+  case redirector(any Line.ResponsePipelineRedirector)
+}
+extension Line.ResponsePipeline : Swift.Equatable {
+  public static func == (lhs: Line.ResponsePipeline, rhs: Line.ResponsePipeline) -> Swift.Bool
+}
+public class JSONParsePipeline : Line.ResponsePipelineTerminator {
+  final public let parser: Foundation.JSONDecoder
+  public init(_ parser: Foundation.JSONDecoder)
+  public func parse<T>(request: T, data: Foundation.Data) throws -> T.Response where T : Line.Request
+  @objc deinit
+}
+public struct TextMessage : Swift.Codable {
+  public var text: Swift.String
+  public var sender: Line.MessageSender?
+  public init(text: Swift.String, sender: Line.MessageSender? = nil)
+  public func encode(to encoder: any Swift.Encoder) throws
+  public init(from decoder: any Swift.Decoder) throws
+}
+extension Line.TextMessage : Line.MessageConvertible {
+  public var message: Line.Message {
+    get
+  }
+}
+public struct AudioMessage : Swift.Codable {
+  public let originalContentURL: Foundation.URL
+  public var duration: Foundation.TimeInterval? {
+    get
+    set
+  }
+  public init(originalContentURL: Foundation.URL, duration: Foundation.TimeInterval?) throws
+  public func encode(to encoder: any Swift.Encoder) throws
+  public init(from decoder: any Swift.Decoder) throws
+}
+extension Line.AudioMessage : Line.MessageConvertible {
+  public var message: Line.Message {
+    get
+  }
+}
+extension Line.LoginManager {
+  public struct Parameters {
+    public var onlyWebLogin: Swift.Bool
+    public var botPromptStyle: Line.LoginManager.BotPrompt?
+    public var preferredWebPageLanguage: Line.LoginManager.WebPageLanguage?
+    public var IDTokenNonce: Swift.String?
+    public var allowRecreatingLoginProcess: Swift.Bool
+    public init()
+    @available(*, deprecated, message: "Internally deprecated to suppress warning. Set properties in `Parameters` instead.")
+    public init(options: Line.LoginManagerOptions, language: Line.LoginManager.WebPageLanguage?)
+  }
+}
+extension Line.LoginManager {
+  public enum BotPrompt : Swift.String {
+    case normal
+    case aggressive
+    public init?(rawValue: Swift.String)
+    public typealias RawValue = Swift.String
+    public var rawValue: Swift.String {
+      get
+    }
+  }
+  public struct WebPageLanguage {
+    public let rawValue: Swift.String
+    public init(rawValue: Swift.String)
+    public static let arabic: Line.LoginManager.WebPageLanguage
+    public static let german: Line.LoginManager.WebPageLanguage
+    public static let english: Line.LoginManager.WebPageLanguage
+    public static let spanish: Line.LoginManager.WebPageLanguage
+    public static let french: Line.LoginManager.WebPageLanguage
+    public static let indonesian: Line.LoginManager.WebPageLanguage
+    public static let italian: Line.LoginManager.WebPageLanguage
+    public static let japanese: Line.LoginManager.WebPageLanguage
+    public static let korean: Line.LoginManager.WebPageLanguage
+    public static let malay: Line.LoginManager.WebPageLanguage
+    public static let portugueseBrazilian: Line.LoginManager.WebPageLanguage
+    public static let portugueseEuropean: Line.LoginManager.WebPageLanguage
+    public static let russian: Line.LoginManager.WebPageLanguage
+    public static let thai: Line.LoginManager.WebPageLanguage
+    public static let turkish: Line.LoginManager.WebPageLanguage
+    public static let vietnamese: Line.LoginManager.WebPageLanguage
+    public static let chineseSimplified: Line.LoginManager.WebPageLanguage
+    public static let chineseTraditional: Line.LoginManager.WebPageLanguage
+  }
+}
+public struct FlexSpacerComponent : Swift.Codable {
+  public var size: Line.FlexMessageComponent.Size?
+  public init(size: Line.FlexMessageComponent.Size? = nil)
+  public func encode(to encoder: any Swift.Encoder) throws
+  public init(from decoder: any Swift.Decoder) throws
+}
+extension Line.FlexSpacerComponent : Line.FlexMessageComponentConvertible {
+  public var component: Line.FlexMessageComponent {
+    get
+  }
+}
+public enum OpenChatCategory : Swift.Int, Swift.CaseIterable {
+  case notSelected
+  case school
+  case friend
+  case company
+  case organization
+  case region
+  case baby
+  case sports
+  case game
+  case book
+  case movies
+  case photo
+  case art
+  case animation
+  case music
+  case tv
+  case celebrity
+  case food
+  case travel
+  case pet
+  case car
+  case fashion
+  case health
+  case finance
+  case study
+  case etc
+  public init?(rawValue: Swift.Int)
+  public typealias AllCases = [Line.OpenChatCategory]
+  public typealias RawValue = Swift.Int
+  public static var allCases: [Line.OpenChatCategory] {
+    get
+  }
+  public var rawValue: Swift.Int {
+    get
+  }
+}
+public struct FlexSeparatorComponent : Swift.Codable {
+  public var margin: Line.FlexMessageComponent.Margin?
+  public var color: Line.HexColor?
+  public init(margin: Line.FlexMessageComponent.Margin?, color: Line.HexColor?)
+  public func encode(to encoder: any Swift.Encoder) throws
+  public init(from decoder: any Swift.Decoder) throws
+}
+extension Line.FlexSeparatorComponent : Line.FlexMessageComponentConvertible {
+  public var component: Line.FlexMessageComponent {
+    get
+  }
+}
+public struct OpenChatRoomCreatingItem {
+  public let name: Swift.String
+  public let roomDescription: Swift.String
+  public let creatorDisplayName: Swift.String
+  public let category: Swift.Int
+  public let allowSearch: Swift.Bool
+  public init(name: Swift.String, roomDescription: Swift.String, creatorDisplayName: Swift.String, category: Line.OpenChatCategory, allowSearch: Swift.Bool)
+  public init(name: Swift.String, roomDescription: Swift.String, creatorDisplayName: Swift.String, category: Swift.Int, allowSearch: Swift.Bool)
+}
+public enum MessageAction : Swift.Codable, Line.MessageActionConvertible {
+  case URI(Line.MessageURIAction)
+  case unknown
+  public init(from decoder: any Swift.Decoder) throws
+  public func encode(to encoder: any Swift.Encoder) throws
+  public var asURIAction: Line.MessageURIAction? {
+    get
+  }
+  public var action: Line.MessageAction {
+    get
+  }
+}
+public struct MessageURIAction : Swift.Codable, Line.MessageActionConvertible {
+  public let label: Swift.String?
+  public let uri: Foundation.URL
+  public init(label: Swift.String? = nil, uri: Foundation.URL)
+  public var action: Line.MessageAction {
+    get
+  }
+  public func encode(to encoder: any Swift.Encoder) throws
+  public init(from decoder: any Swift.Decoder) throws
+}
+public struct FlexCarouselContainer : Swift.Codable {
+  public var contents: [Line.FlexBubbleContainer]
+  public init(contents: [Line.FlexBubbleContainer] = [])
+  public mutating func addBubble(_ value: Line.FlexBubbleContainer)
+  public mutating func removeFirstBubble(where condition: (Line.FlexBubbleContainer) throws -> Swift.Bool) rethrows -> Line.FlexBubbleContainer?
+  public func encode(to encoder: any Swift.Encoder) throws
+  public init(from decoder: any Swift.Decoder) throws
+}
+extension Line.FlexCarouselContainer : Line.FlexMessageConvertible {
+  public var container: Line.FlexMessageContainer {
+    get
+  }
+}
+public struct FlexButtonComponent : Swift.Codable {
+  public enum Style : Swift.String, Line.DefaultEnumCodable {
+    case link
+    case primary
+    case secondary
+    public static let defaultCase: Line.FlexButtonComponent.Style
+    public init?(rawValue: Swift.String)
+    public typealias RawValue = Swift.String
+    public var rawValue: Swift.String {
+      get
+    }
+  }
+  public var action: Line.MessageAction
+  public var flex: Line.FlexMessageComponent.Ratio?
+  public var margin: Line.FlexMessageComponent.Margin?
+  public var height: Line.FlexMessageComponent.Height?
+  public var style: Line.FlexButtonComponent.Style?
+  public var color: Line.HexColor?
+  public var gravity: Line.FlexMessageComponent.Gravity?
+  public init(action: any Line.MessageActionConvertible, flex: Line.FlexMessageComponent.Ratio? = nil, margin: Line.FlexMessageComponent.Margin? = nil, height: Line.FlexMessageComponent.Height? = nil, style: Line.FlexButtonComponent.Style? = nil, color: Line.HexColor? = nil, gravity: Line.FlexMessageComponent.Gravity? = nil)
+  public func encode(to encoder: any Swift.Encoder) throws
+  public init(from decoder: any Swift.Decoder) throws
+}
+extension Line.FlexButtonComponent : Line.FlexMessageComponentConvertible {
+  public var component: Line.FlexMessageComponent {
+    get
+  }
+}
+extension Line.TemplateMessagePayload {
+  public enum ImageAspectRatio : Swift.String, Line.DefaultEnumCodable {
+    case rectangle
+    case square
+    public static let defaultCase: Line.TemplateMessagePayload.ImageAspectRatio
+    public init?(rawValue: Swift.String)
+    public typealias RawValue = Swift.String
+    public var rawValue: Swift.String {
+      get
+    }
+  }
+  public enum ImageContentMode : Swift.String, Line.DefaultEnumCodable {
+    case aspectFill
+    case aspectFit
+    public static let defaultCase: Line.TemplateMessagePayload.ImageContentMode
+    public init?(rawValue: Swift.String)
+    public typealias RawValue = Swift.String
+    public var rawValue: Swift.String {
+      get
+    }
+  }
+}
+public struct GetGroupsRequest : Line.Request {
+  public init(pageToken: Swift.String? = nil)
+  public let method: Line.HTTPMethod
+  public let path: Swift.String
+  public let authentication: Line.AuthenticateMethod
+  public var parameters: [Swift.String : Any]? {
+    get
+  }
+  public struct Response : Swift.Decodable {
+    public let groups: [Line.Group]
+    public let pageToken: Swift.String?
+    public init(from decoder: any Swift.Decoder) throws
+  }
+}
+public struct PostMultisendMessagesRequest : Line.Request {
+  public let userIDs: [Swift.String]
+  public let messages: [Line.Message]
+  public init(userIDs: [Swift.String], messages: [any Line.MessageConvertible])
+  public let method: Line.HTTPMethod
+  public let path: Swift.String
+  public let authentication: Line.AuthenticateMethod
+  public var parameters: [Swift.String : Any]? {
+    get
+  }
+  public struct Response : Swift.Decodable {
+    public struct SendingResult : Swift.Decodable {
+      public let to: Swift.String
+      public let status: Line.MessageSendingStatus
+      public init(from decoder: any Swift.Decoder) throws
+    }
+    public let results: [Line.PostMultisendMessagesRequest.Response.SendingResult]
+    public init(from decoder: any Swift.Decoder) throws
+  }
+}
+public enum FlexMessageContainer : Swift.Codable {
+  case bubble(Line.FlexBubbleContainer)
+  case carousel(Line.FlexCarouselContainer)
+  case unknown
+  public init(from decoder: any Swift.Decoder) throws
+  public func encode(to encoder: any Swift.Encoder) throws
+  public var asBubbleContainer: Line.FlexBubbleContainer? {
+    get
+  }
+  public var asCarouselContainer: Line.FlexCarouselContainer? {
+    get
+  }
+  public func jsonString() throws -> Swift.String?
+}
+extension Line.FlexMessageContainer : Line.FlexMessageConvertible {
+  public var container: Line.FlexMessageContainer {
+    get
+  }
+}
+public struct TemplateImageCarouselPayload : Swift.Codable {
+  public struct Column : Swift.Codable, Line.MessageActionContainer {
+    public let imageURL: Foundation.URL
+    public var action: Line.MessageAction?
+    public init(imageURL: Foundation.URL, action: (any Line.MessageActionConvertible)?) throws
+    public func encode(to encoder: any Swift.Encoder) throws
+    public init(from decoder: any Swift.Decoder) throws
+  }
+  public var columns: [Line.TemplateImageCarouselPayload.Column]
+  public init(columns: [Line.TemplateImageCarouselPayload.Column] = [])
+  public mutating func addColumn(_ column: Line.TemplateImageCarouselPayload.Column)
+  public func encode(to encoder: any Swift.Encoder) throws
+  public init(from decoder: any Swift.Decoder) throws
+}
+extension Line.TemplateImageCarouselPayload : Line.TemplateMessageConvertible {
+  public var payload: Line.TemplateMessagePayload {
+    get
+  }
+}
+@_hasMissingDesignatedInitializers open class Line {
+  public static func register(channelID: Swift.String, universalLinkURL: Swift.String)
+  public static func login(viewController: UIKit.UIViewController, permissions: [Swift.String] = ["openid","profile"], completion: @escaping Guard.Authing.AuthCompletion)
+  public static func application(_ app: UIKit.UIApplication, open url: Foundation.URL) -> Swift.Bool
+  @objc deinit
+}
+public struct GetApproversInFriendsRequest : Line.Request {
+  public init(pageToken: Swift.String? = nil)
+  public let method: Line.HTTPMethod
+  public let path: Swift.String
+  public let authentication: Line.AuthenticateMethod
+  public var parameters: [Swift.String : Any]? {
+    get
+  }
+  public struct Response : Swift.Decodable {
+    public let friends: [Line.User]
+    public let pageToken: Swift.String?
+    public init(from decoder: any Swift.Decoder) throws
+  }
+}
+public struct FlexBubbleContainer : Swift.Codable {
+  public struct Style : Swift.Codable {
+    public var header: Line.FlexBlockStyle?
+    public var hero: Line.FlexBlockStyle?
+    public var body: Line.FlexBlockStyle?
+    public var footer: Line.FlexBlockStyle?
+    public init()
+    public func encode(to encoder: any Swift.Encoder) throws
+    public init(from decoder: any Swift.Decoder) throws
+  }
+  public enum Direction : Swift.String, Line.DefaultEnumCodable {
+    case leftToRight
+    case rightToLeft
+    public static let defaultCase: Line.FlexBubbleContainer.Direction
+    public init?(rawValue: Swift.String)
+    public typealias RawValue = Swift.String
+    public var rawValue: Swift.String {
+      get
+    }
+  }
+  public var header: Line.FlexBoxComponent?
+  public var hero: Line.FlexImageComponent?
+  public var body: Line.FlexBoxComponent?
+  public var footer: Line.FlexBoxComponent?
+  public var styles: Line.FlexBubbleContainer.Style?
+  public var direction: Line.FlexBubbleContainer.Direction?
+  public init(header: Line.FlexBoxComponent? = nil, hero: Line.FlexImageComponent? = nil, body: Line.FlexBoxComponent? = nil, footer: Line.FlexBoxComponent? = nil, styles: Line.FlexBubbleContainer.Style? = nil)
+  public func encode(to encoder: any Swift.Encoder) throws
+  public init(from decoder: any Swift.Decoder) throws
+}
+extension Line.FlexBubbleContainer : Line.FlexMessageConvertible {
+  public var container: Line.FlexMessageContainer {
+    get
+  }
+}
+@_hasMissingDesignatedInitializers public class LoginManager {
+  public static let shared: Line.LoginManager
+  public var currentProcess: Line.LoginProcess? {
+    get
+  }
+  public var isSetupFinished: Swift.Bool {
+    get
+  }
+  public var isAuthorized: Swift.Bool {
+    get
+  }
+  public var isAuthorizing: Swift.Bool {
+    get
+  }
+  public func setup(channelID: Swift.String, universalLinkURL: Foundation.URL?)
+  @discardableResult
+  public func login(permissions: Swift.Set<Line.LoginPermission> = [.profile], in viewController: UIKit.UIViewController? = nil, parameters: Line.LoginManager.Parameters = .init(), completionHandler completion: @escaping (Swift.Result<Line.LoginResult, Line.LineSDKError>) -> Swift.Void) -> Line.LoginProcess?
+  public func logout(completionHandler completion: @escaping (Swift.Result<(), Line.LineSDKError>) -> Swift.Void)
+  public func application(_ app: UIKit.UIApplication, open url: Foundation.URL?, options: [UIKit.UIApplication.OpenURLOptionsKey : Any] = [:]) -> Swift.Bool
+  @available(*, deprecated, message: "Set the preferred language in a `LoginManager.Parameters` value and use\n`login(permissions:in:parameters:completionHandler:)` instead.\")")
+  public var preferredWebPageLanguage: Line.LoginManager.WebPageLanguage?
+  @available(*, deprecated, message: "Convert the `options` to a `LoginManager.Parameters` value and\nuse `login(permissions:in:parameters:completionHandler:)` instead.\")")
+  @discardableResult
+  public func login(permissions: Swift.Set<Line.LoginPermission> = [.profile], in viewController: UIKit.UIViewController? = nil, options: Line.LoginManagerOptions, completionHandler completion: @escaping (Swift.Result<Line.LoginResult, Line.LineSDKError>) -> Swift.Void) -> Line.LoginProcess?
+  @objc deinit
+}
+public struct PostOpenChatRoomJoinRequest : Line.Request {
+  public typealias Response = Line.Unit
+  public let method: Line.HTTPMethod
+  public var path: Swift.String {
+    get
+  }
+  public let authentication: Line.AuthenticateMethod
+  public let openChatId: Line.EntityID
+  public let displayName: Swift.String
+  public init(openChatId: Line.EntityID, displayName: Swift.String) throws
+  public var prefixPipelines: [Line.ResponsePipeline]? {
+    get
+  }
+  public var parameters: Line.Parameters? {
+    get
+  }
+}
+public struct GetOpenChatRoomJoinTypeRequest : Line.Request {
+  public enum RoomType : Swift.String, Swift.Decodable {
+    case `default`
+    case approval
+    case code
+    case undefined
+    public init(from decoder: any Swift.Decoder) throws
+    public init?(rawValue: Swift.String)
+    public typealias RawValue = Swift.String
+    public var rawValue: Swift.String {
+      get
+    }
+  }
+  public struct Response : Swift.Decodable {
+    public let type: Line.GetOpenChatRoomJoinTypeRequest.RoomType
+    public init(from decoder: any Swift.Decoder) throws
+  }
+  public let method: Line.HTTPMethod
+  public var path: Swift.String {
+    get
+  }
+  public let authentication: Line.AuthenticateMethod
+  public let openChatId: Line.EntityID
+  public init(openChatId: Line.EntityID) throws
+}
+public struct TemplateMessage : Swift.Codable {
+  public var altText: Swift.String
+  public var payload: Line.TemplateMessagePayload
+  public init(altText: Swift.String, payload: any Line.TemplateMessageConvertible)
+  public func encode(to encoder: any Swift.Encoder) throws
+  public init(from decoder: any Swift.Decoder) throws
+}
+extension Line.TemplateMessage : Line.MessageConvertible {
+  public var message: Line.Message {
+    get
+  }
+}
+public struct GetApproversInGroupRequest : Line.Request {
+  public init(groupID: Line.EntityID, pageToken: Swift.String? = nil) throws
+  public let method: Line.HTTPMethod
+  public var path: Swift.String {
+    get
+  }
+  public let authentication: Line.AuthenticateMethod
+  public var parameters: [Swift.String : Any]? {
+    get
+  }
+  public struct Response : Swift.Decodable {
+    public let users: [Line.User]
+    public let pageToken: Swift.String?
+    public init(from decoder: any Swift.Decoder) throws
+  }
+}
+public struct MessageSender : Swift.Codable {
+  public var label: Swift.String
+  public var iconURL: Foundation.URL
+  public var linkURL: Foundation.URL?
+  public init(label: Swift.String, iconURL: Foundation.URL, linkURL: Foundation.URL?)
+  public func encode(to encoder: any Swift.Encoder) throws
+  public init(from decoder: any Swift.Decoder) throws
+}
+extension Line.API {
+  public static func getFriends(sort: Line.GetFriendsRequest.Sort? = nil, pageToken: Swift.String?, callbackQueue queue: Line.CallbackQueue = .currentMainOrAsync, completionHandler completion: @escaping (Swift.Result<Line.GetFriendsRequest.Response, Line.LineSDKError>) -> Swift.Void)
+  public static func getApproversInFriends(pageToken: Swift.String?, callbackQueue queue: Line.CallbackQueue = .currentMainOrAsync, completionHandler completion: @escaping (Swift.Result<Line.GetApproversInFriendsRequest.Response, Line.LineSDKError>) -> Swift.Void)
+  public static func getGroups(pageToken: Swift.String?, callbackQueue queue: Line.CallbackQueue = .currentMainOrAsync, completionHandler completion: @escaping (Swift.Result<Line.GetGroupsRequest.Response, Line.LineSDKError>) -> Swift.Void)
+  public static func getApproversInGroup(groupID: Swift.String, pageToken: Swift.String?, callbackQueue queue: Line.CallbackQueue = .currentMainOrAsync, completionHandler completion: @escaping (Swift.Result<Line.GetApproversInGroupRequest.Response, Line.LineSDKError>) -> Swift.Void)
+}
+extension Line.API {
+  public static func sendMessages(_ messages: [any Line.MessageConvertible], to chatID: Swift.String, callbackQueue queue: Line.CallbackQueue = .currentMainOrAsync, completionHandler completion: @escaping (Swift.Result<Line.PostSendMessagesRequest.Response, Line.LineSDKError>) -> Swift.Void)
+  public static func multiSendMessages(_ messages: [any Line.MessageConvertible], to userIDs: [Swift.String], callbackQueue queue: Line.CallbackQueue = .currentMainOrAsync, completionHandler completion: @escaping (Swift.Result<Line.PostMultisendMessagesRequest.Response, Line.LineSDKError>) -> Swift.Void)
+}
+extension Line.API {
+  public static func getMessageSendingOneTimeToken(userIDs: [Swift.String], callbackQueue queue: Line.CallbackQueue = .currentMainOrAsync, completionHander completion: @escaping (Swift.Result<Line.MessageSendingToken, Line.LineSDKError>) -> Swift.Void)
+  public static func multiSendMessages(_ messages: [any Line.MessageConvertible], withMessageToken token: Line.MessageSendingToken, callbackQueue queue: Line.CallbackQueue = .currentMainOrAsync, completionHandler completion: @escaping (Swift.Result<Line.Unit, Line.LineSDKError>) -> Swift.Void)
+}
+extension Line.API {
+  public static func getOpenChatRoomStatus(openChatId: Line.EntityID, callbackQueue queue: Line.CallbackQueue = .currentMainOrAsync, completionHandler completion: @escaping (Swift.Result<Line.GetOpenChatRoomStatusRequest.Response, Line.LineSDKError>) -> Swift.Void)
+  public static func getOpenChatRoomMembershipState(openChatId: Line.EntityID, callbackQueue queue: Line.CallbackQueue = .currentMainOrAsync, completionHandler completion: @escaping (Swift.Result<Line.GetOpenChatRoomMembershipStateRequest.Response, Line.LineSDKError>) -> Swift.Void)
+  public static func getOpenChatRoomJoinType(openChatId: Line.EntityID, callbackQueue queue: Line.CallbackQueue = .currentMainOrAsync, completionHandler completion: @escaping (Swift.Result<Line.GetOpenChatRoomJoinTypeRequest.Response, Line.LineSDKError>) -> Swift.Void)
+  public static func postOpenChatRoomJoin(openChatId: Line.EntityID, displayName: Swift.String, callbackQueue queue: Line.CallbackQueue = .currentMainOrAsync, completionHandler completion: @escaping (Swift.Result<Line.PostOpenChatRoomJoinRequest.Response, Line.LineSDKError>) -> Swift.Void)
+}
+@_hasMissingDesignatedInitializers public class LoginProcess {
+  public func stop()
+  @objc deinit
+}
+public struct PostMultisendMessagesWithTokenRequest : Line.Request {
+  public typealias Response = Line.Unit
+  public let messageToken: Line.MessageSendingToken
+  public let messages: [Line.Message]
+  public init(token: Line.MessageSendingToken, messages: [any Line.MessageConvertible])
+  public let method: Line.HTTPMethod
+  public let path: Swift.String
+  public let authentication: Line.AuthenticateMethod
+  public var parameters: [Swift.String : Any]? {
+    get
+  }
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class LineLoginButton : Guard.SocialLoginButton {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc deinit
+}
+public struct LocationMessage : Swift.Codable {
+  public typealias LocationDegrees = Swift.Double
+  public var title: Swift.String
+  public var address: Swift.String
+  public var latitude: Line.LocationMessage.LocationDegrees
+  public var longitude: Line.LocationMessage.LocationDegrees
+  public init(title: Swift.String, address: Swift.String, latitude: Line.LocationMessage.LocationDegrees, longitude: Line.LocationMessage.LocationDegrees)
+  public func encode(to encoder: any Swift.Encoder) throws
+  public init(from decoder: any Swift.Decoder) throws
+}
+extension Line.LocationMessage : Line.MessageConvertible {
+  public var message: Line.Message {
+    get
+  }
+}
+public struct TemplateCarouselPayload : Swift.Codable {
+  public struct Column : Swift.Codable {
+    public var text: Swift.String
+    public var title: Swift.String?
+    public var actions: [Line.MessageAction]
+    public var defaultAction: Line.MessageAction?
+    public var thumbnailImageURL: Foundation.URL?
+    public var imageBackgroundColor: Line.HexColor?
+    public init(title: Swift.String? = nil, text: Swift.String, actions: [any Line.MessageActionConvertible] = [], defaultAction: (any Line.MessageActionConvertible)? = nil, thumbnailImageURL: Foundation.URL? = nil, imageBackgroundColor: Line.HexColor? = nil)
+    public mutating func addAction(_ value: any Line.MessageActionConvertible)
+    public mutating func setDefaultAction(_ value: (any Line.MessageActionConvertible)?)
+    public func encode(to encoder: any Swift.Encoder) throws
+    public init(from decoder: any Swift.Decoder) throws
+  }
+  public var columns: [Line.TemplateCarouselPayload.Column]
+  public var imageAspectRatio: Line.TemplateMessagePayload.ImageAspectRatio?
+  public var imageContentMode: Line.TemplateMessagePayload.ImageContentMode?
+  public init(columns: [Line.TemplateCarouselPayload.Column])
+  public mutating func addColumn(_ column: Line.TemplateCarouselPayload.Column)
+  public func encode(to encoder: any Swift.Encoder) throws
+  public init(from decoder: any Swift.Decoder) throws
+}
+extension Line.TemplateCarouselPayload : Line.TemplateMessageConvertible {
+  public var payload: Line.TemplateMessagePayload {
+    get
+  }
+}
+public enum HTTPMethod : Swift.String {
+  case get
+  case post
+  case put
+  case delete
+  public init?(rawValue: Swift.String)
+  public typealias RawValue = Swift.String
+  public var rawValue: Swift.String {
+    get
+  }
+}
+public enum AuthenticateMethod {
+  case none
+  case token
+  public static func == (a: Line.AuthenticateMethod, b: Line.AuthenticateMethod) -> Swift.Bool
+  public func hash(into hasher: inout Swift.Hasher)
+  public var hashValue: Swift.Int {
+    get
+  }
+}
+public enum ContentType {
+  case none
+  case formUrlEncoded
+  case json
+  public static func == (a: Line.ContentType, b: Line.ContentType) -> Swift.Bool
+  public func hash(into hasher: inout Swift.Hasher)
+  public var hashValue: Swift.Int {
+    get
+  }
+}
+public typealias Parameters = [Swift.String : Any]
+public protocol Request {
+  associatedtype Response : Swift.Decodable
+  var method: Line.HTTPMethod { get }
+  var baseURL: Foundation.URL { get }
+  var path: Swift.String { get }
+  var pathQueries: [Foundation.URLQueryItem]? { get }
+  var parameters: Line.Parameters? { get }
+  var authentication: Line.AuthenticateMethod { get }
+  var contentType: Line.ContentType { get }
+  var adapters: [any Line.RequestAdapter] { get }
+  var suffixAdapters: [any Line.RequestAdapter]? { get }
+  var pipelines: [Line.ResponsePipeline] { get }
+  var prefixPipelines: [Line.ResponsePipeline]? { get }
+  var dataParser: any Line.ResponsePipelineTerminator { get }
+  var timeout: Foundation.TimeInterval { get }
+  var cachePolicy: Foundation.NSURLRequest.CachePolicy { get }
+}
+extension Line.Request {
+  public var baseURL: Foundation.URL {
+    get
+  }
+  public var cachePolicy: Foundation.NSURLRequest.CachePolicy {
+    get
+  }
+  public var adapters: [any Line.RequestAdapter] {
+    get
+  }
+  public var pipelines: [Line.ResponsePipeline] {
+    get
+  }
+  public var pathQueries: [Foundation.URLQueryItem]? {
+    get
+  }
+  public var suffixAdapters: [any Line.RequestAdapter]? {
+    get
+  }
+  public var prefixPipelines: [Line.ResponsePipeline]? {
+    get
+  }
+  public var dataParser: any Line.ResponsePipelineTerminator {
+    get
+  }
+  public var contentType: Line.ContentType {
+    get
+  }
+  public var parameters: Line.Parameters? {
+    get
+  }
+  public var timeout: Foundation.TimeInterval {
+    get
+  }
+}
+extension Line.FlexMessageComponent {
+  public typealias Ratio = Swift.UInt
+  public enum Layout : Swift.String, Line.DefaultEnumCodable {
+    case horizontal
+    case vertical
+    case baseline
+    public static let defaultCase: Line.FlexMessageComponent.Layout
+    public init?(rawValue: Swift.String)
+    public typealias RawValue = Swift.String
+    public var rawValue: Swift.String {
+      get
+    }
+  }
+  public typealias Spacing = Line.FlexMessageComponent.Margin
+  public enum Margin : Swift.String, Line.DefaultEnumCodable {
+    case none, xs, sm, md, lg, xl, xxl
+    public static let defaultCase: Line.FlexMessageComponent.Margin
+    public init?(rawValue: Swift.String)
+    public typealias RawValue = Swift.String
+    public var rawValue: Swift.String {
+      get
+    }
+  }
+  public enum Size : Swift.String, Line.DefaultEnumCodable {
+    case xxs, xs, sm, md, lg, xl, xxl, xl3, xl4, xl5, full
+    public static let defaultCase: Line.FlexMessageComponent.Size
+    public init?(rawValue: Swift.String)
+    public typealias RawValue = Swift.String
+    public var rawValue: Swift.String {
+      get
+    }
+  }
+  public enum Alignment : Swift.String, Line.DefaultEnumCodable {
+    case start, end, center
+    public static let defaultCase: Line.FlexMessageComponent.Alignment
+    public init?(rawValue: Swift.String)
+    public typealias RawValue = Swift.String
+    public var rawValue: Swift.String {
+      get
+    }
+  }
+  public enum Gravity : Swift.String, Line.DefaultEnumCodable {
+    case top, bottom, center
+    public static let defaultCase: Line.FlexMessageComponent.Gravity
+    public init?(rawValue: Swift.String)
+    public typealias RawValue = Swift.String
+    public var rawValue: Swift.String {
+      get
+    }
+  }
+  public enum Weight : Swift.String, Line.DefaultEnumCodable {
+    case regular, bold
+    public static let defaultCase: Line.FlexMessageComponent.Weight
+    public init?(rawValue: Swift.String)
+    public typealias RawValue = Swift.String
+    public var rawValue: Swift.String {
+      get
+    }
+  }
+  public enum Height : Swift.String, Line.DefaultEnumCodable {
+    case sm, md
+    public static let defaultCase: Line.FlexMessageComponent.Height
+    public init?(rawValue: Swift.String)
+    public typealias RawValue = Swift.String
+    public var rawValue: Swift.String {
+      get
+    }
+  }
+  public enum AspectRatio : Swift.String, Line.DefaultEnumCodable {
+    case ratio_1x1
+    case ratio_1_51x1
+    case ratio_1_91x1
+    case ratio_4x3
+    case ratio_16x9
+    case ratio_20x13
+    case ratio_2x1
+    case ratio_3x1
+    case ratio_3x4
+    case ratio_9x16
+    case ratio_1x2
+    case ratio_1x3
+    public static var defaultCase: Line.FlexMessageComponent.AspectRatio
+    public init?(rawValue: Swift.String)
+    public typealias RawValue = Swift.String
+    public var rawValue: Swift.String {
+      get
+    }
+  }
+  public enum AspectMode : Swift.String, Line.DefaultEnumCodable {
+    case fill
+    case fit
+    public static var defaultCase: Line.FlexMessageComponent.AspectMode
+    public init?(rawValue: Swift.String)
+    public typealias RawValue = Swift.String
+    public var rawValue: Swift.String {
+      get
+    }
+  }
+}
+public struct GetOpenChatTermAgreementStatusRequest : Line.Request {
+  public struct Response : Swift.Decodable {
+    public let agreed: Swift.Bool
+    public init(from decoder: any Swift.Decoder) throws
+  }
+  public let method: Line.HTTPMethod
+  public let path: Swift.String
+  public let authentication: Line.AuthenticateMethod
+  public init()
+}
+public struct FlexTextComponent : Swift.Codable, Line.MessageActionContainer {
+  public var text: Swift.String
+  public var flex: Line.FlexMessageComponent.Ratio?
+  public var margin: Line.FlexMessageComponent.Margin?
+  public var size: Line.FlexMessageComponent.Size?
+  public var alignment: Line.FlexMessageComponent.Alignment?
+  public var gravity: Line.FlexMessageComponent.Gravity?
+  public var wrapping: Swift.Bool?
+  public var maxLines: Swift.UInt?
+  public var weight: Line.FlexMessageComponent.Weight?
+  public var color: Line.HexColor?
+  public var action: Line.MessageAction?
+  public init(text: Swift.String, flex: Line.FlexMessageComponent.Ratio? = nil, margin: Line.FlexMessageComponent.Margin? = nil, size: Line.FlexMessageComponent.Size? = nil, alignment: Line.FlexMessageComponent.Alignment? = nil, gravity: Line.FlexMessageComponent.Gravity? = nil, wrapping: Swift.Bool? = nil, maxLines: Swift.UInt? = nil, weight: Line.FlexMessageComponent.Weight? = nil, color: Line.HexColor? = nil, action: Line.MessageAction? = nil)
+  public func encode(to encoder: any Swift.Encoder) throws
+  public init(from decoder: any Swift.Decoder) throws
+}
+extension Line.FlexTextComponent : Line.FlexMessageComponentConvertible {
+  public var component: Line.FlexMessageComponent {
+    get
+  }
+}
+public struct VideoMessage : Swift.Codable {
+  public let originalContentURL: Foundation.URL
+  public let previewImageURL: Foundation.URL
+  public init(originalContentURL: Foundation.URL, previewImageURL: Foundation.URL) throws
+  public func encode(to encoder: any Swift.Encoder) throws
+  public init(from decoder: any Swift.Decoder) throws
+}
+extension Line.VideoMessage : Line.MessageConvertible {
+  public var message: Line.Message {
+    get
+  }
+}
+extension Line.LineSDKErrorUserInfoKey : Swift.Equatable {}
+extension Line.LineSDKErrorUserInfoKey : Swift.Hashable {}
+extension Line.LineSDKErrorUserInfoKey : Swift.RawRepresentable {}
+extension Line.GetOpenChatRoomStatusRequest.Status : Swift.Equatable {}
+extension Line.GetOpenChatRoomStatusRequest.Status : Swift.Hashable {}
+extension Line.GetOpenChatRoomStatusRequest.Status : Swift.RawRepresentable {}
+extension Line.GetFriendsRequest.Sort : Swift.Equatable {}
+extension Line.GetFriendsRequest.Sort : Swift.Hashable {}
+extension Line.GetFriendsRequest.Sort : Swift.RawRepresentable {}
+extension Line.GetShareFriendsRequest.Sort : Swift.Equatable {}
+extension Line.GetShareFriendsRequest.Sort : Swift.Hashable {}
+extension Line.GetShareFriendsRequest.Sort : Swift.RawRepresentable {}
+extension Line.GetOpenChatRoomMembershipStateRequest.State : Swift.Equatable {}
+extension Line.GetOpenChatRoomMembershipStateRequest.State : Swift.Hashable {}
+extension Line.GetOpenChatRoomMembershipStateRequest.State : Swift.RawRepresentable {}
+extension Line.LoginManager.BotPrompt : Swift.Equatable {}
+extension Line.LoginManager.BotPrompt : Swift.Hashable {}
+extension Line.LoginManager.BotPrompt : Swift.RawRepresentable {}
+extension Line.OpenChatCategory : Swift.Equatable {}
+extension Line.OpenChatCategory : Swift.Hashable {}
+extension Line.OpenChatCategory : Swift.RawRepresentable {}
+extension Line.FlexButtonComponent.Style : Swift.Equatable {}
+extension Line.FlexButtonComponent.Style : Swift.Hashable {}
+extension Line.TemplateMessagePayload.ImageAspectRatio : Swift.Equatable {}
+extension Line.TemplateMessagePayload.ImageAspectRatio : Swift.Hashable {}
+extension Line.TemplateMessagePayload.ImageContentMode : Swift.Equatable {}
+extension Line.TemplateMessagePayload.ImageContentMode : Swift.Hashable {}
+extension Line.FlexBubbleContainer.Direction : Swift.Equatable {}
+extension Line.FlexBubbleContainer.Direction : Swift.Hashable {}
+extension Line.GetOpenChatRoomJoinTypeRequest.RoomType : Swift.Equatable {}
+extension Line.GetOpenChatRoomJoinTypeRequest.RoomType : Swift.Hashable {}
+extension Line.GetOpenChatRoomJoinTypeRequest.RoomType : Swift.RawRepresentable {}
+extension Line.HTTPMethod : Swift.Equatable {}
+extension Line.HTTPMethod : Swift.Hashable {}
+extension Line.HTTPMethod : Swift.RawRepresentable {}
+extension Line.AuthenticateMethod : Swift.Equatable {}
+extension Line.AuthenticateMethod : Swift.Hashable {}
+extension Line.ContentType : Swift.Equatable {}
+extension Line.ContentType : Swift.Hashable {}
+extension Line.FlexMessageComponent.Layout : Swift.Equatable {}
+extension Line.FlexMessageComponent.Layout : Swift.Hashable {}
+extension Line.FlexMessageComponent.Margin : Swift.Equatable {}
+extension Line.FlexMessageComponent.Margin : Swift.Hashable {}
+extension Line.FlexMessageComponent.Size : Swift.Equatable {}
+extension Line.FlexMessageComponent.Size : Swift.Hashable {}
+extension Line.FlexMessageComponent.Alignment : Swift.Equatable {}
+extension Line.FlexMessageComponent.Alignment : Swift.Hashable {}
+extension Line.FlexMessageComponent.Gravity : Swift.Equatable {}
+extension Line.FlexMessageComponent.Gravity : Swift.Hashable {}
+extension Line.FlexMessageComponent.Weight : Swift.Equatable {}
+extension Line.FlexMessageComponent.Weight : Swift.Hashable {}
+extension Line.FlexMessageComponent.Height : Swift.Equatable {}
+extension Line.FlexMessageComponent.Height : Swift.Hashable {}
+extension Line.FlexMessageComponent.AspectRatio : Swift.Equatable {}
+extension Line.FlexMessageComponent.AspectRatio : Swift.Hashable {}
+extension Line.FlexMessageComponent.AspectMode : Swift.Equatable {}
+extension Line.FlexMessageComponent.AspectMode : Swift.Hashable {}

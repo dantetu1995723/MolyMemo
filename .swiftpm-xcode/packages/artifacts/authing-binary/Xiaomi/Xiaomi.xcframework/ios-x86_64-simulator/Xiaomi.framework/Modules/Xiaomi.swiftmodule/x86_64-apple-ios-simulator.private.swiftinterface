@@ -1,0 +1,21 @@
+// swift-interface-format-version: 1.0
+// swift-compiler-version: Apple Swift version 5.7.2 (swiftlang-5.7.2.135.5 clang-1400.0.29.51)
+// swift-module-flags: -target x86_64-apple-ios13.0-simulator -enable-objc-interop -enable-library-evolution -swift-version 5 -enforce-exclusivity=checked -Onone -module-name Xiaomi
+// swift-module-flags-ignorable: -enable-bare-slash-regex
+import Foundation
+import Guard
+import Swift
+@_exported import Xiaomi
+import _Concurrency
+import _StringProcessing
+@_hasMissingDesignatedInitializers open class Xiaomi {
+  public static func register(appId: Swift.String, redirectUrl: Swift.String)
+  public static func handleOpenUrl(url: Foundation.URL) -> Swift.Bool
+  public static func login(viewController: UIKit.UIViewController, _ scopes: [Swift.String] = [], completion: @escaping Guard.Authing.AuthCompletion)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class XiaomiLoginButton : Guard.SocialLoginButton {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc deinit
+}

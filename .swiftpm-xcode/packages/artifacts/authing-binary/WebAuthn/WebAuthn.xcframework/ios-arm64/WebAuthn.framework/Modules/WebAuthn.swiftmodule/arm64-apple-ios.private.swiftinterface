@@ -1,0 +1,2337 @@
+// swift-interface-format-version: 1.0
+// swift-compiler-version: Apple Swift version 5.7.2 (swiftlang-5.7.2.135.5 clang-1400.0.29.51)
+// swift-module-flags: -target arm64-apple-ios12.0 -enable-objc-interop -enable-library-evolution -swift-version 5 -enforce-exclusivity=checked -Onone -module-name WebAuthn
+// swift-module-flags-ignorable: -enable-bare-slash-regex
+import Darwin
+import Foundation
+import Guard
+import LocalAuthentication
+import PromiseKit
+import Security
+import Swift
+import UIKit
+import _Concurrency
+import _StringProcessing
+public typealias CipherOperationOnBlock = (_ block: Swift.ArraySlice<Swift.UInt8>) -> Swift.Array<Swift.UInt8>?
+public protocol BlockMode {
+  var options: WebAuthn.BlockModeOption { get }
+  func worker(blockSize: Swift.Int, cipherOperation: @escaping WebAuthn.CipherOperationOnBlock, encryptionOperation: @escaping WebAuthn.CipherOperationOnBlock) throws -> WebAuthn.CipherModeWorker
+}
+extension WebAuthn.ChaCha20 {
+  convenience public init(key: Swift.String, iv: Swift.String) throws
+}
+@_hasMissingDesignatedInitializers public class SelfAttestation {
+  public static func create(authData: WebAuthn.AuthenticatorData, clientDataHash: [Swift.UInt8], alg: WebAuthn.COSEAlgorithmIdentifier, keyLabel: Swift.String, context: LocalAuthentication.LAContext) -> Swift.Optional<WebAuthn.AttestationObject>
+  @objc deinit
+}
+extension Foundation.Data {
+  public func checksum() -> Swift.UInt16
+  public func md5() -> Foundation.Data
+  public func sha1() -> Foundation.Data
+  public func sha224() -> Foundation.Data
+  public func sha256() -> Foundation.Data
+  public func sha384() -> Foundation.Data
+  public func sha512() -> Foundation.Data
+  public func sha3(_ variant: WebAuthn.SHA3.Variant) -> Foundation.Data
+  public func crc32(seed: Swift.UInt32? = nil, reflect: Swift.Bool = true) -> Foundation.Data
+  public func crc32c(seed: Swift.UInt32? = nil, reflect: Swift.Bool = true) -> Foundation.Data
+  public func crc16(seed: Swift.UInt16? = nil) -> Foundation.Data
+  public func encrypt(cipher: WebAuthn.Cipher) throws -> Foundation.Data
+  public func decrypt(cipher: WebAuthn.Cipher) throws -> Foundation.Data
+  public func authenticate(with authenticator: WebAuthn.Authenticator) throws -> Foundation.Data
+}
+extension Foundation.Data {
+  public init(hex: Swift.String)
+  public var bytes: Swift.Array<Swift.UInt8> {
+    get
+  }
+  public func toHexString() -> Swift.String
+}
+final public class Poly1305 : WebAuthn.Authenticator {
+  public enum Error : Swift.Error {
+    case authenticateError
+    public static func == (a: WebAuthn.Poly1305.Error, b: WebAuthn.Poly1305.Error) -> Swift.Bool
+    public func hash(into hasher: inout Swift.Hasher)
+    public var hashValue: Swift.Int {
+      get
+    }
+  }
+  public static let blockSize: Swift.Int
+  public init(key: Swift.Array<Swift.UInt8>)
+  final public func authenticate(_ bytes: Swift.Array<Swift.UInt8>) throws -> Swift.Array<Swift.UInt8>
+  @objc deinit
+}
+final public class SHA2 {
+  public enum Variant : Swift.RawRepresentable {
+    case sha224, sha256, sha384, sha512
+    public var digestLength: Swift.Int {
+      get
+    }
+    public var blockSize: Swift.Int {
+      get
+    }
+    public typealias RawValue = Swift.Int
+    public var rawValue: WebAuthn.SHA2.Variant.RawValue {
+      get
+    }
+    public init?(rawValue: WebAuthn.SHA2.Variant.RawValue)
+  }
+  public init(variant: WebAuthn.SHA2.Variant)
+  final public func calculate(for bytes: Swift.Array<Swift.UInt8>) -> Swift.Array<Swift.UInt8>
+  @objc deinit
+}
+extension WebAuthn.SHA2 : WebAuthn.Updatable {
+  final public func update(withBytes bytes: Swift.ArraySlice<Swift.UInt8>, isLast: Swift.Bool = false) throws -> Swift.Array<Swift.UInt8>
+}
+public class UserConsentUIConfig {
+  public var excludeKeyFoundPopupTitle: Swift.String
+  public var excludeKeyFoundPopupMessage: Swift.String
+  public var excludeKeyFoundPopupCancelButtonText: Swift.String
+  public var excludeKeyFoundPopupCreateButtonText: Swift.String
+  public var keyCreationTitle: Swift.String
+  public var keyCreationCancelButtonText: Swift.String
+  public var keyCreationCreateButtonText: Swift.String
+  public var keySelectionTitle: Swift.String
+  public var keySelectionCancelButtonText: Swift.String
+  public var keySelectionSelectButtonText: Swift.String
+  public var showRPInformation: Swift.Bool
+  public var alwaysShowKeySelection: Swift.Bool
+  public var requireBiometrics: Swift.Bool
+  public var borderLightColor: Swift.UInt
+  public var titleTextLightColor: UIKit.UIColor
+  public var fieldTextLightColor: UIKit.UIColor
+  public var pickerBackgroundLightColor: UIKit.UIColor
+  public var viewBorderLightColor: Swift.UInt
+  public var borderDarkColor: Swift.UInt
+  public var titleTextDarkColor: UIKit.UIColor
+  public var fieldTextDarkColor: UIKit.UIColor
+  public var pickerBackgroundDarkColor: UIKit.UIColor
+  public var viewBorderDarkColor: Swift.UInt
+  public init()
+  public var localAuthPolicy: LocalAuthentication.LAPolicy {
+    get
+  }
+  public var titleTextColor: UIKit.UIColor {
+    get
+  }
+  public var pickerBackgroundColor: UIKit.UIColor {
+    get
+  }
+  public var fieldTextColor: UIKit.UIColor {
+    get
+  }
+  public var borderColor: Swift.UInt {
+    get
+  }
+  public var viewBorderColor: Swift.UInt {
+    get
+  }
+  @objc deinit
+}
+public enum Bit : Swift.Int {
+  case zero
+  case one
+  public init?(rawValue: Swift.Int)
+  public typealias RawValue = Swift.Int
+  public var rawValue: Swift.Int {
+    get
+  }
+}
+@_hasMissingDesignatedInitializers public class JSONHelper<T> where T : Swift.Decodable, T : Swift.Encodable {
+  public static func decode(_ json: Swift.String) -> Swift.Optional<T>
+  public static func encode(_ obj: T) -> Swift.Optional<Swift.String>
+  @objc deinit
+}
+extension WebAuthn.PKCS5 {
+  public struct PBKDF2 {
+    public enum Error : Swift.Error {
+      case invalidInput
+      case derivedKeyTooLong
+      public static func == (a: WebAuthn.PKCS5.PBKDF2.Error, b: WebAuthn.PKCS5.PBKDF2.Error) -> Swift.Bool
+      public func hash(into hasher: inout Swift.Hasher)
+      public var hashValue: Swift.Int {
+        get
+      }
+    }
+    public init(password: Swift.Array<Swift.UInt8>, salt: Swift.Array<Swift.UInt8>, iterations: Swift.Int = 4096, keyLength: Swift.Int? = nil, variant: WebAuthn.HMAC.Variant = .sha256) throws
+    public func calculate() throws -> Swift.Array<Swift.UInt8>
+  }
+}
+extension WebAuthn.AES : WebAuthn.Cryptors {
+  final public func makeEncryptor() throws -> WebAuthn.Cryptor & WebAuthn.Updatable
+  final public func makeDecryptor() throws -> WebAuthn.Cryptor & WebAuthn.Updatable
+}
+public enum CBORError : Swift.Error {
+  case readError
+  public static func == (a: WebAuthn.CBORError, b: WebAuthn.CBORError) -> Swift.Bool
+  public func hash(into hasher: inout Swift.Hasher)
+  public var hashValue: Swift.Int {
+    get
+  }
+}
+@_hasMissingDesignatedInitializers public class Bytes {
+  public static func fromHex(_ value: Swift.String) -> [Swift.UInt8]
+  public static func fromString(_ value: Swift.String) -> [Swift.UInt8]
+  public static func fromUInt64(_ value: Swift.UInt64) -> [Swift.UInt8]
+  public static func toUInt64(_ bytes: [Swift.UInt8]) -> Swift.UInt64
+  public static func fromUInt32(_ value: Swift.UInt32) -> [Swift.UInt8]
+  public static func toUInt32(_ bytes: [Swift.UInt8]) -> Swift.UInt32
+  public static func fromUInt16(_ value: Swift.UInt16) -> [Swift.UInt8]
+  public static func toUInt16(_ bytes: [Swift.UInt8]) -> Swift.UInt16
+  @objc deinit
+}
+public protocol Updatable {
+  mutating func update(withBytes bytes: Swift.ArraySlice<Swift.UInt8>, isLast: Swift.Bool) throws -> Swift.Array<Swift.UInt8>
+  mutating func update(withBytes bytes: Swift.ArraySlice<Swift.UInt8>, isLast: Swift.Bool, output: (_ bytes: Swift.Array<Swift.UInt8>) -> Swift.Void) throws
+}
+extension WebAuthn.Updatable {
+  public mutating func update(withBytes bytes: Swift.ArraySlice<Swift.UInt8>, isLast: Swift.Bool = false, output: (_ bytes: Swift.Array<Swift.UInt8>) -> Swift.Void) throws
+  public mutating func update(withBytes bytes: Swift.ArraySlice<Swift.UInt8>, isLast: Swift.Bool = false) throws -> Swift.Array<Swift.UInt8>
+  public mutating func update(withBytes bytes: Swift.Array<Swift.UInt8>, isLast: Swift.Bool = false) throws -> Swift.Array<Swift.UInt8>
+  public mutating func update(withBytes bytes: Swift.Array<Swift.UInt8>, isLast: Swift.Bool = false, output: (_ bytes: Swift.Array<Swift.UInt8>) -> Swift.Void) throws
+  public mutating func finish(withBytes bytes: Swift.ArraySlice<Swift.UInt8>) throws -> Swift.Array<Swift.UInt8>
+  public mutating func finish(withBytes bytes: Swift.Array<Swift.UInt8>) throws -> Swift.Array<Swift.UInt8>
+  public mutating func finish() throws -> Swift.Array<Swift.UInt8>
+  public mutating func finish(withBytes bytes: Swift.ArraySlice<Swift.UInt8>, output: (_ bytes: Swift.Array<Swift.UInt8>) -> Swift.Void) throws
+  public mutating func finish(withBytes bytes: Swift.Array<Swift.UInt8>, output: (_ bytes: Swift.Array<Swift.UInt8>) -> Swift.Void) throws
+  public mutating func finish(output: (Swift.Array<Swift.UInt8>) -> Swift.Void) throws
+}
+public struct CFB : WebAuthn.BlockMode {
+  public enum Error : Swift.Error {
+    case invalidInitializationVector
+    public static func == (a: WebAuthn.CFB.Error, b: WebAuthn.CFB.Error) -> Swift.Bool
+    public func hash(into hasher: inout Swift.Hasher)
+    public var hashValue: Swift.Int {
+      get
+    }
+  }
+  public let options: WebAuthn.BlockModeOption
+  public init(iv: Swift.Array<Swift.UInt8>)
+  public func worker(blockSize: Swift.Int, cipherOperation: @escaping WebAuthn.CipherOperationOnBlock, encryptionOperation: @escaping WebAuthn.CipherOperationOnBlock) throws -> WebAuthn.CipherModeWorker
+}
+public struct CBC : WebAuthn.BlockMode {
+  public enum Error : Swift.Error {
+    case invalidInitializationVector
+    public static func == (a: WebAuthn.CBC.Error, b: WebAuthn.CBC.Error) -> Swift.Bool
+    public func hash(into hasher: inout Swift.Hasher)
+    public var hashValue: Swift.Int {
+      get
+    }
+  }
+  public let options: WebAuthn.BlockModeOption
+  public init(iv: Swift.Array<Swift.UInt8>)
+  public func worker(blockSize: Swift.Int, cipherOperation: @escaping WebAuthn.CipherOperationOnBlock, encryptionOperation: @escaping WebAuthn.CipherOperationOnBlock) throws -> WebAuthn.CipherModeWorker
+}
+@_hasMissingDesignatedInitializers public class WAKLogger {
+  public static var available: Swift.Bool
+  public static func debug(_ msg: Swift.String)
+  @objc deinit
+}
+@_hasMissingDesignatedInitializers public class AttestationObject {
+  public func toNone() -> WebAuthn.AttestationObject
+  public func isSelfAttestation() -> Swift.Bool
+  public func toBytes() -> Swift.Optional<[Swift.UInt8]>
+  @objc deinit
+}
+final public class Scrypt {
+  public init(password: Swift.Array<Swift.UInt8>, salt: Swift.Array<Swift.UInt8>, dkLen: Swift.Int, N: Swift.Int, r: Swift.Int, p: Swift.Int) throws
+  final public func calculate() throws -> [Swift.UInt8]
+  @objc deinit
+}
+public struct BlockModeOption : Swift.OptionSet {
+  public let rawValue: Swift.Int
+  public init(rawValue: Swift.Int)
+  public typealias ArrayLiteralElement = WebAuthn.BlockModeOption
+  public typealias Element = WebAuthn.BlockModeOption
+  public typealias RawValue = Swift.Int
+}
+final public class MD5 {
+  public init()
+  final public func calculate(for bytes: Swift.Array<Swift.UInt8>) -> Swift.Array<Swift.UInt8>
+  @objc deinit
+}
+extension WebAuthn.MD5 : WebAuthn.Updatable {
+  final public func update(withBytes bytes: Swift.ArraySlice<Swift.UInt8>, isLast: Swift.Bool = false) throws -> Swift.Array<Swift.UInt8>
+}
+public struct InternalAuthenticatorSetting {
+  public let attachment: WebAuthn.AuthenticatorAttachment
+  public let transport: WebAuthn.AuthenticatorTransport
+  public var counterStep: Swift.UInt32
+  public var allowUserVerification: Swift.Bool
+  public init(counterStep: Swift.UInt32 = 1, allowUserVerification: Swift.Bool = true)
+}
+public class InternalAuthenticator : WebAuthn.WebAuthnAuthenticator {
+  public var setting: WebAuthn.InternalAuthenticatorSetting
+  public var attachment: WebAuthn.AuthenticatorAttachment {
+    get
+  }
+  public var transport: WebAuthn.AuthenticatorTransport {
+    get
+  }
+  public var counterStep: Swift.UInt32 {
+    get
+    set(value)
+  }
+  public var allowUserVerification: Swift.Bool {
+    get
+    set(value)
+  }
+  public var allowResidentKey: Swift.Bool {
+    get
+  }
+  convenience public init(ui: WebAuthn.UserConsentUI)
+  public init(ui: WebAuthn.UserConsentUI, credentialStore: WebAuthn.CredentialStore)
+  public func newMakeCredentialSession(context: LocalAuthentication.LAContext?) -> WebAuthn.AuthenticatorMakeCredentialSession
+  public func newGetAssertionSession(context: LocalAuthentication.LAContext?) -> WebAuthn.AuthenticatorGetAssertionSession
+  @objc deinit
+}
+extension WebAuthn.Rabbit {
+  convenience public init(key: Swift.String) throws
+  convenience public init(key: Swift.String, iv: Swift.String) throws
+}
+extension WebAuthn.PKCS5 {
+  public struct PBKDF1 {
+    public enum Error : Swift.Error {
+      case invalidInput
+      case derivedKeyTooLong
+      public static func == (a: WebAuthn.PKCS5.PBKDF1.Error, b: WebAuthn.PKCS5.PBKDF1.Error) -> Swift.Bool
+      public func hash(into hasher: inout Swift.Hasher)
+      public var hashValue: Swift.Int {
+        get
+      }
+    }
+    public enum Variant {
+      case md5, sha1
+      public static func == (a: WebAuthn.PKCS5.PBKDF1.Variant, b: WebAuthn.PKCS5.PBKDF1.Variant) -> Swift.Bool
+      public func hash(into hasher: inout Swift.Hasher)
+      public var hashValue: Swift.Int {
+        get
+      }
+    }
+    public init(password: Swift.Array<Swift.UInt8>, salt: Swift.Array<Swift.UInt8>, variant: WebAuthn.PKCS5.PBKDF1.Variant = .sha1, iterations: Swift.Int = 4096, keyLength: Swift.Int? = nil) throws
+    public func calculate() -> Swift.Array<Swift.UInt8>
+  }
+}
+@_hasMissingDesignatedInitializers final public class AEADChaCha20Poly1305 : WebAuthn.AEAD {
+  public static let kLen: Swift.Int
+  public static var ivRange: Swift.Range<Swift.Int>
+  public static func encrypt(_ plainText: Swift.Array<Swift.UInt8>, key: Swift.Array<Swift.UInt8>, iv: Swift.Array<Swift.UInt8>, authenticationHeader: Swift.Array<Swift.UInt8>) throws -> (cipherText: Swift.Array<Swift.UInt8>, authenticationTag: Swift.Array<Swift.UInt8>)
+  public static func decrypt(_ cipherText: Swift.Array<Swift.UInt8>, key: Swift.Array<Swift.UInt8>, iv: Swift.Array<Swift.UInt8>, authenticationHeader: Swift.Array<Swift.UInt8>, authenticationTag: Swift.Array<Swift.UInt8>) throws -> (plainText: Swift.Array<Swift.UInt8>, success: Swift.Bool)
+  @objc deinit
+}
+@available(macOS 10.12.1, iOS 9.0, *)
+public enum EllipticCurveKeyPair {
+  public typealias Logger = (Swift.String) -> ()
+  public static var logger: WebAuthn.EllipticCurveKeyPair.Logger?
+  public struct Config {
+    public var publicLabel: Swift.String
+    public var privateLabel: Swift.String
+    public var operationPrompt: Swift.String?
+    public var publicKeyAccessControl: WebAuthn.EllipticCurveKeyPair.AccessControl
+    public var privateKeyAccessControl: WebAuthn.EllipticCurveKeyPair.AccessControl
+    public var publicKeyAccessGroup: Swift.String?
+    public var privateKeyAccessGroup: Swift.String?
+    public var token: WebAuthn.EllipticCurveKeyPair.Token
+    public init(publicLabel: Swift.String, privateLabel: Swift.String, operationPrompt: Swift.String?, publicKeyAccessControl: WebAuthn.EllipticCurveKeyPair.AccessControl, privateKeyAccessControl: WebAuthn.EllipticCurveKeyPair.AccessControl, publicKeyAccessGroup: Swift.String? = nil, privateKeyAccessGroup: Swift.String? = nil, token: WebAuthn.EllipticCurveKeyPair.Token)
+  }
+  final public class Manager {
+    public init(config: WebAuthn.EllipticCurveKeyPair.Config)
+    final public func deleteKeyPair() throws
+    final public func publicKey() throws -> WebAuthn.EllipticCurveKeyPair.PublicKey
+    final public func privateKey(context: LocalAuthentication.LAContext? = nil) throws -> WebAuthn.EllipticCurveKeyPair.PrivateKey
+    final public func keys(context: LocalAuthentication.LAContext? = nil) throws -> (public: WebAuthn.EllipticCurveKeyPair.PublicKey, private: WebAuthn.EllipticCurveKeyPair.PrivateKey)
+    final public func clearCache()
+    @available(iOS 10, *)
+    final public func sign(_ digest: Foundation.Data, hash: WebAuthn.EllipticCurveKeyPair.Hash, context: LocalAuthentication.LAContext? = nil) throws -> Foundation.Data
+    @available(macOS, unavailable)
+    @available(iOS, deprecated: 10.0, message: "This method and extra complexity will be removed when 9.0 is obsolete.")
+    final public func signUsingSha256(_ digest: Foundation.Data, context: LocalAuthentication.LAContext? = nil) throws -> Foundation.Data
+    @available(iOS 10, *)
+    final public func verify(signature: Foundation.Data, originalDigest: Foundation.Data, hash: WebAuthn.EllipticCurveKeyPair.Hash) throws
+    @available(macOS, unavailable)
+    @available(iOS, deprecated: 10.0, message: "This method and extra complexity will be removed when 9.0 is obsolete.")
+    final public func verifyUsingSha256(signature: Foundation.Data, originalDigest: Foundation.Data) throws
+    @available(iOS 10.3, *)
+    final public func encrypt(_ digest: Foundation.Data, hash: WebAuthn.EllipticCurveKeyPair.Hash = .sha256) throws -> Foundation.Data
+    @available(iOS 10.3, *)
+    final public func decrypt(_ encrypted: Foundation.Data, hash: WebAuthn.EllipticCurveKeyPair.Hash = .sha256, context: LocalAuthentication.LAContext? = nil) throws -> Foundation.Data
+    @objc deinit
+  }
+  public struct Helper {
+    public let config: WebAuthn.EllipticCurveKeyPair.Config
+    public init(config: WebAuthn.EllipticCurveKeyPair.Config)
+    public func getPublicKey() throws -> WebAuthn.EllipticCurveKeyPair.PublicKey
+    public func getPrivateKey(context: LocalAuthentication.LAContext? = nil) throws -> WebAuthn.EllipticCurveKeyPair.PrivateKey
+    public func getKeys(context: LocalAuthentication.LAContext? = nil) throws -> (public: WebAuthn.EllipticCurveKeyPair.PublicKey, private: WebAuthn.EllipticCurveKeyPair.PrivateKey)
+    public func generateKeyPair(context: LocalAuthentication.LAContext? = nil) throws -> (public: WebAuthn.EllipticCurveKeyPair.PublicKey, private: WebAuthn.EllipticCurveKeyPair.PrivateKey)
+    public func delete() throws
+    @available(iOS 10.0, *)
+    public func sign(_ digest: Foundation.Data, privateKey: WebAuthn.EllipticCurveKeyPair.PrivateKey, hash: WebAuthn.EllipticCurveKeyPair.Hash) throws -> Foundation.Data
+    @available(macOS, unavailable)
+    @available(iOS, deprecated: 10.0, message: "This method and extra complexity will be removed when 9.0 is obsolete.")
+    public func signUsingSha256(_ digest: Foundation.Data, privateKey: WebAuthn.EllipticCurveKeyPair.PrivateKey) throws -> Foundation.Data
+    @available(iOS 10.0, *)
+    public func verify(signature: Foundation.Data, digest: Foundation.Data, publicKey: WebAuthn.EllipticCurveKeyPair.PublicKey, hash: WebAuthn.EllipticCurveKeyPair.Hash) throws
+    @available(macOS, unavailable)
+    @available(iOS, deprecated: 10.0, message: "This method and extra complexity will be removed when 9.0 is obsolete.")
+    public func verifyUsingSha256(signature: Foundation.Data, digest: Foundation.Data, publicKey: WebAuthn.EllipticCurveKeyPair.PublicKey) throws
+    @available(iOS 10.3, *)
+    public func encrypt(_ digest: Foundation.Data, publicKey: WebAuthn.EllipticCurveKeyPair.PublicKey, hash: WebAuthn.EllipticCurveKeyPair.Hash) throws -> Foundation.Data
+    @available(iOS 10.3, *)
+    public func decrypt(_ encrypted: Foundation.Data, privateKey: WebAuthn.EllipticCurveKeyPair.PrivateKey, hash: WebAuthn.EllipticCurveKeyPair.Hash) throws -> Foundation.Data
+    public static func logToConsoleIfExecutingOnMainThread()
+  }
+  public struct Constants {
+    public static let noCompression: Swift.UInt8
+    public static let attrKeyTypeEllipticCurve: Swift.String
+  }
+  @_hasMissingDesignatedInitializers final public class PublicKeyData {
+    final public let raw: Foundation.Data
+    final public var DER: Foundation.Data {
+      get
+      set
+    }
+    final public var PEM: Swift.String {
+      get
+      set
+    }
+    @objc deinit
+  }
+  @_hasMissingDesignatedInitializers public class Key {
+    final public let underlying: Security.SecKey
+    public func attributes() throws -> [Swift.String : Any]
+    public func label() throws -> Swift.String
+    public func accessGroup() throws -> Swift.String?
+    public func accessControl() throws -> Security.SecAccessControl
+    @objc deinit
+  }
+  @_inheritsConvenienceInitializers @_hasMissingDesignatedInitializers final public class PublicKey : WebAuthn.EllipticCurveKeyPair.Key {
+    final public func data() throws -> WebAuthn.EllipticCurveKeyPair.PublicKeyData
+    @available(iOS 10.0, *)
+    final public func export() throws -> Foundation.Data
+    @objc deinit
+  }
+  @_hasMissingDesignatedInitializers final public class PrivateKey : WebAuthn.EllipticCurveKeyPair.Key {
+    final public var context: LocalAuthentication.LAContext? {
+      get
+    }
+    final public func isStoredOnSecureEnclave() throws -> Swift.Bool
+    @objc deinit
+  }
+  final public class AccessControl {
+    final public let protection: CoreFoundation.CFTypeRef
+    final public let flags: Security.SecAccessControlCreateFlags
+    public init(protection: CoreFoundation.CFTypeRef, flags: Security.SecAccessControlCreateFlags)
+    final public func underlying() throws -> Security.SecAccessControl
+    @objc deinit
+  }
+  public enum Error : Foundation.LocalizedError {
+    case underlying(message: Swift.String, error: Foundation.NSError)
+    case inconcistency(message: Swift.String)
+    case authentication(error: LocalAuthentication.LAError)
+    public var errorDescription: Swift.String? {
+      get
+    }
+  }
+  @available(iOS 10.0, *)
+  public enum Hash : Swift.String {
+    case sha1
+    case sha224
+    case sha256
+    case sha384
+    case sha512
+    public init?(rawValue: Swift.String)
+    public typealias RawValue = Swift.String
+    public var rawValue: Swift.String {
+      get
+    }
+  }
+  public enum Token {
+    case secureEnclave
+    case keychain
+    public static var secureEnclaveIfAvailable: WebAuthn.EllipticCurveKeyPair.Token {
+      get
+    }
+    public static func == (a: WebAuthn.EllipticCurveKeyPair.Token, b: WebAuthn.EllipticCurveKeyPair.Token) -> Swift.Bool
+    public func hash(into hasher: inout Swift.Hasher)
+    public var hashValue: Swift.Int {
+      get
+    }
+  }
+  public enum Device {
+    public static var hasTouchID: Swift.Bool {
+      get
+    }
+    public static var isSimulator: Swift.Bool {
+      get
+    }
+    public static var hasSecureEnclave: Swift.Bool {
+      get
+    }
+  }
+}
+extension WebAuthn.HMAC {
+  convenience public init(key: Swift.String, variant: WebAuthn.HMAC.Variant = .md5) throws
+}
+public enum CipherError : Swift.Error {
+  case encrypt
+  case decrypt
+  public static func == (a: WebAuthn.CipherError, b: WebAuthn.CipherError) -> Swift.Bool
+  public func hash(into hasher: inout Swift.Hasher)
+  public var hashValue: Swift.Int {
+    get
+  }
+}
+public protocol Cipher : AnyObject {
+  var keySize: Swift.Int { get }
+  func encrypt(_ bytes: Swift.ArraySlice<Swift.UInt8>) throws -> Swift.Array<Swift.UInt8>
+  func encrypt(_ bytes: Swift.Array<Swift.UInt8>) throws -> Swift.Array<Swift.UInt8>
+  func decrypt(_ bytes: Swift.ArraySlice<Swift.UInt8>) throws -> Swift.Array<Swift.UInt8>
+  func decrypt(_ bytes: Swift.Array<Swift.UInt8>) throws -> Swift.Array<Swift.UInt8>
+}
+extension WebAuthn.Cipher {
+  public func encrypt(_ bytes: Swift.Array<Swift.UInt8>) throws -> Swift.Array<Swift.UInt8>
+  public func decrypt(_ bytes: Swift.Array<Swift.UInt8>) throws -> Swift.Array<Swift.UInt8>
+}
+@_hasMissingDesignatedInitializers public class ClientCreateOperation : WebAuthn.AuthenticatorMakeCredentialSessionDelegate {
+  final public let id: Swift.String
+  final public let type: WebAuthn.ClientOperationType
+  weak public var delegate: WebAuthn.ClientOperationDelegate?
+  public func start() -> PromiseKit.Promise<WebAuthn.WebAuthnClient.CreateResponse>
+  public func cancel(reason: WebAuthn.WAKError = .cancelled)
+  public func authenticatorSessionDidBecomeAvailable(session: WebAuthn.AuthenticatorMakeCredentialSession)
+  public func authenticatorSessionDidBecomeUnavailable(session: WebAuthn.AuthenticatorMakeCredentialSession)
+  public func authenticatorSessionDidMakeCredential(session: WebAuthn.AuthenticatorMakeCredentialSession, attestation: WebAuthn.AttestationObject)
+  public func authenticatorSessionDidStopOperation(session: WebAuthn.AuthenticatorMakeCredentialSession, reason: WebAuthn.WAKError)
+  @objc deinit
+}
+extension Swift.Array where Element == Swift.UInt8 {
+  public init(hex: Swift.String)
+  public func toHexString() -> Swift.String
+}
+extension Swift.Array where Element == Swift.UInt8 {
+  @available(*, deprecated)
+  public func chunks(size chunksize: Swift.Int) -> Swift.Array<Swift.Array<Element>>
+  public func md5() -> [Element]
+  public func sha1() -> [Element]
+  public func sha224() -> [Element]
+  public func sha256() -> [Element]
+  public func sha384() -> [Element]
+  public func sha512() -> [Element]
+  public func sha2(_ variant: WebAuthn.SHA2.Variant) -> [Element]
+  public func sha3(_ variant: WebAuthn.SHA3.Variant) -> [Element]
+  public func crc32(seed: Swift.UInt32? = nil, reflect: Swift.Bool = true) -> Swift.UInt32
+  public func crc32c(seed: Swift.UInt32? = nil, reflect: Swift.Bool = true) -> Swift.UInt32
+  public func crc16(seed: Swift.UInt16? = nil) -> Swift.UInt16
+  public func encrypt(cipher: WebAuthn.Cipher) throws -> [Element]
+  public func decrypt(cipher: WebAuthn.Cipher) throws -> [Element]
+  public func authenticate<A>(with authenticator: A) throws -> [Element] where A : WebAuthn.Authenticator
+}
+public enum COSEAlgorithmIdentifier : Swift.Int, Swift.Codable {
+  case rs256
+  case rs384
+  case rs512
+  case es256
+  case es384
+  case es512
+  case ed256
+  case ed512
+  case ps256
+  public static func fromInt(_ num: Swift.Int) -> Swift.Optional<WebAuthn.COSEAlgorithmIdentifier>
+  public static func == (lhs: WebAuthn.COSEAlgorithmIdentifier, rhs: WebAuthn.COSEAlgorithmIdentifier) -> Swift.Bool
+  public init?(rawValue: Swift.Int)
+  public typealias RawValue = Swift.Int
+  public var rawValue: Swift.Int {
+    get
+  }
+}
+public protocol COSEKey {
+  func toBytes() -> [Swift.UInt8]
+}
+public struct PublicKeyCredentialSource {
+  public var keyLabel: Swift.String {
+    get
+  }
+  public var id: [Swift.UInt8]
+  public var userHandle: [Swift.UInt8]
+  public func toCBOR() -> Swift.Optional<[Swift.UInt8]>
+  public static func fromCBOR(_ bytes: [Swift.UInt8]) -> Swift.Optional<WebAuthn.PublicKeyCredentialSource>
+}
+@_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class BiometricLoginButton : Guard.SocialLoginButton {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @_Concurrency.MainActor(unsafe) @objc override dynamic open func layoutSubviews()
+  @objc deinit
+}
+public struct AuthenticatorDataFlags {
+  public let UPMask: Swift.UInt8
+  public let UVMask: Swift.UInt8
+  public let ATMask: Swift.UInt8
+  public let EDMask: Swift.UInt8
+  public var userPresent: Swift.Bool
+  public var userVerified: Swift.Bool
+  public var hasAttestedCredentialData: Swift.Bool
+  public var hasExtension: Swift.Bool
+  public func toByte() -> Swift.UInt8
+}
+public struct AttestedCredentialData {
+  public func toBytes() -> [Swift.UInt8]
+}
+public struct AuthenticatorData {
+  public static func fromBytes(_ bytes: [Swift.UInt8]) -> Swift.Optional<WebAuthn.AuthenticatorData>
+  public func toBytes() -> [Swift.UInt8]
+}
+public protocol AEAD {
+  static var kLen: Swift.Int { get }
+  static var ivRange: Swift.Range<Swift.Int> { get }
+}
+final public class ChaCha20 {
+  public enum Error : Swift.Error {
+    case invalidKeyOrInitializationVector
+    case notSupported
+    public static func == (a: WebAuthn.ChaCha20.Error, b: WebAuthn.ChaCha20.Error) -> Swift.Bool
+    public func hash(into hasher: inout Swift.Hasher)
+    public var hashValue: Swift.Int {
+      get
+    }
+  }
+  public static let blockSize: Swift.Int
+  final public let keySize: Swift.Int
+  public init(key: Swift.Array<Swift.UInt8>, iv nonce: Swift.Array<Swift.UInt8>) throws
+  @objc deinit
+}
+extension WebAuthn.ChaCha20 : WebAuthn.Cipher {
+  final public func encrypt(_ bytes: Swift.ArraySlice<Swift.UInt8>) throws -> Swift.Array<Swift.UInt8>
+  final public func decrypt(_ bytes: Swift.ArraySlice<Swift.UInt8>) throws -> Swift.Array<Swift.UInt8>
+}
+extension WebAuthn.ChaCha20 {
+  public struct ChaChaEncryptor : WebAuthn.Cryptor, WebAuthn.Updatable {
+    public mutating func update(withBytes bytes: Swift.ArraySlice<Swift.UInt8>, isLast: Swift.Bool = false) throws -> Swift.Array<Swift.UInt8>
+    public func seek(to: Swift.Int) throws
+  }
+}
+extension WebAuthn.ChaCha20 {
+  public struct ChaChaDecryptor : WebAuthn.Cryptor, WebAuthn.Updatable {
+    public mutating func update(withBytes bytes: Swift.ArraySlice<Swift.UInt8>, isLast: Swift.Bool = true) throws -> Swift.Array<Swift.UInt8>
+    public func seek(to: Swift.Int) throws
+  }
+}
+extension WebAuthn.ChaCha20 : WebAuthn.Cryptors {
+  final public func makeEncryptor() -> WebAuthn.Cryptor & WebAuthn.Updatable
+  final public func makeDecryptor() -> WebAuthn.Cryptor & WebAuthn.Updatable
+}
+final public class OCB : WebAuthn.BlockMode {
+  public enum Mode {
+    case combined
+    case detached
+    public static func == (a: WebAuthn.OCB.Mode, b: WebAuthn.OCB.Mode) -> Swift.Bool
+    public func hash(into hasher: inout Swift.Hasher)
+    public var hashValue: Swift.Int {
+      get
+    }
+  }
+  final public let options: WebAuthn.BlockModeOption
+  public enum Error : Swift.Error {
+    case invalidNonce
+    case fail
+    public static func == (a: WebAuthn.OCB.Error, b: WebAuthn.OCB.Error) -> Swift.Bool
+    public func hash(into hasher: inout Swift.Hasher)
+    public var hashValue: Swift.Int {
+      get
+    }
+  }
+  final public var authenticationTag: Swift.Array<Swift.UInt8>?
+  public init(nonce N: Swift.Array<Swift.UInt8>, additionalAuthenticatedData: Swift.Array<Swift.UInt8>? = nil, tagLength: Swift.Int = 16, mode: WebAuthn.OCB.Mode = .detached)
+  convenience public init(nonce N: Swift.Array<Swift.UInt8>, authenticationTag: Swift.Array<Swift.UInt8>, additionalAuthenticatedData: Swift.Array<Swift.UInt8>? = nil, mode: WebAuthn.OCB.Mode = .detached)
+  final public func worker(blockSize: Swift.Int, cipherOperation: @escaping WebAuthn.CipherOperationOnBlock, encryptionOperation: @escaping WebAuthn.CipherOperationOnBlock) throws -> WebAuthn.CipherModeWorker
+  @objc deinit
+}
+public protocol _UInt8Type {
+}
+extension Swift.UInt8 : WebAuthn._UInt8Type {
+}
+extension Swift.UInt8 {
+  public func bits() -> [WebAuthn.Bit]
+  public func bits() -> Swift.String
+}
+final public class Rabbit {
+  public enum Error : Swift.Error {
+    case invalidKeyOrInitializationVector
+    public static func == (a: WebAuthn.Rabbit.Error, b: WebAuthn.Rabbit.Error) -> Swift.Bool
+    public func hash(into hasher: inout Swift.Hasher)
+    public var hashValue: Swift.Int {
+      get
+    }
+  }
+  public static let ivSize: Swift.Int
+  public static let keySize: Swift.Int
+  public static let blockSize: Swift.Int
+  final public var keySize: Swift.Int {
+    get
+  }
+  convenience public init(key: Swift.Array<Swift.UInt8>) throws
+  public init(key: Swift.Array<Swift.UInt8>, iv: Swift.Array<Swift.UInt8>?) throws
+  @objc deinit
+}
+extension WebAuthn.Rabbit : WebAuthn.Cipher {
+  final public func encrypt(_ bytes: Swift.ArraySlice<Swift.UInt8>) throws -> Swift.Array<Swift.UInt8>
+  final public func decrypt(_ bytes: Swift.ArraySlice<Swift.UInt8>) throws -> Swift.Array<Swift.UInt8>
+}
+@_hasMissingDesignatedInitializers public class BlockDecryptor : WebAuthn.Cryptor, WebAuthn.Updatable {
+  public func update(withBytes bytes: Swift.ArraySlice<Swift.UInt8>, isLast: Swift.Bool = false) throws -> Swift.Array<Swift.UInt8>
+  public func seek(to position: Swift.Int) throws
+  @objc deinit
+}
+@_hasMissingDesignatedInitializers public class Base64 {
+  public static func encodeBase64(_ bytes: [Swift.UInt8]) -> Swift.String
+  public static func encodeBase64(_ data: Foundation.Data) -> Swift.String
+  public static func encodeBase64URL(_ bytes: [Swift.UInt8]) -> Swift.String
+  public static func encodeBase64URL(_ data: Foundation.Data) -> Swift.String
+  @objc deinit
+}
+public protocol UserConsentViewControllerDelegate : AnyObject {
+  func consentViewControllerWillDismiss(viewController: UIKit.UIViewController)
+}
+public class UserConsentUI : WebAuthn.UserConsentViewControllerDelegate {
+  public typealias MessageBuilder = ((WebAuthn.PublicKeyCredentialRpEntity, WebAuthn.PublicKeyCredentialUserEntity) -> Swift.String)
+  final public let config: WebAuthn.UserConsentUIConfig
+  public var opened: Swift.Bool {
+    get
+  }
+  public init(viewController: UIKit.UIViewController)
+  public func cancel(reason: WebAuthn.WAKError)
+  public func consentViewControllerWillDismiss(viewController: UIKit.UIViewController)
+  @objc deinit
+}
+@_inheritsConvenienceInitializers final public class CBCMAC : WebAuthn.CMAC {
+  override final public func authenticate(_ bytes: Swift.Array<Swift.UInt8>) throws -> Swift.Array<Swift.UInt8>
+  override public init(key: Swift.Array<Swift.UInt8>) throws
+  @objc deinit
+}
+public let KeychainAccessErrorDomain: Swift.String
+public enum ItemClass {
+  case genericPassword
+  case internetPassword
+}
+public enum ProtocolType {
+  case ftp
+  case ftpAccount
+  case http
+  case irc
+  case nntp
+  case pop3
+  case smtp
+  case socks
+  case imap
+  case ldap
+  case appleTalk
+  case afp
+  case telnet
+  case ssh
+  case ftps
+  case https
+  case httpProxy
+  case httpsProxy
+  case ftpProxy
+  case smb
+  case rtsp
+  case rtspProxy
+  case daap
+  case eppc
+  case ipp
+  case nntps
+  case ldaps
+  case telnetS
+  case imaps
+  case ircs
+  case pop3S
+}
+public enum AuthenticationType {
+  case ntlm
+  case msn
+  case dpa
+  case rpa
+  case httpBasic
+  case httpDigest
+  case htmlForm
+  case `default`
+}
+public enum Accessibility {
+  case whenUnlocked
+  case afterFirstUnlock
+  @available(macCatalyst, unavailable)
+  case always
+  @available(iOS 8.0, macOS 10.10, *)
+  case whenPasscodeSetThisDeviceOnly
+  case whenUnlockedThisDeviceOnly
+  case afterFirstUnlockThisDeviceOnly
+  @available(macCatalyst, unavailable)
+  case alwaysThisDeviceOnly
+}
+public enum AuthenticationUI {
+  case allow
+  case fail
+  case skip
+  public static func == (a: WebAuthn.AuthenticationUI, b: WebAuthn.AuthenticationUI) -> Swift.Bool
+  public func hash(into hasher: inout Swift.Hasher)
+  public var hashValue: Swift.Int {
+    get
+  }
+}
+@available(iOS 9.0, macOS 10.11, *)
+extension WebAuthn.AuthenticationUI {
+  public var rawValue: Swift.String {
+    get
+  }
+  public var description: Swift.String {
+    get
+  }
+}
+public struct AuthenticationPolicy : Swift.OptionSet {
+  @available(iOS 8.0, macOS 10.10, watchOS 2.0, tvOS 8.0, *)
+  public static let userPresence: WebAuthn.AuthenticationPolicy
+  @available(iOS 11.3, macOS 10.13.4, watchOS 4.3, tvOS 11.3, *)
+  public static let biometryAny: WebAuthn.AuthenticationPolicy
+  @available(iOS, introduced: 9.0, deprecated: 11.3, renamed: "biometryAny")
+  @available(macOS, introduced: 10.12.1, deprecated: 10.13.4, renamed: "biometryAny")
+  @available(watchOS, introduced: 2.0, deprecated: 4.3, renamed: "biometryAny")
+  @available(tvOS, introduced: 9.0, deprecated: 11.3, renamed: "biometryAny")
+  public static let touchIDAny: WebAuthn.AuthenticationPolicy
+  @available(iOS 11.3, macOS 10.13, watchOS 4.3, tvOS 11.3, *)
+  public static let biometryCurrentSet: WebAuthn.AuthenticationPolicy
+  @available(iOS, introduced: 9.0, deprecated: 11.3, renamed: "biometryCurrentSet")
+  @available(macOS, introduced: 10.12.1, deprecated: 10.13.4, renamed: "biometryCurrentSet")
+  @available(watchOS, introduced: 2.0, deprecated: 4.3, renamed: "biometryCurrentSet")
+  @available(tvOS, introduced: 9.0, deprecated: 11.3, renamed: "biometryCurrentSet")
+  public static let touchIDCurrentSet: WebAuthn.AuthenticationPolicy
+  @available(iOS 9.0, macOS 10.11, watchOS 2.0, tvOS 9.0, *)
+  public static let devicePasscode: WebAuthn.AuthenticationPolicy
+  @available(macOS 10.15, *)
+  @available(iOS, unavailable)
+  @available(watchOS, unavailable)
+  @available(tvOS, unavailable)
+  public static let watch: WebAuthn.AuthenticationPolicy
+  @available(iOS 9.0, macOS 10.12.1, watchOS 2.0, tvOS 9.0, *)
+  public static let or: WebAuthn.AuthenticationPolicy
+  @available(iOS 9.0, macOS 10.12.1, watchOS 2.0, tvOS 9.0, *)
+  public static let and: WebAuthn.AuthenticationPolicy
+  @available(iOS 9.0, macOS 10.12.1, watchOS 2.0, tvOS 9.0, *)
+  public static let privateKeyUsage: WebAuthn.AuthenticationPolicy
+  @available(iOS 9.0, macOS 10.12.1, watchOS 2.0, tvOS 9.0, *)
+  public static let applicationPassword: WebAuthn.AuthenticationPolicy
+  public let rawValue: Swift.UInt
+  public init(rawValue: Swift.UInt)
+  public typealias ArrayLiteralElement = WebAuthn.AuthenticationPolicy
+  public typealias Element = WebAuthn.AuthenticationPolicy
+  public typealias RawValue = Swift.UInt
+}
+public struct Attributes {
+  public var `class`: Swift.String? {
+    get
+  }
+  public var data: Foundation.Data? {
+    get
+  }
+  public var ref: Foundation.Data? {
+    get
+  }
+  public var persistentRef: Foundation.Data? {
+    get
+  }
+  public var accessible: Swift.String? {
+    get
+  }
+  public var accessControl: Security.SecAccessControl? {
+    get
+  }
+  public var accessGroup: Swift.String? {
+    get
+  }
+  public var synchronizable: Swift.Bool? {
+    get
+  }
+  public var creationDate: Foundation.Date? {
+    get
+  }
+  public var modificationDate: Foundation.Date? {
+    get
+  }
+  public var attributeDescription: Swift.String? {
+    get
+  }
+  public var comment: Swift.String? {
+    get
+  }
+  public var creator: Swift.String? {
+    get
+  }
+  public var type: Swift.String? {
+    get
+  }
+  public var label: Swift.String? {
+    get
+  }
+  public var isInvisible: Swift.Bool? {
+    get
+  }
+  public var isNegative: Swift.Bool? {
+    get
+  }
+  public var account: Swift.String? {
+    get
+  }
+  public var service: Swift.String? {
+    get
+  }
+  public var generic: Foundation.Data? {
+    get
+  }
+  public var securityDomain: Swift.String? {
+    get
+  }
+  public var server: Swift.String? {
+    get
+  }
+  public var `protocol`: Swift.String? {
+    get
+  }
+  public var authenticationType: Swift.String? {
+    get
+  }
+  public var port: Swift.Int? {
+    get
+  }
+  public var path: Swift.String? {
+    get
+  }
+  public subscript(key: Swift.String) -> Any? {
+    get
+  }
+}
+@_hasMissingDesignatedInitializers final public class Keychain {
+  final public var itemClass: WebAuthn.ItemClass {
+    get
+  }
+  final public var service: Swift.String {
+    get
+  }
+  final public var accessGroup: Swift.String? {
+    get
+  }
+  final public var server: Foundation.URL {
+    get
+  }
+  final public var protocolType: WebAuthn.ProtocolType {
+    get
+  }
+  final public var authenticationType: WebAuthn.AuthenticationType {
+    get
+  }
+  final public var accessibility: WebAuthn.Accessibility {
+    get
+  }
+  @available(iOS 8.0, macOS 10.10, *)
+  @available(watchOS, unavailable)
+  final public var authenticationPolicy: WebAuthn.AuthenticationPolicy? {
+    get
+  }
+  final public var synchronizable: Swift.Bool {
+    get
+  }
+  final public var label: Swift.String? {
+    get
+  }
+  final public var comment: Swift.String? {
+    get
+  }
+  @available(iOS 8.0, macOS 10.10, *)
+  @available(watchOS, unavailable)
+  final public var authenticationPrompt: Swift.String? {
+    get
+  }
+  @available(iOS 9.0, macOS 10.11, *)
+  final public var authenticationUI: WebAuthn.AuthenticationUI {
+    get
+  }
+  @available(iOS 9.0, macOS 10.11, *)
+  final public var authenticationContext: LocalAuthentication.LAContext? {
+    get
+  }
+  convenience public init()
+  convenience public init(service: Swift.String)
+  convenience public init(accessGroup: Swift.String)
+  convenience public init(service: Swift.String, accessGroup: Swift.String)
+  convenience public init(server: Swift.String, protocolType: WebAuthn.ProtocolType, accessGroup: Swift.String? = nil, authenticationType: WebAuthn.AuthenticationType = .default)
+  convenience public init(server: Foundation.URL, protocolType: WebAuthn.ProtocolType, accessGroup: Swift.String? = nil, authenticationType: WebAuthn.AuthenticationType = .default)
+  final public func accessibility(_ accessibility: WebAuthn.Accessibility) -> WebAuthn.Keychain
+  @available(iOS 8.0, macOS 10.10, *)
+  @available(watchOS, unavailable)
+  final public func accessibility(_ accessibility: WebAuthn.Accessibility, authenticationPolicy: WebAuthn.AuthenticationPolicy) -> WebAuthn.Keychain
+  final public func synchronizable(_ synchronizable: Swift.Bool) -> WebAuthn.Keychain
+  final public func label(_ label: Swift.String) -> WebAuthn.Keychain
+  final public func comment(_ comment: Swift.String) -> WebAuthn.Keychain
+  final public func attributes(_ attributes: [Swift.String : Any]) -> WebAuthn.Keychain
+  @available(iOS 8.0, macOS 10.10, *)
+  @available(watchOS, unavailable)
+  final public func authenticationPrompt(_ authenticationPrompt: Swift.String) -> WebAuthn.Keychain
+  @available(iOS 9.0, macOS 10.11, *)
+  final public func authenticationUI(_ authenticationUI: WebAuthn.AuthenticationUI) -> WebAuthn.Keychain
+  @available(iOS 9.0, macOS 10.11, *)
+  final public func authenticationContext(_ authenticationContext: LocalAuthentication.LAContext) -> WebAuthn.Keychain
+  final public func get(_ key: Swift.String, ignoringAttributeSynchronizable: Swift.Bool = true) throws -> Swift.String?
+  final public func getString(_ key: Swift.String, ignoringAttributeSynchronizable: Swift.Bool = true) throws -> Swift.String?
+  final public func getData(_ key: Swift.String, ignoringAttributeSynchronizable: Swift.Bool = true) throws -> Foundation.Data?
+  final public func get<T>(_ key: Swift.String, ignoringAttributeSynchronizable: Swift.Bool = true, handler: (WebAuthn.Attributes?) -> T) throws -> T
+  final public func set(_ value: Swift.String, key: Swift.String, ignoringAttributeSynchronizable: Swift.Bool = true) throws
+  final public func set(_ value: Foundation.Data, key: Swift.String, ignoringAttributeSynchronizable: Swift.Bool = true) throws
+  final public subscript(key: Swift.String) -> Swift.String? {
+    get
+    set
+  }
+  final public subscript(string key: Swift.String) -> Swift.String? {
+    get
+    set
+  }
+  final public subscript(data key: Swift.String) -> Foundation.Data? {
+    get
+    set
+  }
+  final public subscript(attributes key: Swift.String) -> WebAuthn.Attributes? {
+    get
+  }
+  final public func remove(_ key: Swift.String, ignoringAttributeSynchronizable: Swift.Bool = true) throws
+  final public func removeAll() throws
+  final public func contains(_ key: Swift.String, withoutAuthenticationUI: Swift.Bool = false) throws -> Swift.Bool
+  final public class func allKeys(_ itemClass: WebAuthn.ItemClass) -> [(Swift.String, Swift.String)]
+  final public func allKeys() -> [Swift.String]
+  final public class func allItems(_ itemClass: WebAuthn.ItemClass) -> [[Swift.String : Any]]
+  final public func allItems() -> [[Swift.String : Any]]
+  @available(iOS 8.0, *)
+  final public func getSharedPassword(_ completion: @escaping (_ account: Swift.String?, _ password: Swift.String?, _ error: Swift.Error?) -> () = { account, password, error -> () in })
+  @available(iOS 8.0, *)
+  final public func getSharedPassword(_ account: Swift.String, completion: @escaping (_ password: Swift.String?, _ error: Swift.Error?) -> () = { password, error -> () in })
+  @available(iOS 8.0, *)
+  final public func setSharedPassword(_ password: Swift.String, account: Swift.String, completion: @escaping (_ error: Swift.Error?) -> () = { e -> () in })
+  @available(iOS 8.0, *)
+  final public func removeSharedPassword(_ account: Swift.String, completion: @escaping (_ error: Swift.Error?) -> () = { e -> () in })
+  @available(iOS 8.0, *)
+  final public class func requestSharedWebCredential(_ completion: @escaping (_ credentials: [[Swift.String : Swift.String]], _ error: Swift.Error?) -> () = { credentials, error -> () in })
+  @available(iOS 8.0, *)
+  final public class func requestSharedWebCredential(domain: Swift.String, completion: @escaping (_ credentials: [[Swift.String : Swift.String]], _ error: Swift.Error?) -> () = { credentials, error -> () in })
+  @available(iOS 8.0, *)
+  final public class func requestSharedWebCredential(domain: Swift.String, account: Swift.String, completion: @escaping (_ credentials: [[Swift.String : Swift.String]], _ error: Swift.Error?) -> () = { credentials, error -> () in })
+  @available(iOS 8.0, *)
+  final public class func generatePassword() -> Swift.String
+  @objc deinit
+}
+extension WebAuthn.Keychain : Swift.CustomStringConvertible, Swift.CustomDebugStringConvertible {
+  final public var description: Swift.String {
+    get
+  }
+  final public var debugDescription: Swift.String {
+    get
+  }
+}
+extension WebAuthn.Attributes : Swift.CustomStringConvertible, Swift.CustomDebugStringConvertible {
+  public var description: Swift.String {
+    get
+  }
+  public var debugDescription: Swift.String {
+    get
+  }
+}
+extension WebAuthn.ItemClass : Swift.RawRepresentable, Swift.CustomStringConvertible {
+  public init?(rawValue: Swift.String)
+  public var rawValue: Swift.String {
+    get
+  }
+  public var description: Swift.String {
+    get
+  }
+  public typealias RawValue = Swift.String
+}
+extension WebAuthn.ProtocolType : Swift.RawRepresentable, Swift.CustomStringConvertible {
+  public init?(rawValue: Swift.String)
+  public var rawValue: Swift.String {
+    get
+  }
+  public var description: Swift.String {
+    get
+  }
+  public typealias RawValue = Swift.String
+}
+extension WebAuthn.AuthenticationType : Swift.RawRepresentable, Swift.CustomStringConvertible {
+  public init?(rawValue: Swift.String)
+  public var rawValue: Swift.String {
+    get
+  }
+  public var description: Swift.String {
+    get
+  }
+  public typealias RawValue = Swift.String
+}
+extension WebAuthn.Accessibility : Swift.RawRepresentable, Swift.CustomStringConvertible {
+  public init?(rawValue: Swift.String)
+  public var rawValue: Swift.String {
+    get
+  }
+  public var description: Swift.String {
+    get
+  }
+  public typealias RawValue = Swift.String
+}
+public enum Status : Darwin.OSStatus, Swift.Error {
+  case success
+  case unimplemented
+  case diskFull
+  case io
+  case opWr
+  case param
+  case wrPerm
+  case allocate
+  case userCanceled
+  case badReq
+  case internalComponent
+  case notAvailable
+  case readOnly
+  case authFailed
+  case noSuchKeychain
+  case invalidKeychain
+  case duplicateKeychain
+  case duplicateCallback
+  case invalidCallback
+  case duplicateItem
+  case itemNotFound
+  case bufferTooSmall
+  case dataTooLarge
+  case noSuchAttr
+  case invalidItemRef
+  case invalidSearchRef
+  case noSuchClass
+  case noDefaultKeychain
+  case interactionNotAllowed
+  case readOnlyAttr
+  case wrongSecVersion
+  case keySizeNotAllowed
+  case noStorageModule
+  case noCertificateModule
+  case noPolicyModule
+  case interactionRequired
+  case dataNotAvailable
+  case dataNotModifiable
+  case createChainFailed
+  case invalidPrefsDomain
+  case inDarkWake
+  case aclNotSimple
+  case policyNotFound
+  case invalidTrustSetting
+  case noAccessForItem
+  case invalidOwnerEdit
+  case trustNotAvailable
+  case unsupportedFormat
+  case unknownFormat
+  case keyIsSensitive
+  case multiplePrivKeys
+  case passphraseRequired
+  case invalidPasswordRef
+  case invalidTrustSettings
+  case noTrustSettings
+  case pkcs12VerifyFailure
+  case invalidCertificate
+  case notSigner
+  case policyDenied
+  case invalidKey
+  case decode
+  case `internal`
+  case unsupportedAlgorithm
+  case unsupportedOperation
+  case unsupportedPadding
+  case itemInvalidKey
+  case itemInvalidKeyType
+  case itemInvalidValue
+  case itemClassMissing
+  case itemMatchUnsupported
+  case useItemListUnsupported
+  case useKeychainUnsupported
+  case useKeychainListUnsupported
+  case returnDataUnsupported
+  case returnAttributesUnsupported
+  case returnRefUnsupported
+  case returnPersitentRefUnsupported
+  case valueRefUnsupported
+  case valuePersistentRefUnsupported
+  case returnMissingPointer
+  case matchLimitUnsupported
+  case itemIllegalQuery
+  case waitForCallback
+  case missingEntitlement
+  case upgradePending
+  case mpSignatureInvalid
+  case otrTooOld
+  case otrIDTooNew
+  case serviceNotAvailable
+  case insufficientClientID
+  case deviceReset
+  case deviceFailed
+  case appleAddAppACLSubject
+  case applePublicKeyIncomplete
+  case appleSignatureMismatch
+  case appleInvalidKeyStartDate
+  case appleInvalidKeyEndDate
+  case conversionError
+  case appleSSLv2Rollback
+  case quotaExceeded
+  case fileTooBig
+  case invalidDatabaseBlob
+  case invalidKeyBlob
+  case incompatibleDatabaseBlob
+  case incompatibleKeyBlob
+  case hostNameMismatch
+  case unknownCriticalExtensionFlag
+  case noBasicConstraints
+  case noBasicConstraintsCA
+  case invalidAuthorityKeyID
+  case invalidSubjectKeyID
+  case invalidKeyUsageForPolicy
+  case invalidExtendedKeyUsage
+  case invalidIDLinkage
+  case pathLengthConstraintExceeded
+  case invalidRoot
+  case crlExpired
+  case crlNotValidYet
+  case crlNotFound
+  case crlServerDown
+  case crlBadURI
+  case unknownCertExtension
+  case unknownCRLExtension
+  case crlNotTrusted
+  case crlPolicyFailed
+  case idpFailure
+  case smimeEmailAddressesNotFound
+  case smimeBadExtendedKeyUsage
+  case smimeBadKeyUsage
+  case smimeKeyUsageNotCritical
+  case smimeNoEmailAddress
+  case smimeSubjAltNameNotCritical
+  case sslBadExtendedKeyUsage
+  case ocspBadResponse
+  case ocspBadRequest
+  case ocspUnavailable
+  case ocspStatusUnrecognized
+  case endOfData
+  case incompleteCertRevocationCheck
+  case networkFailure
+  case ocspNotTrustedToAnchor
+  case recordModified
+  case ocspSignatureError
+  case ocspNoSigner
+  case ocspResponderMalformedReq
+  case ocspResponderInternalError
+  case ocspResponderTryLater
+  case ocspResponderSignatureRequired
+  case ocspResponderUnauthorized
+  case ocspResponseNonceMismatch
+  case codeSigningBadCertChainLength
+  case codeSigningNoBasicConstraints
+  case codeSigningBadPathLengthConstraint
+  case codeSigningNoExtendedKeyUsage
+  case codeSigningDevelopment
+  case resourceSignBadCertChainLength
+  case resourceSignBadExtKeyUsage
+  case trustSettingDeny
+  case invalidSubjectName
+  case unknownQualifiedCertStatement
+  case mobileMeRequestQueued
+  case mobileMeRequestRedirected
+  case mobileMeServerError
+  case mobileMeServerNotAvailable
+  case mobileMeServerAlreadyExists
+  case mobileMeServerServiceErr
+  case mobileMeRequestAlreadyPending
+  case mobileMeNoRequestPending
+  case mobileMeCSRVerifyFailure
+  case mobileMeFailedConsistencyCheck
+  case notInitialized
+  case invalidHandleUsage
+  case pvcReferentNotFound
+  case functionIntegrityFail
+  case internalError
+  case memoryError
+  case invalidData
+  case mdsError
+  case invalidPointer
+  case selfCheckFailed
+  case functionFailed
+  case moduleManifestVerifyFailed
+  case invalidGUID
+  case invalidHandle
+  case invalidDBList
+  case invalidPassthroughID
+  case invalidNetworkAddress
+  case crlAlreadySigned
+  case invalidNumberOfFields
+  case verificationFailure
+  case unknownTag
+  case invalidSignature
+  case invalidName
+  case invalidCertificateRef
+  case invalidCertificateGroup
+  case tagNotFound
+  case invalidQuery
+  case invalidValue
+  case callbackFailed
+  case aclDeleteFailed
+  case aclReplaceFailed
+  case aclAddFailed
+  case aclChangeFailed
+  case invalidAccessCredentials
+  case invalidRecord
+  case invalidACL
+  case invalidSampleValue
+  case incompatibleVersion
+  case privilegeNotGranted
+  case invalidScope
+  case pvcAlreadyConfigured
+  case invalidPVC
+  case emmLoadFailed
+  case emmUnloadFailed
+  case addinLoadFailed
+  case invalidKeyRef
+  case invalidKeyHierarchy
+  case addinUnloadFailed
+  case libraryReferenceNotFound
+  case invalidAddinFunctionTable
+  case invalidServiceMask
+  case moduleNotLoaded
+  case invalidSubServiceID
+  case attributeNotInContext
+  case moduleManagerInitializeFailed
+  case moduleManagerNotFound
+  case eventNotificationCallbackNotFound
+  case inputLengthError
+  case outputLengthError
+  case privilegeNotSupported
+  case deviceError
+  case attachHandleBusy
+  case notLoggedIn
+  case algorithmMismatch
+  case keyUsageIncorrect
+  case keyBlobTypeIncorrect
+  case keyHeaderInconsistent
+  case unsupportedKeyFormat
+  case unsupportedKeySize
+  case invalidKeyUsageMask
+  case unsupportedKeyUsageMask
+  case invalidKeyAttributeMask
+  case unsupportedKeyAttributeMask
+  case invalidKeyLabel
+  case unsupportedKeyLabel
+  case invalidKeyFormat
+  case unsupportedVectorOfBuffers
+  case invalidInputVector
+  case invalidOutputVector
+  case invalidContext
+  case invalidAlgorithm
+  case invalidAttributeKey
+  case missingAttributeKey
+  case invalidAttributeInitVector
+  case missingAttributeInitVector
+  case invalidAttributeSalt
+  case missingAttributeSalt
+  case invalidAttributePadding
+  case missingAttributePadding
+  case invalidAttributeRandom
+  case missingAttributeRandom
+  case invalidAttributeSeed
+  case missingAttributeSeed
+  case invalidAttributePassphrase
+  case missingAttributePassphrase
+  case invalidAttributeKeyLength
+  case missingAttributeKeyLength
+  case invalidAttributeBlockSize
+  case missingAttributeBlockSize
+  case invalidAttributeOutputSize
+  case missingAttributeOutputSize
+  case invalidAttributeRounds
+  case missingAttributeRounds
+  case invalidAlgorithmParms
+  case missingAlgorithmParms
+  case invalidAttributeLabel
+  case missingAttributeLabel
+  case invalidAttributeKeyType
+  case missingAttributeKeyType
+  case invalidAttributeMode
+  case missingAttributeMode
+  case invalidAttributeEffectiveBits
+  case missingAttributeEffectiveBits
+  case invalidAttributeStartDate
+  case missingAttributeStartDate
+  case invalidAttributeEndDate
+  case missingAttributeEndDate
+  case invalidAttributeVersion
+  case missingAttributeVersion
+  case invalidAttributePrime
+  case missingAttributePrime
+  case invalidAttributeBase
+  case missingAttributeBase
+  case invalidAttributeSubprime
+  case missingAttributeSubprime
+  case invalidAttributeIterationCount
+  case missingAttributeIterationCount
+  case invalidAttributeDLDBHandle
+  case missingAttributeDLDBHandle
+  case invalidAttributeAccessCredentials
+  case missingAttributeAccessCredentials
+  case invalidAttributePublicKeyFormat
+  case missingAttributePublicKeyFormat
+  case invalidAttributePrivateKeyFormat
+  case missingAttributePrivateKeyFormat
+  case invalidAttributeSymmetricKeyFormat
+  case missingAttributeSymmetricKeyFormat
+  case invalidAttributeWrappedKeyFormat
+  case missingAttributeWrappedKeyFormat
+  case stagedOperationInProgress
+  case stagedOperationNotStarted
+  case verifyFailed
+  case querySizeUnknown
+  case blockSizeMismatch
+  case publicKeyInconsistent
+  case deviceVerifyFailed
+  case invalidLoginName
+  case alreadyLoggedIn
+  case invalidDigestAlgorithm
+  case invalidCRLGroup
+  case certificateCannotOperate
+  case certificateExpired
+  case certificateNotValidYet
+  case certificateRevoked
+  case certificateSuspended
+  case insufficientCredentials
+  case invalidAction
+  case invalidAuthority
+  case verifyActionFailed
+  case invalidCertAuthority
+  case invaldCRLAuthority
+  case invalidCRLEncoding
+  case invalidCRLType
+  case invalidCRL
+  case invalidFormType
+  case invalidID
+  case invalidIdentifier
+  case invalidIndex
+  case invalidPolicyIdentifiers
+  case invalidTimeString
+  case invalidReason
+  case invalidRequestInputs
+  case invalidResponseVector
+  case invalidStopOnPolicy
+  case invalidTuple
+  case multipleValuesUnsupported
+  case notTrusted
+  case noDefaultAuthority
+  case rejectedForm
+  case requestLost
+  case requestRejected
+  case unsupportedAddressType
+  case unsupportedService
+  case invalidTupleGroup
+  case invalidBaseACLs
+  case invalidTupleCredendtials
+  case invalidEncoding
+  case invalidValidityPeriod
+  case invalidRequestor
+  case requestDescriptor
+  case invalidBundleInfo
+  case invalidCRLIndex
+  case noFieldValues
+  case unsupportedFieldFormat
+  case unsupportedIndexInfo
+  case unsupportedLocality
+  case unsupportedNumAttributes
+  case unsupportedNumIndexes
+  case unsupportedNumRecordTypes
+  case fieldSpecifiedMultiple
+  case incompatibleFieldFormat
+  case invalidParsingModule
+  case databaseLocked
+  case datastoreIsOpen
+  case missingValue
+  case unsupportedQueryLimits
+  case unsupportedNumSelectionPreds
+  case unsupportedOperator
+  case invalidDBLocation
+  case invalidAccessRequest
+  case invalidIndexInfo
+  case invalidNewOwner
+  case invalidModifyMode
+  case missingRequiredExtension
+  case extendedKeyUsageNotCritical
+  case timestampMissing
+  case timestampInvalid
+  case timestampNotTrusted
+  case timestampServiceNotAvailable
+  case timestampBadAlg
+  case timestampBadRequest
+  case timestampBadDataFormat
+  case timestampTimeNotAvailable
+  case timestampUnacceptedPolicy
+  case timestampUnacceptedExtension
+  case timestampAddInfoNotAvailable
+  case timestampSystemFailure
+  case signingTimeMissing
+  case timestampRejection
+  case timestampWaiting
+  case timestampRevocationWarning
+  case timestampRevocationNotification
+  case unexpectedError
+}
+extension WebAuthn.Status : Swift.RawRepresentable, Swift.CustomStringConvertible {
+  public init(status: Darwin.OSStatus)
+  public var description: Swift.String {
+    get
+  }
+  public init?(rawValue: Darwin.OSStatus)
+  public typealias RawValue = Darwin.OSStatus
+  public var rawValue: Darwin.OSStatus {
+    get
+  }
+}
+extension WebAuthn.Status : Foundation.CustomNSError {
+  public static let errorDomain: Swift.String
+  public var errorCode: Swift.Int {
+    get
+  }
+  public var errorUserInfo: [Swift.String : Any] {
+    get
+  }
+}
+@_hasMissingDesignatedInitializers public class ClientGetOperation : WebAuthn.AuthenticatorGetAssertionSessionDelegate {
+  final public let id: Swift.String
+  final public let type: WebAuthn.ClientOperationType
+  weak public var delegate: WebAuthn.ClientOperationDelegate?
+  public func start() -> PromiseKit.Promise<WebAuthn.WebAuthnClient.GetResponse>
+  public func cancel(reason: WebAuthn.WAKError = .cancelled)
+  public func authenticatorSessionDidBecomeAvailable(session: WebAuthn.AuthenticatorGetAssertionSession)
+  public func authenticatorSessionDidDiscoverCredential(session: WebAuthn.AuthenticatorGetAssertionSession, assertion: WebAuthn.AuthenticatorAssertionResult)
+  public func authenticatorSessionDidBecomeUnavailable(session: WebAuthn.AuthenticatorGetAssertionSession)
+  public func authenticatorSessionDidStopOperation(session: WebAuthn.AuthenticatorGetAssertionSession, reason: WebAuthn.WAKError)
+  @objc deinit
+}
+public struct CCM {
+  public enum Error : Swift.Error {
+    case invalidInitializationVector
+    case invalidParameter
+    case fail
+    public static func == (a: WebAuthn.CCM.Error, b: WebAuthn.CCM.Error) -> Swift.Bool
+    public func hash(into hasher: inout Swift.Hasher)
+    public var hashValue: Swift.Int {
+      get
+    }
+  }
+  public let options: WebAuthn.BlockModeOption
+  public var authenticationTag: Swift.Array<Swift.UInt8>?
+  public init(iv: Swift.Array<Swift.UInt8>, tagLength: Swift.Int, messageLength: Swift.Int, additionalAuthenticatedData: Swift.Array<Swift.UInt8>? = nil)
+  public init(iv: Swift.Array<Swift.UInt8>, tagLength: Swift.Int, messageLength: Swift.Int, authenticationTag: Swift.Array<Swift.UInt8>, additionalAuthenticatedData: Swift.Array<Swift.UInt8>? = nil)
+  public func worker(blockSize: Swift.Int, cipherOperation: @escaping WebAuthn.CipherOperationOnBlock, encryptionOperation: @escaping WebAuthn.CipherOperationOnBlock) throws -> WebAuthn.CipherModeWorker
+}
+@available(*, renamed: "Digest")
+public typealias Hash = WebAuthn.Digest
+public struct Digest {
+  public static func md5(_ bytes: Swift.Array<Swift.UInt8>) -> Swift.Array<Swift.UInt8>
+  public static func sha1(_ bytes: Swift.Array<Swift.UInt8>) -> Swift.Array<Swift.UInt8>
+  public static func sha224(_ bytes: Swift.Array<Swift.UInt8>) -> Swift.Array<Swift.UInt8>
+  public static func sha256(_ bytes: Swift.Array<Swift.UInt8>) -> Swift.Array<Swift.UInt8>
+  public static func sha384(_ bytes: Swift.Array<Swift.UInt8>) -> Swift.Array<Swift.UInt8>
+  public static func sha512(_ bytes: Swift.Array<Swift.UInt8>) -> Swift.Array<Swift.UInt8>
+  public static func sha2(_ bytes: Swift.Array<Swift.UInt8>, variant: WebAuthn.SHA2.Variant) -> Swift.Array<Swift.UInt8>
+  public static func sha3(_ bytes: Swift.Array<Swift.UInt8>, variant: WebAuthn.SHA3.Variant) -> Swift.Array<Swift.UInt8>
+}
+public enum ClientOperationType {
+  case get
+  case create
+  public static func == (a: WebAuthn.ClientOperationType, b: WebAuthn.ClientOperationType) -> Swift.Bool
+  public func hash(into hasher: inout Swift.Hasher)
+  public var hashValue: Swift.Int {
+    get
+  }
+}
+public protocol ClientOperationDelegate : AnyObject {
+  func operationDidFinish(opType: WebAuthn.ClientOperationType, opId: Swift.String)
+}
+public class WebAuthnClient : WebAuthn.ClientOperationDelegate {
+  public typealias CreateResponse = WebAuthn.PublicKeyCredential<WebAuthn.AuthenticatorAttestationResponse>
+  public typealias GetResponse = WebAuthn.PublicKeyCredential<WebAuthn.AuthenticatorAssertionResponse>
+  final public let origin: Swift.String
+  public var defaultTimeout: Swift.UInt64
+  public var minTimeout: Swift.UInt64
+  public var maxTimeout: Swift.UInt64
+  public init(origin: Swift.String, authenticator: WebAuthn.WebAuthnAuthenticator)
+  public func create(_ options: WebAuthn.PublicKeyCredentialCreationOptions, context: LocalAuthentication.LAContext? = nil) -> PromiseKit.Promise<WebAuthn.WebAuthnClient.CreateResponse>
+  public func get(_ options: WebAuthn.PublicKeyCredentialRequestOptions, context: LocalAuthentication.LAContext? = nil) -> PromiseKit.Promise<WebAuthn.WebAuthnClient.GetResponse>
+  public func cancel()
+  public func newCreateOperation(_ options: WebAuthn.PublicKeyCredentialCreationOptions, context: LocalAuthentication.LAContext?) -> WebAuthn.ClientCreateOperation
+  public func newGetOperation(_ options: WebAuthn.PublicKeyCredentialRequestOptions, context: LocalAuthentication.LAContext?) -> WebAuthn.ClientGetOperation
+  public func operationDidFinish(opType: WebAuthn.ClientOperationType, opId: Swift.String)
+  @objc deinit
+}
+public class CMAC : WebAuthn.Authenticator {
+  public enum Error : Swift.Error {
+    case wrongKeyLength
+    public static func == (a: WebAuthn.CMAC.Error, b: WebAuthn.CMAC.Error) -> Swift.Bool
+    public func hash(into hasher: inout Swift.Hasher)
+    public var hashValue: Swift.Int {
+      get
+    }
+  }
+  public init(key: Swift.Array<Swift.UInt8>) throws
+  public func authenticate(_ bytes: Swift.Array<Swift.UInt8>) throws -> Swift.Array<Swift.UInt8>
+  public func authenticate(_ bytes: Swift.Array<Swift.UInt8>, cipher: WebAuthn.Cipher) throws -> Swift.Array<Swift.UInt8>
+  @objc deinit
+}
+final public class AES {
+  public enum Error : Swift.Error {
+    case invalidKeySize
+    case dataPaddingRequired
+    case invalidData
+    public static func == (a: WebAuthn.AES.Error, b: WebAuthn.AES.Error) -> Swift.Bool
+    public func hash(into hasher: inout Swift.Hasher)
+    public var hashValue: Swift.Int {
+      get
+    }
+  }
+  public enum Variant : Swift.Int {
+    case aes128, aes192, aes256
+    public init?(rawValue: Swift.Int)
+    public typealias RawValue = Swift.Int
+    public var rawValue: Swift.Int {
+      get
+    }
+  }
+  public static let blockSize: Swift.Int
+  final public let keySize: Swift.Int
+  final public let variant: WebAuthn.AES.Variant
+  public init(key: Swift.Array<Swift.UInt8>, blockMode: WebAuthn.BlockMode, padding: WebAuthn.Padding = .pkcs7) throws
+  @objc deinit
+}
+extension WebAuthn.AES : WebAuthn.Cipher {
+  final public func encrypt(_ bytes: Swift.ArraySlice<Swift.UInt8>) throws -> Swift.Array<Swift.UInt8>
+  final public func decrypt(_ bytes: Swift.ArraySlice<Swift.UInt8>) throws -> Swift.Array<Swift.UInt8>
+}
+public enum PKCS7 {
+}
+@_hasMissingDesignatedInitializers public class InternalAuthenticatorGetAssertionSession : WebAuthn.AuthenticatorGetAssertionSession {
+  weak public var delegate: WebAuthn.AuthenticatorGetAssertionSessionDelegate?
+  public var attachment: WebAuthn.AuthenticatorAttachment {
+    get
+  }
+  public var transport: WebAuthn.AuthenticatorTransport {
+    get
+  }
+  public func start()
+  public func canPerformUserVerification() -> Swift.Bool
+  public func cancel(reason: WebAuthn.WAKError)
+  public func getAssertion(rpId: Swift.String, hash: [Swift.UInt8], allowCredentialDescriptorList: [WebAuthn.PublicKeyCredentialDescriptor], requireUserPresence: Swift.Bool, requireUserVerification: Swift.Bool)
+  @objc deinit
+}
+public protocol CredentialStore {
+  func lookupCredentialSource(rpId: Swift.String, credentialId: [Swift.UInt8]) -> Swift.Optional<WebAuthn.PublicKeyCredentialSource>
+  func saveCredentialSource(_ cred: WebAuthn.PublicKeyCredentialSource) -> Swift.Bool
+  func loadAllCredentialSources(rpId: Swift.String) -> [WebAuthn.PublicKeyCredentialSource]
+  func deleteCredentialSource(_ cred: WebAuthn.PublicKeyCredentialSource) -> Swift.Bool
+  func deleteAllCredentialSources(rpId: Swift.String, userHandle: [Swift.UInt8])
+}
+public class KeychainCredentialStore : WebAuthn.CredentialStore {
+  public init()
+  public func loadAllCredentialSources(rpId: Swift.String) -> [WebAuthn.PublicKeyCredentialSource]
+  public func deleteAllCredentialSources(rpId: Swift.String, userHandle: [Swift.UInt8])
+  public func loadAllCredentialSources(rpId: Swift.String, userHandle: [Swift.UInt8]) -> [WebAuthn.PublicKeyCredentialSource]
+  public func lookupCredentialSource(rpId: Swift.String, credentialId: [Swift.UInt8]) -> Swift.Optional<WebAuthn.PublicKeyCredentialSource>
+  public func deleteCredentialSource(_ cred: WebAuthn.PublicKeyCredentialSource) -> Swift.Bool
+  public func saveCredentialSource(_ cred: WebAuthn.PublicKeyCredentialSource) -> Swift.Bool
+  @objc deinit
+}
+@_hasMissingDesignatedInitializers final public class Checksum {
+  @objc deinit
+}
+extension WebAuthn.Checksum {
+  public static func crc32(_ message: Swift.Array<Swift.UInt8>, seed: Swift.UInt32? = nil, reflect: Swift.Bool = true) -> Swift.UInt32
+  public static func crc32c(_ message: Swift.Array<Swift.UInt8>, seed: Swift.UInt32? = nil, reflect: Swift.Bool = true) -> Swift.UInt32
+  public static func crc16(_ message: Swift.Array<Swift.UInt8>, seed: Swift.UInt16? = nil) -> Swift.UInt16
+}
+public struct PCBC : WebAuthn.BlockMode {
+  public enum Error : Swift.Error {
+    case invalidInitializationVector
+    public static func == (a: WebAuthn.PCBC.Error, b: WebAuthn.PCBC.Error) -> Swift.Bool
+    public func hash(into hasher: inout Swift.Hasher)
+    public var hashValue: Swift.Int {
+      get
+    }
+  }
+  public let options: WebAuthn.BlockModeOption
+  public init(iv: Swift.Array<Swift.UInt8>)
+  public func worker(blockSize: Swift.Int, cipherOperation: @escaping WebAuthn.CipherOperationOnBlock, encryptionOperation: @escaping WebAuthn.CipherOperationOnBlock) throws -> WebAuthn.CipherModeWorker
+}
+extension WebAuthn.Blowfish {
+  convenience public init(key: Swift.String, iv: Swift.String, padding: WebAuthn.Padding = .pkcs7) throws
+}
+public protocol Authenticator {
+  func authenticate(_ bytes: Swift.Array<Swift.UInt8>) throws -> Swift.Array<Swift.UInt8>
+}
+final public class GCM : WebAuthn.BlockMode {
+  public enum Mode {
+    case combined
+    case detached
+    public static func == (a: WebAuthn.GCM.Mode, b: WebAuthn.GCM.Mode) -> Swift.Bool
+    public func hash(into hasher: inout Swift.Hasher)
+    public var hashValue: Swift.Int {
+      get
+    }
+  }
+  final public let options: WebAuthn.BlockModeOption
+  public enum Error : Swift.Error {
+    case invalidInitializationVector
+    case fail
+    public static func == (a: WebAuthn.GCM.Error, b: WebAuthn.GCM.Error) -> Swift.Bool
+    public func hash(into hasher: inout Swift.Hasher)
+    public var hashValue: Swift.Int {
+      get
+    }
+  }
+  final public var authenticationTag: Swift.Array<Swift.UInt8>?
+  public init(iv: Swift.Array<Swift.UInt8>, additionalAuthenticatedData: Swift.Array<Swift.UInt8>? = nil, tagLength: Swift.Int = 16, mode: WebAuthn.GCM.Mode = .detached)
+  convenience public init(iv: Swift.Array<Swift.UInt8>, authenticationTag: Swift.Array<Swift.UInt8>, additionalAuthenticatedData: Swift.Array<Swift.UInt8>? = nil, mode: WebAuthn.GCM.Mode = .detached)
+  final public func worker(blockSize: Swift.Int, cipherOperation: @escaping WebAuthn.CipherOperationOnBlock, encryptionOperation: @escaping WebAuthn.CipherOperationOnBlock) throws -> WebAuthn.CipherModeWorker
+  @objc deinit
+}
+final public class SHA1 {
+  public init()
+  final public func calculate(for bytes: Swift.Array<Swift.UInt8>) -> Swift.Array<Swift.UInt8>
+  @objc deinit
+}
+extension WebAuthn.SHA1 : WebAuthn.Updatable {
+  @discardableResult
+  final public func update(withBytes bytes: Swift.ArraySlice<Swift.UInt8>, isLast: Swift.Bool = false) throws -> Swift.Array<Swift.UInt8>
+}
+public protocol KeyDetailViewDelegate : AnyObject {
+  func userDidRequestToCreateNewKey(keyName: Swift.String)
+  func userDidCancel()
+}
+@objc @_hasMissingDesignatedInitializers @_Concurrency.MainActor(unsafe) public class KeyRegistrationViewController : UIKit.UIViewController, WebAuthn.KeyDetailViewDelegate {
+  @_Concurrency.MainActor(unsafe) weak public var delegate: WebAuthn.UserConsentViewControllerDelegate?
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public func viewDidLoad()
+  @_Concurrency.MainActor(unsafe) public func userDidCancel()
+  @objc @_Concurrency.MainActor(unsafe) public func onBackgroundViewTapped(_ sender: UIKit.UITapGestureRecognizer)
+  @_Concurrency.MainActor(unsafe) public func userDidRequestToCreateNewKey(keyName: Swift.String)
+  @objc deinit
+}
+public struct HKDF {
+  public enum Error : Swift.Error {
+    case invalidInput
+    case derivedKeyTooLong
+    public static func == (a: WebAuthn.HKDF.Error, b: WebAuthn.HKDF.Error) -> Swift.Bool
+    public func hash(into hasher: inout Swift.Hasher)
+    public var hashValue: Swift.Int {
+      get
+    }
+  }
+  public init(password: Swift.Array<Swift.UInt8>, salt: Swift.Array<Swift.UInt8>? = nil, info: Swift.Array<Swift.UInt8>? = nil, keyLength: Swift.Int? = nil, variant: WebAuthn.HMAC.Variant = .sha256) throws
+  public func calculate() throws -> Swift.Array<Swift.UInt8>
+}
+public struct ECB : WebAuthn.BlockMode {
+  public let options: WebAuthn.BlockModeOption
+  public init()
+  public func worker(blockSize: Swift.Int, cipherOperation: @escaping WebAuthn.CipherOperationOnBlock, encryptionOperation: @escaping WebAuthn.CipherOperationOnBlock) throws -> WebAuthn.CipherModeWorker
+}
+extension Swift.String {
+  public func decryptBase64ToString(cipher: WebAuthn.Cipher) throws -> Swift.String
+  public func decryptBase64(cipher: WebAuthn.Cipher) throws -> Swift.Array<Swift.UInt8>
+}
+final public class HMAC : WebAuthn.Authenticator {
+  public enum Error : Swift.Error {
+    case authenticateError
+    case invalidInput
+    public static func == (a: WebAuthn.HMAC.Error, b: WebAuthn.HMAC.Error) -> Swift.Bool
+    public func hash(into hasher: inout Swift.Hasher)
+    public var hashValue: Swift.Int {
+      get
+    }
+  }
+  public enum Variant {
+    case sha1, sha256, sha384, sha512, md5
+    public static func == (a: WebAuthn.HMAC.Variant, b: WebAuthn.HMAC.Variant) -> Swift.Bool
+    public func hash(into hasher: inout Swift.Hasher)
+    public var hashValue: Swift.Int {
+      get
+    }
+  }
+  public init(key: Swift.Array<Swift.UInt8>, variant: WebAuthn.HMAC.Variant = .md5)
+  final public func authenticate(_ bytes: Swift.Array<Swift.UInt8>) throws -> Swift.Array<Swift.UInt8>
+  @objc deinit
+}
+final public class Blowfish {
+  public enum Error : Swift.Error {
+    case dataPaddingRequired
+    case invalidKeyOrInitializationVector
+    case invalidInitializationVector
+    case invalidBlockMode
+    public static func == (a: WebAuthn.Blowfish.Error, b: WebAuthn.Blowfish.Error) -> Swift.Bool
+    public func hash(into hasher: inout Swift.Hasher)
+    public var hashValue: Swift.Int {
+      get
+    }
+  }
+  public static let blockSize: Swift.Int
+  final public let keySize: Swift.Int
+  public init(key: Swift.Array<Swift.UInt8>, blockMode: WebAuthn.BlockMode = CBC(iv: Array<UInt8>(repeating: 0, count: Blowfish.blockSize)), padding: WebAuthn.Padding) throws
+  @objc deinit
+}
+extension WebAuthn.Blowfish : WebAuthn.Cipher {
+  final public func encrypt<C>(_ bytes: C) throws -> Swift.Array<Swift.UInt8> where C : Swift.Collection, C.Element == Swift.UInt8, C.Index == Swift.Int
+  final public func decrypt<C>(_ bytes: C) throws -> Swift.Array<Swift.UInt8> where C : Swift.Collection, C.Element == Swift.UInt8, C.Index == Swift.Int
+}
+public enum PKCS5 {
+}
+public enum WAKError : Swift.Error {
+  case badData
+  case badOperation
+  case invalidState
+  case constraint
+  case cancelled
+  case timeout
+  case notAllowed
+  case unsupported
+  case unknown
+  public static func == (a: WebAuthn.WAKError, b: WebAuthn.WAKError) -> Swift.Bool
+  public func hash(into hasher: inout Swift.Hasher)
+  public var hashValue: Swift.Int {
+    get
+  }
+}
+public enum WAKResult<T, Error> where Error : Swift.Error {
+  case success(T)
+  case failure(Error)
+}
+public enum PublicKeyCredentialType : Swift.String, Swift.Codable {
+  case publicKey
+  public init?(rawValue: Swift.String)
+  public typealias RawValue = Swift.String
+  public var rawValue: Swift.String {
+    get
+  }
+}
+public enum UserVerificationRequirement : Swift.String, Swift.Codable {
+  case required
+  case preferred
+  case discouraged
+  public static func == (lhs: WebAuthn.UserVerificationRequirement, rhs: WebAuthn.UserVerificationRequirement) -> Swift.Bool
+  public init?(rawValue: Swift.String)
+  public typealias RawValue = Swift.String
+  public var rawValue: Swift.String {
+    get
+  }
+}
+public protocol AuthenticatorResponse : Swift.Decodable, Swift.Encodable {
+}
+public struct AuthenticatorAttestationResponse : WebAuthn.AuthenticatorResponse {
+  public var clientDataJSON: Swift.String
+  public var attestationObject: [Swift.UInt8]
+  public func encode(to encoder: Swift.Encoder) throws
+  public init(from decoder: Swift.Decoder) throws
+}
+public struct AuthenticatorAssertionResponse : WebAuthn.AuthenticatorResponse {
+  public var clientDataJSON: Swift.String
+  public var authenticatorData: [Swift.UInt8]
+  public var signature: [Swift.UInt8]
+  public var userHandle: [Swift.UInt8]?
+  public func encode(to encoder: Swift.Encoder) throws
+  public init(from decoder: Swift.Decoder) throws
+}
+public struct PublicKeyCredential<T> : Swift.Codable where T : WebAuthn.AuthenticatorResponse {
+  public var type: WebAuthn.PublicKeyCredentialType
+  public var rawId: [Swift.UInt8]
+  public var id: Swift.String
+  public var response: T
+  public func toJSON() -> Swift.Optional<Swift.String>
+  public func encode(to encoder: Swift.Encoder) throws
+  public init(from decoder: Swift.Decoder) throws
+}
+public enum AuthenticatorTransport : Swift.String, Swift.Codable, Swift.Equatable {
+  case usb
+  case nfc
+  case ble
+  case internal_
+  public static func == (lhs: WebAuthn.AuthenticatorTransport, rhs: WebAuthn.AuthenticatorTransport) -> Swift.Bool
+  public init?(rawValue: Swift.String)
+  public typealias RawValue = Swift.String
+  public var rawValue: Swift.String {
+    get
+  }
+}
+public struct PublicKeyCredentialDescriptor : Swift.Codable {
+  public var type: WebAuthn.PublicKeyCredentialType
+  public var id: [Swift.UInt8]
+  public var transports: [WebAuthn.AuthenticatorTransport]
+  public init(id: [Swift.UInt8] = [UInt8](), transports: [WebAuthn.AuthenticatorTransport] = [AuthenticatorTransport]())
+  public mutating func addTransport(transport: WebAuthn.AuthenticatorTransport)
+  public func encode(to encoder: Swift.Encoder) throws
+  public init(from decoder: Swift.Decoder) throws
+}
+public struct PublicKeyCredentialRpEntity : Swift.Codable {
+  public var id: Swift.String?
+  public var name: Swift.String
+  public var icon: Swift.String?
+  public init(id: Swift.String? = nil, name: Swift.String = "", icon: Swift.String? = nil)
+  public func encode(to encoder: Swift.Encoder) throws
+  public init(from decoder: Swift.Decoder) throws
+}
+public struct PublicKeyCredentialUserEntity : Swift.Codable {
+  public var id: [Swift.UInt8]
+  public var displayName: Swift.String
+  public var name: Swift.String
+  public var icon: Swift.String?
+  public init(id: [Swift.UInt8] = [UInt8](), displayName: Swift.String = "", name: Swift.String = "", icon: Swift.String? = nil)
+  public func encode(to encoder: Swift.Encoder) throws
+  public init(from decoder: Swift.Decoder) throws
+}
+public enum AttestationConveyancePreference : Swift.String, Swift.Codable {
+  case none
+  case direct
+  case indirect
+  public static func == (lhs: WebAuthn.AttestationConveyancePreference, rhs: WebAuthn.AttestationConveyancePreference) -> Swift.Bool
+  public init?(rawValue: Swift.String)
+  public typealias RawValue = Swift.String
+  public var rawValue: Swift.String {
+    get
+  }
+}
+public struct PublicKeyCredentialParameters : Swift.Codable {
+  public var type: WebAuthn.PublicKeyCredentialType
+  public var alg: WebAuthn.COSEAlgorithmIdentifier
+  public init(alg: WebAuthn.COSEAlgorithmIdentifier)
+  public func encode(to encoder: Swift.Encoder) throws
+  public init(from decoder: Swift.Decoder) throws
+}
+public enum TokenBindingStatus : Swift.String, Swift.Codable {
+  case present
+  case supported
+  public static func == (lhs: WebAuthn.TokenBindingStatus, rhs: WebAuthn.TokenBindingStatus) -> Swift.Bool
+  public init?(rawValue: Swift.String)
+  public typealias RawValue = Swift.String
+  public var rawValue: Swift.String {
+    get
+  }
+}
+public struct TokenBinding : Swift.Codable {
+  public var status: WebAuthn.TokenBindingStatus
+  public var id: Swift.String
+  public init(id: Swift.String, status: WebAuthn.TokenBindingStatus)
+  public func encode(to encoder: Swift.Encoder) throws
+  public init(from decoder: Swift.Decoder) throws
+}
+public enum CollectedClientDataType : Swift.String, Swift.Codable {
+  case webAuthnCreate
+  case webAuthnGet
+  public init?(rawValue: Swift.String)
+  public typealias RawValue = Swift.String
+  public var rawValue: Swift.String {
+    get
+  }
+}
+public struct CollectedClientData : Swift.Codable {
+  public var type: WebAuthn.CollectedClientDataType
+  public var challenge: Swift.String
+  public var origin: Swift.String
+  public var tokenBinding: WebAuthn.TokenBinding?
+  public func encode(to encoder: Swift.Encoder) throws
+  public init(from decoder: Swift.Decoder) throws
+}
+public enum AuthenticatorAttachment : Swift.String, Swift.Codable {
+  case platform
+  case crossPlatform
+  public static func == (lhs: WebAuthn.AuthenticatorAttachment, rhs: WebAuthn.AuthenticatorAttachment) -> Swift.Bool
+  public init?(rawValue: Swift.String)
+  public typealias RawValue = Swift.String
+  public var rawValue: Swift.String {
+    get
+  }
+}
+public struct AuthenticatorSelectionCriteria : Swift.Codable {
+  public var authenticatorAttachment: WebAuthn.AuthenticatorAttachment?
+  public var requireResidentKey: Swift.Bool
+  public var userVerification: WebAuthn.UserVerificationRequirement
+  public init(authenticatorAttachment: WebAuthn.AuthenticatorAttachment? = nil, requireResidentKey: Swift.Bool = true, userVerification: WebAuthn.UserVerificationRequirement = .preferred)
+  public func encode(to encoder: Swift.Encoder) throws
+  public init(from decoder: Swift.Decoder) throws
+}
+public struct ExtensionOptions : Swift.Codable {
+  public func encode(to encoder: Swift.Encoder) throws
+  public init(from decoder: Swift.Decoder) throws
+}
+public struct PublicKeyCredentialCreationOptions : Swift.Codable {
+  public var rp: WebAuthn.PublicKeyCredentialRpEntity
+  public var user: WebAuthn.PublicKeyCredentialUserEntity
+  public var challenge: [Swift.UInt8]
+  public var pubKeyCredParams: [WebAuthn.PublicKeyCredentialParameters]
+  public var timeout: Swift.UInt64?
+  public var excludeCredentials: [WebAuthn.PublicKeyCredentialDescriptor]
+  public var authenticatorSelection: WebAuthn.AuthenticatorSelectionCriteria?
+  public var attestation: WebAuthn.AttestationConveyancePreference
+  public var extensions: WebAuthn.ExtensionOptions?
+  public init(rp: WebAuthn.PublicKeyCredentialRpEntity = PublicKeyCredentialRpEntity(), user: WebAuthn.PublicKeyCredentialUserEntity = PublicKeyCredentialUserEntity(), challenge: [Swift.UInt8] = [UInt8](), pubKeyCredParams: [WebAuthn.PublicKeyCredentialParameters] = [PublicKeyCredentialParameters](), timeout: Swift.UInt64? = nil, excludeCredentials: [WebAuthn.PublicKeyCredentialDescriptor] = [PublicKeyCredentialDescriptor](), authenticatorSelection: WebAuthn.AuthenticatorSelectionCriteria? = nil, attestation: WebAuthn.AttestationConveyancePreference = .none)
+  public mutating func addPubKeyCredParam(alg: WebAuthn.COSEAlgorithmIdentifier)
+  public func toJSON() -> Swift.Optional<Swift.String>
+  public static func fromJSON(json: Swift.String) -> Swift.Optional<WebAuthn.PublicKeyCredentialCreationOptions>
+  public func encode(to encoder: Swift.Encoder) throws
+  public init(from decoder: Swift.Decoder) throws
+}
+public struct PublicKeyCredentialRequestOptions : Swift.Codable {
+  public var challenge: [Swift.UInt8]
+  public var rpId: Swift.String?
+  public var allowCredentials: [WebAuthn.PublicKeyCredentialDescriptor]
+  public var userVerification: WebAuthn.UserVerificationRequirement
+  public var timeout: Swift.UInt64?
+  public init(challenge: [Swift.UInt8] = [UInt8](), rpId: Swift.String = "", allowCredentials: [WebAuthn.PublicKeyCredentialDescriptor] = [PublicKeyCredentialDescriptor](), userVerification: WebAuthn.UserVerificationRequirement = .preferred, timeout: Swift.UInt64? = nil)
+  public mutating func addAllowCredential(credentialId: [Swift.UInt8], transports: [WebAuthn.AuthenticatorTransport])
+  public func toJSON() -> Swift.Optional<Swift.String>
+  public static func fromJSON(json: Swift.String) -> Swift.Optional<WebAuthn.PublicKeyCredentialRequestOptions>
+  public func encode(to encoder: Swift.Encoder) throws
+  public init(from decoder: Swift.Decoder) throws
+}
+public struct PublicKeyCredentialCreationArgs : Swift.Codable {
+  public let publicKey: WebAuthn.PublicKeyCredentialCreationOptions
+  public func encode(to encoder: Swift.Encoder) throws
+  public init(from decoder: Swift.Decoder) throws
+}
+public struct PublicKeyCredentialRequestArgs : Swift.Codable {
+  public let publicKey: WebAuthn.PublicKeyCredentialRequestOptions
+  public func encode(to encoder: Swift.Encoder) throws
+  public init(from decoder: Swift.Decoder) throws
+}
+public protocol KeySelectionViewDelegate : AnyObject {
+  func userDidSelectCredential(source: WebAuthn.PublicKeyCredentialSource)
+  func userDidCancel()
+}
+@objc @_hasMissingDesignatedInitializers @_Concurrency.MainActor(unsafe) public class KeySelectionView : UIKit.UIView, UIKit.UIPickerViewDataSource, UIKit.UIPickerViewDelegate {
+  @_Concurrency.MainActor(unsafe) @objc public func pickerView(_ pickerView: UIKit.UIPickerView, viewForRow row: Swift.Int, forComponent component: Swift.Int, reusing view: UIKit.UIView?) -> UIKit.UIView
+  @_Concurrency.MainActor(unsafe) @objc public func numberOfComponents(in pickerView: UIKit.UIPickerView) -> Swift.Int
+  @_Concurrency.MainActor(unsafe) @objc public func pickerView(_ pickerView: UIKit.UIPickerView, numberOfRowsInComponent component: Swift.Int) -> Swift.Int
+  @_Concurrency.MainActor(unsafe) @objc public func pickerView(_ pickerView: UIKit.UIPickerView, titleForRow row: Swift.Int, forComponent component: Swift.Int) -> Swift.String?
+  @_Concurrency.MainActor(unsafe) @objc public func pickerView(_ pickerView: UIKit.UIPickerView, didSelectRow row: Swift.Int, inComponent component: Swift.Int)
+  @objc deinit
+}
+@objc @_hasMissingDesignatedInitializers @_Concurrency.MainActor(unsafe) public class KeySelectionViewController : UIKit.UIViewController, WebAuthn.KeySelectionViewDelegate {
+  @_Concurrency.MainActor(unsafe) weak public var delegate: WebAuthn.UserConsentViewControllerDelegate?
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public func viewDidLoad()
+  @_Concurrency.MainActor(unsafe) public func userDidCancel()
+  @_Concurrency.MainActor(unsafe) public func userDidSelectCredential(source: WebAuthn.PublicKeyCredentialSource)
+  @objc deinit
+}
+public protocol Cryptors : AnyObject {
+  func makeEncryptor() throws -> WebAuthn.Cryptor & WebAuthn.Updatable
+  func makeDecryptor() throws -> WebAuthn.Cryptor & WebAuthn.Updatable
+  static func randomIV(_ blockSize: Swift.Int) -> Swift.Array<Swift.UInt8>
+}
+extension WebAuthn.Cryptors {
+  public static func randomIV(_ count: Swift.Int) -> Swift.Array<Swift.UInt8>
+}
+public struct AuthenticatorAssertionResult {
+}
+public protocol AuthenticatorMakeCredentialSessionDelegate : AnyObject {
+  func authenticatorSessionDidBecomeAvailable(session: WebAuthn.AuthenticatorMakeCredentialSession)
+  func authenticatorSessionDidBecomeUnavailable(session: WebAuthn.AuthenticatorMakeCredentialSession)
+  func authenticatorSessionDidStopOperation(session: WebAuthn.AuthenticatorMakeCredentialSession, reason: WebAuthn.WAKError)
+  func authenticatorSessionDidMakeCredential(session: WebAuthn.AuthenticatorMakeCredentialSession, attestation: WebAuthn.AttestationObject)
+}
+public protocol AuthenticatorGetAssertionSessionDelegate : AnyObject {
+  func authenticatorSessionDidBecomeAvailable(session: WebAuthn.AuthenticatorGetAssertionSession)
+  func authenticatorSessionDidBecomeUnavailable(session: WebAuthn.AuthenticatorGetAssertionSession)
+  func authenticatorSessionDidStopOperation(session: WebAuthn.AuthenticatorGetAssertionSession, reason: WebAuthn.WAKError)
+  func authenticatorSessionDidDiscoverCredential(session: WebAuthn.AuthenticatorGetAssertionSession, assertion: WebAuthn.AuthenticatorAssertionResult)
+}
+public protocol AuthenticatorGetAssertionSession {
+  var attachment: WebAuthn.AuthenticatorAttachment { get }
+  var transport: WebAuthn.AuthenticatorTransport { get }
+  var delegate: WebAuthn.AuthenticatorGetAssertionSessionDelegate? { get set }
+  func getAssertion(rpId: Swift.String, hash: [Swift.UInt8], allowCredentialDescriptorList: [WebAuthn.PublicKeyCredentialDescriptor], requireUserPresence: Swift.Bool, requireUserVerification: Swift.Bool)
+  func canPerformUserVerification() -> Swift.Bool
+  func start()
+  func cancel(reason: WebAuthn.WAKError)
+}
+public protocol AuthenticatorMakeCredentialSession {
+  var attachment: WebAuthn.AuthenticatorAttachment { get }
+  var transport: WebAuthn.AuthenticatorTransport { get }
+  var delegate: WebAuthn.AuthenticatorMakeCredentialSessionDelegate? { get set }
+  func makeCredential(hash: [Swift.UInt8], rpEntity: WebAuthn.PublicKeyCredentialRpEntity, userEntity: WebAuthn.PublicKeyCredentialUserEntity, requireResidentKey: Swift.Bool, requireUserPresence: Swift.Bool, requireUserVerification: Swift.Bool, credTypesAndPubKeyAlgs: [WebAuthn.PublicKeyCredentialParameters], excludeCredentialDescriptorList: [WebAuthn.PublicKeyCredentialDescriptor])
+  func canPerformUserVerification() -> Swift.Bool
+  func canStoreResidentKey() -> Swift.Bool
+  func start()
+  func cancel(reason: WebAuthn.WAKError)
+}
+public protocol WebAuthnAuthenticator {
+  var attachment: WebAuthn.AuthenticatorAttachment { get }
+  var transport: WebAuthn.AuthenticatorTransport { get }
+  var counterStep: Swift.UInt32 { get set }
+  var allowResidentKey: Swift.Bool { get }
+  var allowUserVerification: Swift.Bool { get }
+  func newMakeCredentialSession(context: LocalAuthentication.LAContext?) -> WebAuthn.AuthenticatorMakeCredentialSession
+  func newGetAssertionSession(context: LocalAuthentication.LAContext?) -> WebAuthn.AuthenticatorGetAssertionSession
+}
+extension Swift.Array where Element == Swift.UInt8 {
+  public func toBase64() -> Swift.String?
+  public init(base64: Swift.String)
+}
+final public class SHA3 {
+  final public let blockSize: Swift.Int
+  final public let digestLength: Swift.Int
+  final public let markByte: Swift.UInt8
+  public enum Variant {
+    case sha224, sha256, sha384, sha512, keccak224, keccak256, keccak384, keccak512
+    public var outputLength: Swift.Int {
+      get
+    }
+    public static func == (a: WebAuthn.SHA3.Variant, b: WebAuthn.SHA3.Variant) -> Swift.Bool
+    public func hash(into hasher: inout Swift.Hasher)
+    public var hashValue: Swift.Int {
+      get
+    }
+  }
+  public init(variant: WebAuthn.SHA3.Variant)
+  final public func calculate(for bytes: Swift.Array<Swift.UInt8>) -> Swift.Array<Swift.UInt8>
+  @objc deinit
+}
+extension WebAuthn.SHA3 : WebAuthn.Updatable {
+  final public func update(withBytes bytes: Swift.ArraySlice<Swift.UInt8>, isLast: Swift.Bool = false) throws -> Swift.Array<Swift.UInt8>
+}
+public protocol Cryptor {
+  mutating func seek(to: Swift.Int) throws
+}
+extension WebAuthn.AES {
+  convenience public init(key: Swift.String, iv: Swift.String, padding: WebAuthn.Padding = .pkcs7) throws
+}
+public protocol PaddingProtocol {
+  func add(to: Swift.Array<Swift.UInt8>, blockSize: Swift.Int) -> Swift.Array<Swift.UInt8>
+  func remove(from: Swift.Array<Swift.UInt8>, blockSize: Swift.Int?) -> Swift.Array<Swift.UInt8>
+}
+public enum Padding : WebAuthn.PaddingProtocol {
+  case noPadding, zeroPadding, pkcs7, pkcs5, iso78164
+  public func add(to: Swift.Array<Swift.UInt8>, blockSize: Swift.Int) -> Swift.Array<Swift.UInt8>
+  public func remove(from: Swift.Array<Swift.UInt8>, blockSize: Swift.Int?) -> Swift.Array<Swift.UInt8>
+  public static func == (a: WebAuthn.Padding, b: WebAuthn.Padding) -> Swift.Bool
+  public func hash(into hasher: inout Swift.Hasher)
+  public var hashValue: Swift.Int {
+    get
+  }
+}
+public protocol CipherModeWorker {
+  var cipherOperation: WebAuthn.CipherOperationOnBlock { get }
+  var additionalBufferSize: Swift.Int { get }
+  mutating func encrypt(block plaintext: Swift.ArraySlice<Swift.UInt8>) -> Swift.Array<Swift.UInt8>
+  mutating func decrypt(block ciphertext: Swift.ArraySlice<Swift.UInt8>) -> Swift.Array<Swift.UInt8>
+}
+public protocol BlockModeWorker : WebAuthn.CipherModeWorker {
+  var blockSize: Swift.Int { get }
+}
+public protocol CounterModeWorker : WebAuthn.CipherModeWorker {
+  associatedtype Counter
+  var counter: Self.Counter { get set }
+}
+public protocol SeekableModeWorker : WebAuthn.CipherModeWorker {
+  mutating func seek(to position: Swift.Int) throws
+}
+public protocol StreamModeWorker : WebAuthn.CipherModeWorker {
+}
+public protocol FinalizingEncryptModeWorker : WebAuthn.CipherModeWorker {
+  mutating func finalize(encrypt ciphertext: Swift.ArraySlice<Swift.UInt8>) throws -> Swift.ArraySlice<Swift.UInt8>
+}
+public protocol FinalizingDecryptModeWorker : WebAuthn.CipherModeWorker {
+  @discardableResult
+  mutating func willDecryptLast(bytes ciphertext: Swift.ArraySlice<Swift.UInt8>) throws -> Swift.ArraySlice<Swift.UInt8>
+  mutating func didDecryptLast(bytes plaintext: Swift.ArraySlice<Swift.UInt8>) throws -> Swift.ArraySlice<Swift.UInt8>
+  mutating func finalize(decrypt plaintext: Swift.ArraySlice<Swift.UInt8>) throws -> Swift.ArraySlice<Swift.UInt8>
+}
+public protocol KeySupport {
+  var selectedAlg: WebAuthn.COSEAlgorithmIdentifier { get }
+  func createKeyPair(label: Swift.String) -> Swift.Optional<WebAuthn.COSEKey>
+  func sign(data: [Swift.UInt8], label: Swift.String, context: LocalAuthentication.LAContext) -> Swift.Optional<[Swift.UInt8]>
+}
+public class KeySupportChooser {
+  public init()
+  public func choose(_ requestedAlgorithms: [WebAuthn.COSEAlgorithmIdentifier]) -> Swift.Optional<WebAuthn.KeySupport>
+  @objc deinit
+}
+@_hasMissingDesignatedInitializers public class ECDSAKeySupport : WebAuthn.KeySupport {
+  final public let selectedAlg: WebAuthn.COSEAlgorithmIdentifier
+  public func sign(data: [Swift.UInt8], label: Swift.String, context: LocalAuthentication.LAContext) -> Swift.Optional<[Swift.UInt8]>
+  public func createKeyPair(label: Swift.String) -> Swift.Optional<WebAuthn.COSEKey>
+  @objc deinit
+}
+public struct OFB : WebAuthn.BlockMode {
+  public enum Error : Swift.Error {
+    case invalidInitializationVector
+    public static func == (a: WebAuthn.OFB.Error, b: WebAuthn.OFB.Error) -> Swift.Bool
+    public func hash(into hasher: inout Swift.Hasher)
+    public var hashValue: Swift.Int {
+      get
+    }
+  }
+  public let options: WebAuthn.BlockModeOption
+  public init(iv: Swift.Array<Swift.UInt8>)
+  public func worker(blockSize: Swift.Int, cipherOperation: @escaping WebAuthn.CipherOperationOnBlock, encryptionOperation: @escaping WebAuthn.CipherOperationOnBlock) throws -> WebAuthn.CipherModeWorker
+}
+public struct CTR {
+  public enum Error : Swift.Error {
+    case invalidInitializationVector
+    public static func == (a: WebAuthn.CTR.Error, b: WebAuthn.CTR.Error) -> Swift.Bool
+    public func hash(into hasher: inout Swift.Hasher)
+    public var hashValue: Swift.Int {
+      get
+    }
+  }
+  public let options: WebAuthn.BlockModeOption
+  public init(iv: Swift.Array<Swift.UInt8>, counter: Swift.Int = 0)
+  public func worker(blockSize: Swift.Int, cipherOperation: @escaping WebAuthn.CipherOperationOnBlock, encryptionOperation: @escaping WebAuthn.CipherOperationOnBlock) throws -> WebAuthn.CipherModeWorker
+}
+@_hasMissingDesignatedInitializers public class InternalAuthenticatorMakeCredentialSession : WebAuthn.AuthenticatorMakeCredentialSession {
+  weak public var delegate: WebAuthn.AuthenticatorMakeCredentialSessionDelegate?
+  public var attachment: WebAuthn.AuthenticatorAttachment {
+    get
+  }
+  public var transport: WebAuthn.AuthenticatorTransport {
+    get
+  }
+  public func canPerformUserVerification() -> Swift.Bool
+  public func canStoreResidentKey() -> Swift.Bool
+  public func start()
+  public func cancel(reason: WebAuthn.WAKError)
+  public func makeCredential(hash: [Swift.UInt8], rpEntity: WebAuthn.PublicKeyCredentialRpEntity, userEntity: WebAuthn.PublicKeyCredentialUserEntity, requireResidentKey: Swift.Bool, requireUserPresence: Swift.Bool, requireUserVerification: Swift.Bool, credTypesAndPubKeyAlgs: [WebAuthn.PublicKeyCredentialParameters] = [PublicKeyCredentialParameters](), excludeCredentialDescriptorList: [WebAuthn.PublicKeyCredentialDescriptor] = [PublicKeyCredentialDescriptor]())
+  @objc deinit
+}
+extension Swift.String {
+  public var bytes: Swift.Array<Swift.UInt8> {
+    get
+  }
+  public func md5() -> Swift.String
+  public func sha1() -> Swift.String
+  public func sha224() -> Swift.String
+  public func sha256() -> Swift.String
+  public func sha384() -> Swift.String
+  public func sha512() -> Swift.String
+  public func sha3(_ variant: WebAuthn.SHA3.Variant) -> Swift.String
+  public func crc32(seed: Swift.UInt32? = nil, reflect: Swift.Bool = true) -> Swift.String
+  public func crc32c(seed: Swift.UInt32? = nil, reflect: Swift.Bool = true) -> Swift.String
+  public func crc16(seed: Swift.UInt16? = nil) -> Swift.String
+  public func encrypt(cipher: WebAuthn.Cipher) throws -> Swift.String
+  public func encryptToBase64(cipher: WebAuthn.Cipher) throws -> Swift.String?
+  public func authenticate<A>(with authenticator: A) throws -> Swift.String where A : WebAuthn.Authenticator
+}
+extension WebAuthn.Poly1305.Error : Swift.Equatable {}
+extension WebAuthn.Poly1305.Error : Swift.Hashable {}
+extension WebAuthn.SHA2.Variant : Swift.Equatable {}
+extension WebAuthn.SHA2.Variant : Swift.Hashable {}
+extension WebAuthn.Bit : Swift.Equatable {}
+extension WebAuthn.Bit : Swift.Hashable {}
+extension WebAuthn.Bit : Swift.RawRepresentable {}
+extension WebAuthn.PKCS5.PBKDF2.Error : Swift.Equatable {}
+extension WebAuthn.PKCS5.PBKDF2.Error : Swift.Hashable {}
+extension WebAuthn.CBORError : Swift.Equatable {}
+extension WebAuthn.CBORError : Swift.Hashable {}
+extension WebAuthn.CFB.Error : Swift.Equatable {}
+extension WebAuthn.CFB.Error : Swift.Hashable {}
+extension WebAuthn.CBC.Error : Swift.Equatable {}
+extension WebAuthn.CBC.Error : Swift.Hashable {}
+extension WebAuthn.PKCS5.PBKDF1.Error : Swift.Equatable {}
+extension WebAuthn.PKCS5.PBKDF1.Error : Swift.Hashable {}
+extension WebAuthn.PKCS5.PBKDF1.Variant : Swift.Equatable {}
+extension WebAuthn.PKCS5.PBKDF1.Variant : Swift.Hashable {}
+@available(macOS 10.12.1, iOS 10.0, *)
+extension WebAuthn.EllipticCurveKeyPair.Hash : Swift.Equatable {}
+@available(macOS 10.12.1, iOS 10.0, *)
+extension WebAuthn.EllipticCurveKeyPair.Hash : Swift.Hashable {}
+@available(macOS 10.12.1, iOS 10.0, *)
+extension WebAuthn.EllipticCurveKeyPair.Hash : Swift.RawRepresentable {}
+@available(macOS 10.12.1, iOS 9.0, *)
+extension WebAuthn.EllipticCurveKeyPair.Token : Swift.Equatable {}
+@available(macOS 10.12.1, iOS 9.0, *)
+extension WebAuthn.EllipticCurveKeyPair.Token : Swift.Hashable {}
+extension WebAuthn.CipherError : Swift.Equatable {}
+extension WebAuthn.CipherError : Swift.Hashable {}
+extension WebAuthn.COSEAlgorithmIdentifier : Swift.Equatable {}
+extension WebAuthn.COSEAlgorithmIdentifier : Swift.Hashable {}
+extension WebAuthn.COSEAlgorithmIdentifier : Swift.RawRepresentable {}
+extension WebAuthn.ChaCha20.Error : Swift.Equatable {}
+extension WebAuthn.ChaCha20.Error : Swift.Hashable {}
+extension WebAuthn.OCB.Mode : Swift.Equatable {}
+extension WebAuthn.OCB.Mode : Swift.Hashable {}
+extension WebAuthn.OCB.Error : Swift.Equatable {}
+extension WebAuthn.OCB.Error : Swift.Hashable {}
+extension WebAuthn.Rabbit.Error : Swift.Equatable {}
+extension WebAuthn.Rabbit.Error : Swift.Hashable {}
+extension WebAuthn.ItemClass : Swift.Equatable {}
+extension WebAuthn.ItemClass : Swift.Hashable {}
+extension WebAuthn.ProtocolType : Swift.Equatable {}
+extension WebAuthn.ProtocolType : Swift.Hashable {}
+extension WebAuthn.AuthenticationType : Swift.Equatable {}
+extension WebAuthn.AuthenticationType : Swift.Hashable {}
+extension WebAuthn.Accessibility : Swift.Equatable {}
+extension WebAuthn.Accessibility : Swift.Hashable {}
+extension WebAuthn.AuthenticationUI : Swift.Equatable {}
+extension WebAuthn.AuthenticationUI : Swift.Hashable {}
+extension WebAuthn.Status : Swift.Equatable {}
+extension WebAuthn.Status : Swift.Hashable {}
+extension WebAuthn.CCM : WebAuthn.BlockMode {}
+extension WebAuthn.CCM.Error : Swift.Equatable {}
+extension WebAuthn.CCM.Error : Swift.Hashable {}
+extension WebAuthn.ClientOperationType : Swift.Equatable {}
+extension WebAuthn.ClientOperationType : Swift.Hashable {}
+extension WebAuthn.CMAC.Error : Swift.Equatable {}
+extension WebAuthn.CMAC.Error : Swift.Hashable {}
+extension WebAuthn.AES.Error : Swift.Equatable {}
+extension WebAuthn.AES.Error : Swift.Hashable {}
+extension WebAuthn.AES.Variant : Swift.Equatable {}
+extension WebAuthn.AES.Variant : Swift.Hashable {}
+extension WebAuthn.AES.Variant : Swift.RawRepresentable {}
+extension WebAuthn.PCBC.Error : Swift.Equatable {}
+extension WebAuthn.PCBC.Error : Swift.Hashable {}
+extension WebAuthn.GCM.Mode : Swift.Equatable {}
+extension WebAuthn.GCM.Mode : Swift.Hashable {}
+extension WebAuthn.GCM.Error : Swift.Equatable {}
+extension WebAuthn.GCM.Error : Swift.Hashable {}
+extension WebAuthn.HKDF.Error : Swift.Equatable {}
+extension WebAuthn.HKDF.Error : Swift.Hashable {}
+extension WebAuthn.HMAC.Error : Swift.Equatable {}
+extension WebAuthn.HMAC.Error : Swift.Hashable {}
+extension WebAuthn.HMAC.Variant : Swift.Equatable {}
+extension WebAuthn.HMAC.Variant : Swift.Hashable {}
+extension WebAuthn.Blowfish.Error : Swift.Equatable {}
+extension WebAuthn.Blowfish.Error : Swift.Hashable {}
+extension WebAuthn.WAKError : Swift.Equatable {}
+extension WebAuthn.WAKError : Swift.Hashable {}
+extension WebAuthn.PublicKeyCredentialType : Swift.Equatable {}
+extension WebAuthn.PublicKeyCredentialType : Swift.Hashable {}
+extension WebAuthn.PublicKeyCredentialType : Swift.RawRepresentable {}
+extension WebAuthn.UserVerificationRequirement : Swift.Equatable {}
+extension WebAuthn.UserVerificationRequirement : Swift.Hashable {}
+extension WebAuthn.UserVerificationRequirement : Swift.RawRepresentable {}
+extension WebAuthn.AuthenticatorTransport : Swift.Hashable {}
+extension WebAuthn.AuthenticatorTransport : Swift.RawRepresentable {}
+extension WebAuthn.AttestationConveyancePreference : Swift.Equatable {}
+extension WebAuthn.AttestationConveyancePreference : Swift.Hashable {}
+extension WebAuthn.AttestationConveyancePreference : Swift.RawRepresentable {}
+extension WebAuthn.TokenBindingStatus : Swift.Equatable {}
+extension WebAuthn.TokenBindingStatus : Swift.Hashable {}
+extension WebAuthn.TokenBindingStatus : Swift.RawRepresentable {}
+extension WebAuthn.CollectedClientDataType : Swift.Equatable {}
+extension WebAuthn.CollectedClientDataType : Swift.Hashable {}
+extension WebAuthn.CollectedClientDataType : Swift.RawRepresentable {}
+extension WebAuthn.AuthenticatorAttachment : Swift.Equatable {}
+extension WebAuthn.AuthenticatorAttachment : Swift.Hashable {}
+extension WebAuthn.AuthenticatorAttachment : Swift.RawRepresentable {}
+extension WebAuthn.SHA3.Variant : Swift.Equatable {}
+extension WebAuthn.SHA3.Variant : Swift.Hashable {}
+extension WebAuthn.Padding : Swift.Equatable {}
+extension WebAuthn.Padding : Swift.Hashable {}
+extension WebAuthn.OFB.Error : Swift.Equatable {}
+extension WebAuthn.OFB.Error : Swift.Hashable {}
+extension WebAuthn.CTR : WebAuthn.BlockMode {}
+extension WebAuthn.CTR.Error : Swift.Equatable {}
+extension WebAuthn.CTR.Error : Swift.Hashable {}

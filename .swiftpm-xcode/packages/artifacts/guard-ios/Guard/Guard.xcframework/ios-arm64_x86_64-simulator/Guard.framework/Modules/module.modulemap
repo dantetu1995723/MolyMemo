@@ -1,0 +1,11 @@
+framework module Guard {
+  umbrella header "Guard.h"
+
+  export *
+  module * { export * }
+}
+
+module Guard.Swift {
+  header "Guard-Swift.h"
+  requires objc
+}

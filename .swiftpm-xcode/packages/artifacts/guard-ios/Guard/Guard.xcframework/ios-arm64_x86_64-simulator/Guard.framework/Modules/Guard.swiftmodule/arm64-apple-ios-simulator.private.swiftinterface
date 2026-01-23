@@ -1,0 +1,1586 @@
+// swift-interface-format-version: 1.0
+// swift-compiler-version: Apple Swift version 5.8.1 (swiftlang-5.8.0.124.5 clang-1403.0.22.11.100)
+// swift-module-flags: -target arm64-apple-ios12.0-simulator -enable-objc-interop -enable-library-evolution -swift-version 5 -enforce-exclusivity=checked -O -module-name Guard
+// swift-module-flags-ignorable: -enable-bare-slash-regex
+import AVFoundation
+import AuthenticationServices
+import CommonCrypto
+import CoreGraphics
+import Foundation
+@_exported import Guard
+import LocalAuthentication
+import SafariServices
+import Swift
+import UIKit
+import WebKit
+import _Concurrency
+import _StringProcessing
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class GoResetPasswordButton : Guard.GoSomewhereButton {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class HLayout : Guard.Layout {
+  @_Concurrency.MainActor(unsafe) override open func setup()
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class PhoneLabel : UIKit.UILabel {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class LoginMethodTab : Guard.MethodTab {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) public class MethodTabItem : UIKit.UIView {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @_Concurrency.MainActor(unsafe) public func setText(_ text: Swift.String)
+  @_Concurrency.MainActor(unsafe) public func gainFocus(lastFocused: Guard.MethodTabItem?)
+  @_Concurrency.MainActor(unsafe) public func loseFocus()
+  @_Concurrency.MainActor(unsafe) public func focusGained()
+  @_Concurrency.MainActor(unsafe) public func isFocused() -> Swift.Bool
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) public class LoginMethodTabItem : Guard.MethodTabItem {
+  @_Concurrency.MainActor(unsafe) override public func focusGained()
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class UserInfoCompleteFieldFormText : Guard.UserInfoCompleteFieldForm {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @_Concurrency.MainActor(unsafe) public func setup()
+  @_Concurrency.MainActor(unsafe) override public func getHeight() -> CoreFoundation.CGFloat
+  @_Concurrency.MainActor(unsafe) override public func getValue() -> Swift.String?
+  @_Concurrency.MainActor(unsafe) override public func setFormData(_ data: Foundation.NSDictionary)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class UserInfoCompleteFieldFormDateTime : Guard.UserInfoCompleteFieldForm {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @_Concurrency.MainActor(unsafe) public func setup()
+  @_Concurrency.MainActor(unsafe) override public func getHeight() -> CoreFoundation.CGFloat
+  @_Concurrency.MainActor(unsafe) override public func getValue() -> Swift.String?
+  @_Concurrency.MainActor(unsafe) override public func setFormData(_ data: Foundation.NSDictionary)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class PasswordConfirmTextField : Guard.BasePasswordTextField {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class LoadingButton : Guard.Button {
+  @objc @IBInspectable @_Concurrency.MainActor(unsafe) open var loadingColor: UIKit.UIColor?
+  @objc @IBInspectable @_Concurrency.MainActor(unsafe) open var loadingLocation: Swift.Int
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public var isEnabled: Swift.Bool {
+    @objc get
+    @objc set
+  }
+  @_Concurrency.MainActor(unsafe) public func startLoading()
+  @_Concurrency.MainActor(unsafe) public func stopLoading()
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public func draw(_ rect: CoreFoundation.CGRect)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class MFATableView : UIKit.UIView {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @_Concurrency.MainActor(unsafe) @objc override dynamic open func layoutSubviews()
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class ImageView : UIKit.UIImageView, Guard.AttributedViewProtocol {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(image: UIKit.UIImage?)
+  @available(iOS 3.0, *)
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(image: UIKit.UIImage?, highlightedImage: UIKit.UIImage?)
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder: Foundation.NSCoder)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class SocialLoginButton : Guard.Button {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @_Concurrency.MainActor(unsafe) public func startLoading()
+  @_Concurrency.MainActor(unsafe) public func stopLoading()
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public func draw(_ rect: CoreFoundation.CGRect)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class ImagePickerView : UIKit.UIView {
+  @_Concurrency.MainActor(unsafe) public var items: [UIKit.UIImage]
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc deinit
+}
+extension Guard.ImagePickerView : UIKit.UICollectionViewDelegate, UIKit.UICollectionViewDataSource, UIKit.UICollectionViewDelegateFlowLayout {
+  @_Concurrency.MainActor(unsafe) @objc dynamic public func collectionView(_ collectionView: UIKit.UICollectionView, numberOfItemsInSection section: Swift.Int) -> Swift.Int
+  @_Concurrency.MainActor(unsafe) @objc dynamic public func collectionView(_ collectionView: UIKit.UICollectionView, cellForItemAt indexPath: Foundation.IndexPath) -> UIKit.UICollectionViewCell
+  @_Concurrency.MainActor(unsafe) @objc dynamic public func collectionView(_ collectionView: UIKit.UICollectionView, layout collectionViewLayout: UIKit.UICollectionViewLayout, sizeForItemAt indexPath: Foundation.IndexPath) -> CoreFoundation.CGSize
+  @_Concurrency.MainActor(unsafe) @objc dynamic public func collectionView(_ collectionView: UIKit.UICollectionView, didSelectItemAt indexPath: Foundation.IndexPath)
+}
+extension Guard.ImagePickerView : UIKit.UIImagePickerControllerDelegate, UIKit.UINavigationControllerDelegate {
+  @_Concurrency.MainActor(unsafe) @objc dynamic public func imagePickerController(_ picker: UIKit.UIImagePickerController, didFinishPickingMediaWithInfo info: [UIKit.UIImagePickerController.InfoKey : Any])
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class UserProfileAvatarField : Guard.UserProfileField, UIKit.UINavigationControllerDelegate, UIKit.UIImagePickerControllerDelegate {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @_Concurrency.MainActor(unsafe) @objc override dynamic open func layoutSubviews()
+  @_Concurrency.MainActor(unsafe) @objc public func imagePickerController(_ picker: UIKit.UIImagePickerController, didFinishPickingMediaWithInfo info: [UIKit.UIImagePickerController.InfoKey : Any])
+  @objc deinit
+}
+@_hasMissingDesignatedInitializers open class CacheManager {
+  public static func getImage(_ key: Swift.String) -> UIKit.UIImage?
+  public static func putImage(_ key: Swift.String, _ image: UIKit.UIImage)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class BindPhoneButton : Guard.PrimaryButton {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc deinit
+}
+public protocol AttributedViewProtocol {
+  func getAttribute(key: Swift.String) -> Any?
+  func setAttribute(key: Swift.String, value: Swift.String)
+  func setAttribute(key: Swift.String, value: Any?)
+  func getXMLAttributes() -> Swift.String
+}
+extension Guard.AttributedViewProtocol {
+  public func getAttribute(key: Swift.String) -> Any?
+  public func setAttribute(key: Swift.String, value: Swift.String)
+  public func setAttribute(key: Swift.String, value: Any?)
+  public func getXMLAttributes() -> Swift.String
+}
+extension UIKit.UIView {
+  @_Concurrency.MainActor(unsafe) public var extendedProperty: Foundation.NSDictionary {
+    get
+    set
+  }
+  @_Concurrency.MainActor(unsafe) public func refresh()
+  @_Concurrency.MainActor(unsafe) public func getAttribute(key: Swift.String) -> Any?
+  @_Concurrency.MainActor(unsafe) public func setAttribute(key: Swift.String, value: Any?)
+  @_Concurrency.MainActor(unsafe) public func getXMLAttributes() -> Swift.String
+  @_Concurrency.MainActor(unsafe) public func getColor(_ view: UIKit.UIView) -> UIKit.UIColor?
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class RootView : UIKit.UIView, Guard.AttributedViewProtocol {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public func layoutSubviews()
+  @_Concurrency.MainActor(unsafe) @objc override dynamic open func setNeedsLayout()
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder: Foundation.NSCoder)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class MFARecoveryCodeTextField : Guard.AccountTextField {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class MFAPhoneButton : Guard.PrimaryButton {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class MFAEmailButton : Guard.PrimaryButton {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers public class AuthClient : Guard.Client {
+  public func registerByEmail(email: Swift.String, password: Swift.String, _ context: Swift.String? = nil, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func registerByEmailCode(email: Swift.String, code: Swift.String, _ context: Swift.String? = nil, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func registerByUserName(username: Swift.String, password: Swift.String, _ context: Swift.String? = nil, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func registerByPhone(phoneCountryCode: Swift.String? = nil, phone: Swift.String, password: Swift.String, _ context: Swift.String? = nil, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func registerByPhoneCode(phoneCountryCode: Swift.String? = nil, phone: Swift.String, code: Swift.String, password: Swift.String? = nil, _ context: Swift.String? = nil, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func registerByExtendedFields(extendedFields: Swift.String, account: Swift.String, password: Swift.String, _ postUserInfoPipeline: Swift.Bool? = nil, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func registerByEmail(authData: Guard.AuthRequest?, email: Swift.String, password: Swift.String, _ context: Swift.String? = nil, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func registerByEmailCode(authData: Guard.AuthRequest?, email: Swift.String, code: Swift.String, _ context: Swift.String? = nil, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func registerByUserName(authData: Guard.AuthRequest?, username: Swift.String, password: Swift.String, _ context: Swift.String? = nil, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func registerByPhone(authData: Guard.AuthRequest?, phoneCountryCode: Swift.String? = nil, phone: Swift.String, password: Swift.String, _ context: Swift.String? = nil, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func registerByPhoneCode(authData: Guard.AuthRequest?, phoneCountryCode: Swift.String? = nil, phone: Swift.String, code: Swift.String, password: Swift.String? = nil, _ context: Swift.String? = nil, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func registerByExtendedFields(authData: Guard.AuthRequest?, extendedFields: Swift.String, account: Swift.String, password: Swift.String, _ postUserInfoPipeline: Swift.Bool? = nil, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func loginByAccount(account: Swift.String, password: Swift.String, _ autoRegister: Swift.Bool = false, _ context: Swift.String? = nil, _ captchaCode: Swift.String? = nil, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func loginByPhoneCode(phoneCountryCode: Swift.String? = nil, phone: Swift.String, code: Swift.String, _ autoRegister: Swift.Bool = false, _ context: Swift.String? = nil, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func loginByEmail(email: Swift.String, code: Swift.String, _ autoRegister: Swift.Bool = false, _ context: Swift.String? = nil, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func loginByAccount(authData: Guard.AuthRequest?, account: Swift.String, password: Swift.String, _ autoRegister: Swift.Bool = false, _ context: Swift.String? = nil, _ captchaCode: Swift.String? = nil, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func loginByPhoneCode(authData: Guard.AuthRequest?, phoneCountryCode: Swift.String? = nil, phone: Swift.String, code: Swift.String, _ autoRegister: Swift.Bool = false, _ context: Swift.String? = nil, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func loginByEmail(authData: Guard.AuthRequest?, email: Swift.String, code: Swift.String, _ autoRegister: Swift.Bool = false, _ context: Swift.String? = nil, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func getSecurityCaptcha(completion: @escaping (Swift.Int, Swift.String?, Foundation.Data?) -> Swift.Void)
+  public func getCurrentUser(user: Guard.UserInfo? = nil, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func logout(_ onlySelf: Swift.String = "", completion: @escaping (Swift.Int, Swift.String?) -> Swift.Void)
+  public func sendSms(phone: Swift.String, phoneCountryCode: Swift.String? = nil, completion: @escaping (Swift.Int, Swift.String?) -> Swift.Void)
+  public func sendResetPasswordEmail(email: Swift.String, completion: @escaping (Swift.Int, Swift.String?) -> Swift.Void)
+  public func sendMFAEmail(email: Swift.String, completion: @escaping (Swift.Int, Swift.String?) -> Swift.Void)
+  public func sendEmail(email: Swift.String, scene: Swift.String, completion: @escaping (Swift.Int, Swift.String?) -> Swift.Void)
+  public func sendLoginEmail(email: Swift.String, scene: Swift.String, completion: @escaping (Swift.Int, Swift.String?) -> Swift.Void)
+  public func getCustomUserData(userInfo: Guard.UserInfo, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func setCustomUserData(customData: Foundation.NSDictionary, completion: @escaping (Swift.Int, Swift.String?, Foundation.NSDictionary?) -> Swift.Void)
+  public func uploadAvatar(image: UIKit.UIImage, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func resetPasswordByPhone(phone: Swift.String, code: Swift.String, newPassword: Swift.String, completion: @escaping (Swift.Int, Swift.String?) -> Swift.Void)
+  public func resetPasswordByEmail(email: Swift.String, code: Swift.String, newPassword: Swift.String, completion: @escaping (Swift.Int, Swift.String?) -> Swift.Void)
+  public func resetPasswordByFirstTimeLoginToken(token: Swift.String, password: Swift.String, completion: @escaping (Swift.Int, Swift.String?) -> Swift.Void)
+  public func updateProfile(object: Foundation.NSDictionary, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func updatePassword(newPassword: Swift.String, oldPassword: Swift.String? = nil, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func bindPhone(phoneCountryCode: Swift.String? = nil, phone: Swift.String, code: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func unbindPhone(completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func bindEmail(email: Swift.String, code: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func unbindEmail(completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func updateIdToken(completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func getSecurityLevel(completion: @escaping (Swift.Int, Swift.String?, Foundation.NSDictionary?) -> Swift.Void)
+  public func listApplications(page: Swift.Int = 1, limit: Swift.Int = 10, completion: @escaping (Swift.Int, Swift.String?, Foundation.NSArray?) -> Swift.Void)
+  public func listOrgs(completion: @escaping (Swift.Int, Swift.String?, Foundation.NSArray?) -> Swift.Void)
+  public func listRoles(namespace: Swift.String? = nil, completion: @escaping (Swift.Int, Swift.String?, Foundation.NSArray?) -> Swift.Void)
+  public func listAuthorizedResources(namespace: Swift.String = "default", resourceType: Swift.String? = nil, completion: @escaping (Swift.Int, Swift.String?, Foundation.NSArray?) -> Swift.Void)
+  public func checkPassword(password: Swift.String, completion: @escaping (Swift.Int, Swift.String?) -> Swift.Void)
+  public func checkAccount(paramsName: Swift.String, paramsValue: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Foundation.NSDictionary?) -> Swift.Void)
+  public func feedBack(contact: Swift.String, type: Swift.Int, description: Swift.String, images: [Swift.String], completion: @escaping (Swift.Int, Swift.String?) -> Swift.Void)
+  public func deleteAccount(completion: @escaping (Swift.Int, Swift.String?) -> Swift.Void)
+  public func loginByWechat(_ code: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func loginByWechat(authData: Guard.AuthRequest? = nil, _ code: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func loginByWeCom(_ code: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func loginbyWeComAgency(_ code: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func loginByLark(_ code: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func loginByApple(_ code: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func loginByGoogle(_ code: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func loginByFacebook(_ accessToken: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func loginByMiniprogram(code: Swift.String, phoneInfoCode: Swift.String?, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func loginByTencent(_ accessToken: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func loginByWeibo(_ accessToken: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func loginByBaidu(_ code: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func loginByBaiduByAccessToken(_ accessToken: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func loginByLinkedin(_ code: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func loginByDingTalk(_ code: Swift.String, _ isSnsCode: Swift.Bool = true, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func loginByDouyin(_ code: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func loginByKuaishou(_ code: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func loginByXiaomi(_ code: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func loginByGithub(_ code: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func loginByGitee(_ code: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func loginByGitLab(_ code: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func loginBySlack(_ code: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func loginByLine(_ accessToken: Swift.String, _ idToken: Swift.String? = nil, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func loginByOneAuth(token: Swift.String, accessToken: Swift.String, _ netWork: Swift.Int? = nil, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func loginByAmazon(_ accessToken: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func loginByTwitter(requestToken: Swift.String, tokenSecret: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func getDataByWechatlogin(authData: Guard.AuthRequest? = nil, code: Swift.String, _ context: Swift.String? = nil, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func bindWechatWithRegister(key: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func bindWechatByAccount(account: Swift.String, password: Swift.String, key: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func bindWechatByPhoneCode(phoneCountryCode: Swift.String? = nil, phone: Swift.String, code: Swift.String, key: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func bindWechatByEmailCode(email: Swift.String, code: Swift.String, key: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func bindWechatBySelectedAccountId(accountId: Swift.String, key: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func bindWechatByAccountId(accountId: Swift.String, key: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func mfaCheck(phone: Swift.String?, email: Swift.String?, completion: @escaping (Swift.Int, Swift.String?, Swift.Bool?) -> Swift.Void)
+  public func mfaVerifyByPhone(phone: Swift.String, code: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func mfaVerifyByEmail(email: Swift.String, code: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func mfaAssociateByOTP(completion: @escaping (Swift.Int, Swift.String?, Foundation.NSDictionary?) -> Swift.Void)
+  public func mfaAssociateConfirmByOTP(code: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Foundation.NSDictionary?) -> Swift.Void)
+  public func mfaAssociteByRecoveryCode(code: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func mfaDeleteOTP(completion: @escaping (Swift.Int, Swift.String?, Foundation.NSDictionary?) -> Swift.Void)
+  public func mfaVerifyByOTP(code: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func mfaAssociateByFace(photoKeyA: Swift.String, photoKeyB: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func mfaVerifyByFace(photoKey: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func mfaUnbindFactor(factorId: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Foundation.NSDictionary?) -> Swift.Void)
+  public func unbindMFAPhone(completion: @escaping (Swift.Int, Swift.String?, Foundation.NSDictionary?) -> Swift.Void)
+  public func unbindMFAEmail(completion: @escaping (Swift.Int, Swift.String?, Foundation.NSDictionary?) -> Swift.Void)
+  public func markQRCodeScanned(ticket: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Foundation.NSDictionary?) -> Swift.Void)
+  public func loginByScannedTicket(ticket: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Foundation.NSDictionary?) -> Swift.Void)
+  public func cancelByScannedTicket(ticket: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Foundation.NSDictionary?) -> Swift.Void)
+  public func loginByQRCode(qrcodeId: Swift.String, action: Swift.String = "APP_LOGIN", completion: @escaping (Swift.Int, Swift.String?, Foundation.NSDictionary?) -> Swift.Void)
+  public func loginByPushNotification(pushCodeId: Swift.String, action: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Foundation.NSDictionary?) -> Swift.Void)
+  public func createDevice(_ customData: Swift.String? = nil, completion: @escaping (Swift.Int, Swift.String?, Foundation.NSDictionary?) -> Swift.Void)
+  public func deviceList(completion: @escaping (Swift.Int, Swift.String?, Foundation.NSDictionary?) -> Swift.Void)
+  public func removeDevice(deviceId: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Foundation.NSDictionary?) -> Swift.Void)
+  public func logoutByDeviceId(deviceId: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Foundation.NSDictionary?) -> Swift.Void)
+  public func bind(cid: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Foundation.NSDictionary?) -> Swift.Void)
+  public func unbind(cid: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Foundation.NSDictionary?) -> Swift.Void)
+  public func getWebauthnRegistrationParam(completion: @escaping (Swift.Int, Swift.String?, Foundation.NSDictionary?) -> Swift.Void)
+  public func webauthnRegistration(ticket: Swift.String, credentialId: Swift.String, rawId: Swift.String, attestationObject: Swift.String, clientDataJSON: Swift.String, authenticatorCode: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Foundation.NSDictionary?) -> Swift.Void)
+  public func getWebauthnAuthenticationParam(completion: @escaping (Swift.Int, Swift.String?, Foundation.NSDictionary?) -> Swift.Void)
+  public func webauthnAuthentication(ticket: Swift.String, credentialId: Swift.String, rawId: Swift.String, authenticatorData: Swift.String, userHandle: Swift.String, clientDataJSON: Swift.String, signature: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Foundation.NSDictionary?) -> Swift.Void)
+  public func webauthnRemoveCredential(credentialID: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Foundation.NSDictionary?) -> Swift.Void)
+  public func webauthnAuthenticatorDevice(authenticatorCode: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Foundation.NSDictionary?) -> Swift.Void)
+  public func checkWebauthnVaildCredentitals(credentialIds: [Swift.String], authenticatorCode: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Foundation.NSDictionary?) -> Swift.Void)
+  @available(iOS 13.0, *)
+  public func subEvent(eventCode: Swift.String, _ accessToken: Swift.String? = nil, completion: @escaping (Swift.Int, Swift.String?) -> Swift.Void)
+  public func pubEvent(eventType: Swift.String, eventData: Foundation.NSDictionary, completion: @escaping (Swift.Int, Swift.String?, Foundation.NSDictionary?) -> Swift.Void)
+  public func createUserInfo(_ code: Swift.Int, _ message: Swift.String?, _ data: Foundation.NSDictionary?, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func createUserInfo(_ user: Guard.UserInfo?, _ code: Swift.Int, _ message: Swift.String?, _ data: Foundation.NSDictionary?, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func get(_ endPoint: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Foundation.NSDictionary?) -> Swift.Void)
+  public func post(_ endPoint: Swift.String, _ body: Foundation.NSDictionary?, completion: @escaping (Swift.Int, Swift.String?, Foundation.NSDictionary?) -> Swift.Void)
+  public func delete(_ endPoint: Swift.String, _ body: Foundation.NSDictionary? = nil, completion: @escaping (Swift.Int, Swift.String?, Foundation.NSDictionary?) -> Swift.Void)
+  public func request(config: Guard.Config?, urlString: Swift.String, method: Swift.String, body: Foundation.NSDictionary?, completion: @escaping (Swift.Int, Swift.String?, Foundation.NSDictionary?) -> Swift.Void)
+  public func uploadImage(_ image: UIKit.UIImage, completion: @escaping (Swift.Int, Swift.String?) -> Swift.Void)
+  public func uploadFaceImage(_ image: UIKit.UIImage, _ isPrivate: Swift.Bool = true, completion: @escaping (Swift.Int, Swift.String?) -> Swift.Void)
+  @objc override dynamic public init()
+  override public init(_ config: Guard.Config?)
+  @objc deinit
+}
+public enum Orientation {
+  case vertical
+  case horizontal
+  public static func == (a: Guard.Orientation, b: Guard.Orientation) -> Swift.Bool
+  public func hash(into hasher: inout Swift.Hasher)
+  public var hashValue: Swift.Int {
+    get
+  }
+}
+public enum Alignment {
+  case none
+  case left
+  case right
+  case center
+  case top
+  case bottom
+  case middle
+  public static func == (a: Guard.Alignment, b: Guard.Alignment) -> Swift.Bool
+  public func hash(into hasher: inout Swift.Hasher)
+  public var hashValue: Swift.Int {
+    get
+  }
+}
+public enum AlignItems {
+  case flexStart
+  case flexEnd
+  case center
+  public static func == (a: Guard.AlignItems, b: Guard.AlignItems) -> Swift.Bool
+  public func hash(into hasher: inout Swift.Hasher)
+  public var hashValue: Swift.Int {
+    get
+  }
+}
+public struct Edge {
+  public var left: CoreFoundation.CGFloat
+  public var right: CoreFoundation.CGFloat
+  public var top: CoreFoundation.CGFloat
+  public var bottom: CoreFoundation.CGFloat
+  public init(_ all: CoreFoundation.CGFloat)
+  public init(left: CoreFoundation.CGFloat = 0, top: CoreFoundation.CGFloat = 0, right: CoreFoundation.CGFloat = 0, bottom: CoreFoundation.CGFloat = 0)
+  public init(horizontal: CoreFoundation.CGFloat = 0, vertical: CoreFoundation.CGFloat = 0)
+}
+public var EdgeZero: Guard.Edge
+public struct LayoutParams {
+  public static let matchParent: CoreFoundation.CGFloat
+  public static let wrapContent: CoreFoundation.CGFloat
+  public var width: CoreFoundation.CGFloat
+  public var height: CoreFoundation.CGFloat
+  public var margin: Guard.Edge
+  public var minWidth: CoreFoundation.CGFloat
+  public var maxWidth: CoreFoundation.CGFloat
+  public var minHeight: CoreFoundation.CGFloat
+  public var maxHeight: CoreFoundation.CGFloat
+  public var alignment: Guard.Alignment
+  public var fill: CoreFoundation.CGFloat
+  public var absolute: Swift.Bool
+  public var animatePositionOnce: Swift.Bool
+  public var animateSizeOnce: Swift.Bool
+}
+extension UIKit.UIView {
+  @_Concurrency.MainActor(unsafe) public var layoutParams: Guard.LayoutParams {
+    get
+    set
+  }
+}
+@objc @_Concurrency.MainActor(unsafe) open class Layout : UIKit.UIImageView, Guard.AttributedViewProtocol {
+  @_Concurrency.MainActor(unsafe) open var activated: Swift.Bool
+  @_Concurrency.MainActor(unsafe) public var orientation: Guard.Orientation {
+    get
+    set
+  }
+  @_Concurrency.MainActor(unsafe) public var alignItems: Guard.AlignItems {
+    get
+    set
+  }
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @_Concurrency.MainActor(unsafe) open func setup()
+  @_Concurrency.MainActor(unsafe) public func setAttribute(key: Swift.String, value: Swift.String)
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public func sizeThatFits(_ size: CoreFoundation.CGSize) -> CoreFoundation.CGSize
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public func layoutSubviews()
+  @objc deinit
+}
+@_hasMissingDesignatedInitializers open class ALog {
+  public static func d(_ type: Swift.AnyClass, _ msg: Any...)
+  public static func i(_ type: Swift.AnyClass, _ msg: Any...)
+  public static func w(_ type: Swift.AnyClass, _ msg: Any...)
+  public static func e(_ type: Swift.AnyClass, _ msg: Any...)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers public class Const : ObjectiveC.NSObject {
+  public static let SDK_VERSION: Swift.String
+  public static let Color_Authing_Main: UIKit.UIColor
+  public static let Color_Button_Pressed: UIKit.UIColor
+  public static let Color_Button_Disabled: UIKit.UIColor
+  public static let Color_Button_Gray: UIKit.UIColor
+  public static let Color_Text_Gray: UIKit.UIColor
+  public static let Color_Line_Gray: UIKit.UIColor
+  public static let Color_Error: UIKit.UIColor
+  public static let Color_Asterisk: UIKit.UIColor
+  public static let Color_BG_Gray: UIKit.UIColor
+  public static let Color_Border_Gray: UIKit.UIColor
+  public static let Color_BG_Text_Box: UIKit.UIColor
+  public static let Color_Text_Default_Gray: UIKit.UIColor
+  public static let ONEPX: CoreFoundation.CGFloat
+  public static let NO_DEVICE_PERMISSION_DISABLED: Swift.Int
+  public static let NO_DEVICE_PERMISSION_SUSPENDED: Swift.Int
+  public static let EC_MFA_REQUIRED: Swift.Int
+  public static let EC_FIRST_TIME_LOGIN: Swift.Int
+  public static let EC_ONLY_BINDING_ACCOUNT: Swift.Int
+  public static let EC_BINDING_CREATE_ACCOUNT: Swift.Int
+  public static let EC_ENTER_VERIFICATION_CODE: Swift.Int
+  public static let EC_MULTIPLE_ACCOUNT: Swift.Int
+  public static let SCREEN_WIDTH: CoreFoundation.CGFloat
+  public static let SCREEN_HEIGHT: CoreFoundation.CGFloat
+  @objc override dynamic public init()
+  @objc deinit
+}
+@_hasMissingDesignatedInitializers open class Animator {
+  open func start()
+  open func update() -> Swift.Double
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class RegisterMethodTab : Guard.MethodTab {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class GoNextButton : Guard.GoSomewhereButton {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc deinit
+}
+@_inheritsConvenienceInitializers @objc @_Concurrency.MainActor(unsafe) open class SocialAuthWebViewController : Guard.AuthViewController, WebKit.WKNavigationDelegate {
+  @_Concurrency.MainActor(unsafe) public var isCustomHost: Swift.Bool
+  @_Concurrency.MainActor(unsafe) public var authResponse: ((_ success: Swift.Bool, _ authCode: Swift.String, _ error: (any Swift.Error)?) -> Swift.Void)?
+  @_Concurrency.MainActor(unsafe) public class func register(appId: Swift.String, scope: Swift.String, host: Swift.String, _ redirectURI: Swift.String? = nil) -> Guard.SocialAuthWebViewController
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public func viewDidLoad()
+  @_Concurrency.MainActor(unsafe) @objc public func webView(_ webView: WebKit.WKWebView, decidePolicyFor navigationAction: WebKit.WKNavigationAction, decisionHandler: @escaping (WebKit.WKNavigationActionPolicy) -> Swift.Void)
+  @_Concurrency.MainActor(unsafe) @objc public func webView(_ webView: WebKit.WKWebView, didFinish navigation: WebKit.WKNavigation!)
+  @_Concurrency.MainActor(unsafe) @objc public func webView(_ webView: WebKit.WKWebView, didFail navigation: WebKit.WKNavigation!, withError error: any Swift.Error)
+  @_Concurrency.MainActor(unsafe) @objc public func webView(_ webView: WebKit.WKWebView, didFailProvisionalNavigation navigation: WebKit.WKNavigation!, withError error: any Swift.Error)
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(nibName nibNameOrNil: Swift.String?, bundle nibBundleOrNil: Foundation.Bundle?)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder: Foundation.NSCoder)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class VerifyCodeTextField : Guard.TextFieldLayout {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class ResetPasswordVerifyCodeButton : Guard.GetVerifyCodeButton {
+  @_Concurrency.MainActor(unsafe) @objc override open var loadingColor: UIKit.UIColor? {
+    @objc get
+    @objc set
+  }
+  @_Concurrency.MainActor(unsafe) @objc override open var loadingLocation: Swift.Int {
+    @objc get
+    @objc set
+  }
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class Label : UIKit.UILabel, Guard.AttributedViewProtocol {
+  @_Concurrency.MainActor(unsafe) open var textValue: Swift.String? {
+    get
+    set
+  }
+  @_Concurrency.MainActor(unsafe) open var fontSize: Swift.Double {
+    get
+    set
+  }
+  @_Concurrency.MainActor(unsafe) open var isBold: Swift.Bool {
+    get
+    set
+  }
+  @_Concurrency.MainActor(unsafe) open var textAlign: Swift.Int {
+    get
+    set
+  }
+  @_Concurrency.MainActor(unsafe) public func getTextAlignAsString() -> Swift.String?
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @_Concurrency.MainActor(unsafe) public func setAttribute(key: Swift.String, value: Swift.String)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class VLayout : Guard.Layout {
+  @_Concurrency.MainActor(unsafe) override open func setup()
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class ResetPasswordTextField : Guard.AccountTextField {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) public class ExtendFieldTextField : Guard.AccountTextField {
+  @_Concurrency.MainActor(unsafe) public var extendField: Swift.String?
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @_Concurrency.MainActor(unsafe) public func setExtendField(_ field: Swift.String, _ text: Swift.String)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class TextFieldLayout : Guard.BaseInput, UIKit.UITextFieldDelegate {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @_Concurrency.MainActor(unsafe) public func updateIconImage(icon: UIKit.UIImage)
+  @_Concurrency.MainActor(unsafe) @objc override dynamic open func layoutSubviews()
+  @_Concurrency.MainActor(unsafe) @objc override dynamic open func clearButtonRect(forBounds bounds: CoreFoundation.CGRect) -> CoreFoundation.CGRect
+  @_Concurrency.MainActor(unsafe) @objc public func textFieldShouldBeginEditing(_ textField: UIKit.UITextField) -> Swift.Bool
+  @_Concurrency.MainActor(unsafe) @objc public func textFieldDidEndEditing(_ textField: UIKit.UITextField)
+  @_Concurrency.MainActor(unsafe) public func setError(_ text: Swift.String?)
+  @objc deinit
+}
+extension UIKit.UIDevice {
+  @_Concurrency.MainActor(unsafe) public static func modelIdentifier() -> Swift.String
+  @_Concurrency.MainActor(unsafe) public static func xp_safeDistanceTop() -> CoreFoundation.CGFloat
+  @_Concurrency.MainActor(unsafe) public static func xp_safeDistanceBottom() -> CoreFoundation.CGFloat
+  @_Concurrency.MainActor(unsafe) public static func xp_statusBarHeight() -> CoreFoundation.CGFloat
+  @_Concurrency.MainActor(unsafe) public static func xp_navigationBarHeight() -> CoreFoundation.CGFloat
+  @_Concurrency.MainActor(unsafe) public static func xp_navigationFullHeight() -> CoreFoundation.CGFloat
+  @_Concurrency.MainActor(unsafe) public static func xp_tabBarHeight() -> CoreFoundation.CGFloat
+  @_Concurrency.MainActor(unsafe) public static func xp_tabBarFullHeight() -> CoreFoundation.CGFloat
+}
+extension UIKit.UIView {
+  @_Concurrency.MainActor(unsafe) public var viewController: UIKit.UIViewController? {
+    get
+  }
+  @_Concurrency.MainActor(unsafe) public var authViewController: Guard.AuthViewController? {
+    get
+  }
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class UserInfoCompleteFieldForm : UIKit.UIView {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @_Concurrency.MainActor(unsafe) public func getHeight() -> CoreFoundation.CGFloat
+  @_Concurrency.MainActor(unsafe) public func getValue() -> Swift.String?
+  @_Concurrency.MainActor(unsafe) public func setFormData(_ data: Foundation.NSDictionary)
+  @objc deinit
+}
+@objc public class OIDCClient : ObjectiveC.NSObject {
+  public var authRequest: Guard.AuthRequest
+  public init(_ authRequest: Guard.AuthRequest? = nil)
+  public func registerByEmail(email: Swift.String, password: Swift.String, _ context: Swift.String? = nil, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func registerByEmailCode(email: Swift.String, code: Swift.String, _ context: Swift.String? = nil, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func registerByUserName(username: Swift.String, password: Swift.String, _ context: Swift.String? = nil, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func registerByPhone(phoneCountryCode: Swift.String? = nil, phone: Swift.String, password: Swift.String, _ context: Swift.String? = nil, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func registerByPhoneCode(phoneCountryCode: Swift.String? = nil, phone: Swift.String, code: Swift.String, password: Swift.String? = nil, _ context: Swift.String? = nil, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func registerByExtendedFields(extendedFields: Swift.String, account: Swift.String, password: Swift.String, _ postUserInfoPipeline: Swift.Bool? = nil, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func loginByAccount(account: Swift.String, password: Swift.String, _ autoRegister: Swift.Bool = false, _ context: Swift.String? = nil, _ captchaCode: Swift.String? = nil, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func loginByPhoneCode(phoneCountryCode: Swift.String? = nil, phone: Swift.String, code: Swift.String, _ autoRegister: Swift.Bool = false, _ context: Swift.String? = nil, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func loginByEmail(email: Swift.String, code: Swift.String, _ autoRegister: Swift.Bool = false, _ context: Swift.String? = nil, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func loginByWechat(_ code: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func buildAuthorizeUrl(completion: @escaping (Foundation.URL?) -> Swift.Void)
+  public func authByCode(code: Swift.String, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func authByToken(userInfo: Guard.UserInfo?, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func getUserInfoByAccessToken(userInfo: Guard.UserInfo?, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func getNewAccessTokenByRefreshToken(userInfo: Guard.UserInfo?, completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  public func request(userInfo: Guard.UserInfo?, endPoint: Swift.String, method: Swift.String, body: Swift.String?, completion: @escaping (Swift.Int, Swift.String?, Foundation.NSDictionary?) -> Swift.Void)
+  @objc deinit
+}
+extension Guard.OIDCClient : Foundation.URLSessionTaskDelegate {
+  @objc dynamic public func urlSession(_ session: Foundation.URLSession, task: Foundation.URLSessionTask, willPerformHTTPRedirection response: Foundation.HTTPURLResponse, newRequest request: Foundation.URLRequest, completionHandler: @escaping (Foundation.URLRequest?) -> Swift.Void)
+}
+@objc open class AuthRequest : ObjectiveC.NSObject {
+  public var client_id: Swift.String!
+  public var client_secret: Swift.String?
+  public var redirect_uri: Swift.String!
+  public var response_type: Swift.String!
+  public var scope: Swift.String!
+  public var nonce: Swift.String!
+  public var state: Swift.String!
+  public var uuid: Swift.String?
+  public var codeVerifier: Swift.String!
+  public var codeChallenge: Swift.String?
+  public var returnAuthorizationCode: Swift.Bool?
+  public init(_ authRequest: Guard.AuthRequest? = nil)
+  public func getScopesAsConsentBody() -> Swift.String
+  @objc deinit
+}
+@objc @_Concurrency.MainActor(unsafe) open class LoadingView : Guard.ImageView {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @_Concurrency.MainActor(unsafe) public class func startAnimation(_ images: [UIKit.UIImage] = [], _ imageSize: CoreFoundation.CGSize = CGSize.zero) -> Guard.LoadingView
+  @_Concurrency.MainActor(unsafe) public class func stopAnimation(loadingView: Guard.LoadingView)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class ErrorLabel : Guard.Label {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class FramedVerifyCodeTextField : UIKit.UIView, UIKit.UITextFieldDelegate {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @_Concurrency.MainActor(unsafe) @objc override dynamic open func layoutSubviews()
+  @_Concurrency.MainActor(unsafe) @objc public func textFieldShouldBeginEditing(_ textField: UIKit.UITextField) -> Swift.Bool
+  @_Concurrency.MainActor(unsafe) @objc public func textFieldDidBeginEditing(_ textField: UIKit.UITextField)
+  @_Concurrency.MainActor(unsafe) @objc public func textFieldDidEndEditing(_ textField: UIKit.UITextField)
+  @_Concurrency.MainActor(unsafe) @objc public func textField(_ textField: UIKit.UITextField, shouldChangeCharactersIn range: Foundation.NSRange, replacementString string: Swift.String) -> Swift.Bool
+  @_Concurrency.MainActor(unsafe) public func getText() -> Swift.String
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class MethodTab : UIKit.UIScrollView {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @_Concurrency.MainActor(unsafe) @objc override dynamic open func layoutSubviews()
+  @objc deinit
+}
+@objc @_Concurrency.MainActor(unsafe) open class AppLogo : Guard.ImageView {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc deinit
+}
+@objc open class Parser : ObjectiveC.NSObject, Foundation.XMLParserDelegate {
+  public init(_ appBundle: Guard.AppBundle? = nil)
+  open func parse(appId: Swift.String) -> Guard.AppBundle?
+  public func parseManifest(_ appBundle: Guard.AppBundle)
+  open func inflate(appBundle: Guard.AppBundle)
+  open func inflate(appBundle: Guard.AppBundle, page: Swift.String) -> Guard.RootView
+  @objc public func parser(_ parser: Foundation.XMLParser, didStartElement elementName: Swift.String, namespaceURI: Swift.String?, qualifiedName qName: Swift.String?, attributes attributeDict: [Swift.String : Swift.String] = [:])
+  @objc public func parser(_ parser: Foundation.XMLParser, didEndElement elementName: Swift.String, namespaceURI: Swift.String?, qualifiedName qName: Swift.String?)
+  public func parseAttribute(view: UIKit.UIView, key: Swift.String, value: Swift.String)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers open class UserInfo : ObjectiveC.NSObject {
+  @objc public var raw: Foundation.NSMutableDictionary?
+  @objc public var mfaData: Foundation.NSDictionary? {
+    @objc get
+    @objc set
+  }
+  @objc public var socialBindingData: Foundation.NSDictionary? {
+    @objc get
+    @objc set
+  }
+  @objc public var customData: [Foundation.NSMutableDictionary]?
+  @objc public var identities: [Foundation.NSDictionary]?
+  @objc public var userId: Swift.String?
+  @objc public var username: Swift.String?
+  @objc public var password: Swift.String?
+  @objc public var email: Swift.String?
+  @objc public var phone: Swift.String?
+  @objc public var photo: Swift.String? {
+    @objc get
+  }
+  @objc public var nickname: Swift.String? {
+    @objc get
+  }
+  @objc public var name: Swift.String? {
+    @objc get
+  }
+  @objc public var createdAt: Swift.String? {
+    @objc get
+  }
+  @objc public var birthdate: Swift.String? {
+    @objc get
+  }
+  @objc public var address: Swift.String? {
+    @objc get
+  }
+  @objc public var gender: Swift.String? {
+    @objc get
+  }
+  @objc public var company: Swift.String? {
+    @objc get
+  }
+  @objc public var userPoolId: Swift.String? {
+    @objc get
+  }
+  @objc public var token: Swift.String?
+  @objc public var idToken: Swift.String? {
+    @objc get
+  }
+  @objc public var accessToken: Swift.String? {
+    @objc get
+  }
+  @objc public var accessTokenId: Swift.String? {
+    @objc get
+  }
+  @objc public var refreshToken: Swift.String? {
+    @objc get
+  }
+  @objc public var mfaToken: Swift.String? {
+    @objc get
+  }
+  @objc public var mfaPhone: Swift.String? {
+    @objc get
+  }
+  @objc public var mfaEmail: Swift.String? {
+    @objc get
+  }
+  @objc public var faceMfaEnabled: Swift.Bool
+  @objc public var totpMfaEnabled: Swift.Bool
+  @objc public var mfaPolicy: [Swift.String]?
+  @objc public var firstTimeLoginToken: Swift.String?
+  @objc public var loginsCount: Swift.Int
+  open func parse(data: Foundation.NSDictionary?)
+  public func getUserName() -> Swift.String?
+  public func getEmail() -> Swift.String?
+  public func getPhone() -> Swift.String?
+  public func getDisplayName() -> Swift.String?
+  public func getAccessTokenId(accessToken: Swift.String) -> Swift.String?
+  @objc override dynamic public init()
+  @objc deinit
+}
+@_inheritsConvenienceInitializers @objc @_Concurrency.MainActor(unsafe) open class IndexAuthViewController : Guard.AuthViewController {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic open func viewWillAppear(_ animated: Swift.Bool)
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(nibName nibNameOrNil: Swift.String?, bundle nibBundleOrNil: Foundation.Bundle?)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder: Foundation.NSCoder)
+  @objc deinit
+}
+extension UIKit.UIViewController {
+  @_Concurrency.MainActor(unsafe) public func canPerformSegue(withIdentifier id: Swift.String) -> Swift.Bool
+}
+@_hasMissingDesignatedInitializers open class Toast {
+  public class func show(text: Swift.String)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class GetEmailCodeButton : Guard.LoadingButton {
+  @_Concurrency.MainActor(unsafe) public var scene: Swift.String
+  @_Concurrency.MainActor(unsafe) @objc override open var loadingColor: UIKit.UIColor? {
+    @objc get
+    @objc set
+  }
+  @_Concurrency.MainActor(unsafe) @objc override open var loadingLocation: Swift.Int {
+    @objc get
+    @objc set
+  }
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @_Concurrency.MainActor(unsafe) public func setup()
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class GetEmailVerifyCodeButton : Guard.GetEmailCodeButton {
+  @_Concurrency.MainActor(unsafe) override public var scene: Swift.String {
+    get
+    set
+  }
+  @_Concurrency.MainActor(unsafe) override public func setup()
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class AccountTextField : Guard.TextFieldLayout {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc @_Concurrency.MainActor(unsafe) public func textFieldDidChange(textField: UIKit.UITextField)
+  @objc deinit
+}
+@_hasMissingDesignatedInitializers open class Exporter {
+  public static func exportManifest(_ appBundle: Guard.AppBundle)
+  public static func exportXML(_ appBundle: Guard.AppBundle, _ view: UIKit.UIView, _ pageName: Swift.String)
+  @objc deinit
+}
+public enum ErrorCode : Swift.Int {
+  case netWork
+  case config
+  case login
+  case jsonParse
+  case socialLogin
+  case socialBinding
+  case webView
+  public func errorMessage() -> Swift.String
+  public init?(rawValue: Swift.Int)
+  public typealias RawValue = Swift.Int
+  public var rawValue: Swift.Int {
+    get
+  }
+}
+@_hasMissingDesignatedInitializers public class Util {
+  public enum PasswordStrength {
+    case weak
+    case medium
+    case strong
+    public static func == (a: Guard.Util.PasswordStrength, b: Guard.Util.PasswordStrength) -> Swift.Bool
+    public func hash(into hasher: inout Swift.Hasher)
+    public var hashValue: Swift.Int {
+      get
+    }
+  }
+  public static var cookies: [Foundation.HTTPCookie]
+  public static var langHeader: Swift.String?
+  public static func getDeviceID() -> Swift.String
+  public static func load() -> Swift.String?
+  public static func save(uuid: Swift.String) throws
+  public static func remove()
+  public static func encryptPassword(_ message: Swift.String) -> Swift.String
+  public static func getLangHeader() -> Swift.String
+  public static func getExtendFieldTitle(config: Guard.Config, field: Swift.String) -> Swift.String
+  public static func findViews<T>(_ current: UIKit.UIView, viewClass: Swift.AnyClass) -> Swift.Array<T> where T : UIKit.UIView
+  public static func _findViews<T>(_ parent: UIKit.UIView, viewClass: Swift.AnyClass, result: inout Swift.Array<T>) where T : UIKit.UIView
+  public static func findView<T>(_ current: UIKit.UIView, viewClass: Swift.AnyClass) -> T? where T : UIKit.UIView
+  public static func _findView<T>(_ parent: UIKit.UIView, viewClass: Swift.AnyClass) -> T? where T : UIKit.UIView
+  public static func findHiddenView<T>(_ current: UIKit.UIView, viewClass: Swift.AnyClass) -> T? where T : UIKit.UIView
+  public static func _findHiddenView<T>(_ parent: UIKit.UIView, viewClass: Swift.AnyClass) -> T? where T : UIKit.UIView
+  public static func getRootView(_ current: UIKit.UIView) -> UIKit.UIView
+  public static func isVisible(_ view: UIKit.UIView?) -> Swift.Bool
+  public static func setError(_ current: UIKit.UIView, _ text: Swift.String?)
+  public static func getVerifyCode(_ current: UIKit.UIView) -> Swift.String?
+  public static func isIp(_ str: Swift.String) -> Swift.Bool
+  public static func getHost(_ config: Guard.Config) -> Swift.String
+  public static func isNull(_ s: Swift.String?) -> Swift.Bool
+  public static func getPhoneNumber(_ current: UIKit.UIView) -> Swift.String?
+  public static func getEmail(_ current: UIKit.UIView) -> Swift.String?
+  public static func getAccount(_ current: UIKit.UIView) -> Swift.String?
+  public static func randomString(length: Swift.Int) -> Swift.String
+  public static func getQueryStringParameter(url: Foundation.URL, param: Swift.String) -> Swift.String?
+  public static func computePasswordSecurityLevel(password: Swift.String) -> Guard.Util.PasswordStrength
+  public static func parseColor(_ appBundle: Guard.AppBundle?, _ colorString: Swift.String) -> UIKit.UIColor?
+  public static func parseColor(_ colorString: Swift.String) -> UIKit.UIColor?
+  public static func exportColor(_ color: UIKit.UIColor) -> Swift.String?
+  public static func getConfig(_ view: UIKit.UIView, completion: @escaping (Guard.Config?) -> Swift.Void)
+  public static func isGettingConfig(_ view: UIKit.UIView) -> Swift.Bool
+  public static func getAuthClient(_ view: UIKit.UIView) -> Guard.AuthClient
+  public static func openPage(_ view: UIKit.UIView, _ page: Swift.String)
+  public static func getGrayBackgroundColor() -> UIKit.UIColor
+  public static func getWhiteBackgroundColor() -> UIKit.UIColor
+  public static func getLabelColor() -> UIKit.UIColor
+  public static func isFullScreenIphone() -> Swift.Bool
+  public static func stringEncodeToUInt8Array(_ string: Swift.String) -> [Swift.UInt8]
+  @objc deinit
+}
+public enum BindSuccessType {
+  case otp
+  case phone
+  case email
+  case face
+  case webauthn
+  public static func == (a: Guard.BindSuccessType, b: Guard.BindSuccessType) -> Swift.Bool
+  public func hash(into hasher: inout Swift.Hasher)
+  public var hashValue: Swift.Int {
+    get
+  }
+}
+@_inheritsConvenienceInitializers @objc @_Concurrency.MainActor(unsafe) open class MFABindSuccessViewController : Guard.AuthViewController {
+  @_Concurrency.MainActor(unsafe) public var type: Guard.BindSuccessType
+  @_Concurrency.MainActor(unsafe) @objc override dynamic open func viewDidLoad()
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(nibName nibNameOrNil: Swift.String?, bundle nibBundleOrNil: Foundation.Bundle?)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder: Foundation.NSCoder)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @available(iOS 13.0, *)
+public class AuthingWebsocketClient : ObjectiveC.NSObject {
+  public func setRetryCount(_ count: Swift.Int)
+  public func initWebSocket(urlString: Swift.String, completion: @escaping (Swift.Int, Swift.String?) -> Swift.Void)
+  public func cancel()
+  @objc override dynamic public init()
+  @objc deinit
+}
+@available(iOS 13.0, *)
+extension Guard.AuthingWebsocketClient : Foundation.URLSessionWebSocketDelegate {
+  @objc dynamic public func urlSession(_ session: Foundation.URLSession, webSocketTask: Foundation.URLSessionWebSocketTask, didOpenWithProtocol protocol: Swift.String?)
+  @objc dynamic public func urlSession(_ session: Foundation.URLSession, webSocketTask: Foundation.URLSessionWebSocketTask, didCloseWith closeCode: Foundation.URLSessionWebSocketTask.CloseCode, reason: Foundation.Data?)
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) public class CloseButton : UIKit.UIButton {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class BaseInput : UIKit.UITextField, Guard.AttributedViewProtocol {
+  @_Concurrency.MainActor(unsafe) open var textValue: Swift.String? {
+    get
+    set
+  }
+  @_Concurrency.MainActor(unsafe) open var fontSize: Swift.Double {
+    get
+    set
+  }
+  @_Concurrency.MainActor(unsafe) open var isBold: Swift.Bool {
+    get
+    set
+  }
+  @_Concurrency.MainActor(unsafe) open var textAlign: Swift.Int {
+    get
+    set
+  }
+  @_Concurrency.MainActor(unsafe) public func getTextAlignAsString() -> Swift.String?
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @_Concurrency.MainActor(unsafe) public func setHint(_ hint: Swift.String)
+  @_Concurrency.MainActor(unsafe) public func setAttribute(key: Swift.String, value: Swift.String)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class Button : UIKit.UIButton, Guard.AttributedViewProtocol {
+  @_Concurrency.MainActor(unsafe) open var textValue: Swift.String? {
+    get
+    set
+  }
+  @_Concurrency.MainActor(unsafe) open var fontSize: Swift.Double {
+    get
+    set
+  }
+  @_Concurrency.MainActor(unsafe) open var isBold: Swift.Bool {
+    get
+    set
+  }
+  @_Concurrency.MainActor(unsafe) open var textAlign: Swift.Int {
+    get
+    set
+  }
+  @_Concurrency.MainActor(unsafe) public func getTextAlignAsString() -> Swift.String?
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @_Concurrency.MainActor(unsafe) public func setAttribute(key: Swift.String, value: Swift.String)
+  @objc deinit
+}
+public enum AuthProtocol {
+  case EInHouse
+  case EOIDC
+  public static func == (a: Guard.AuthProtocol, b: Guard.AuthProtocol) -> Swift.Bool
+  public func hash(into hasher: inout Swift.Hasher)
+  public var hashValue: Swift.Int {
+    get
+  }
+}
+public enum TransitionAnimation {
+  case Push
+  case Present
+  public static func == (a: Guard.TransitionAnimation, b: Guard.TransitionAnimation) -> Swift.Bool
+  public func hash(into hasher: inout Swift.Hasher)
+  public var hashValue: Swift.Int {
+    get
+  }
+}
+public enum RequestType {
+  case FeedBack
+  case Register
+  case ResetPassword
+  case BindingWebAuthn
+  public static func == (a: Guard.RequestType, b: Guard.RequestType) -> Swift.Bool
+  public func hash(into hasher: inout Swift.Hasher)
+  public var hashValue: Swift.Int {
+    get
+  }
+}
+public typealias RequestSuccessCallBack = (_ requestType: Guard.RequestType, _ code: Swift.Int, _ message: Swift.String, _ userInfo: Guard.UserInfo?) -> Swift.Void
+@objc @_inheritsConvenienceInitializers public class AuthFlow : ObjectiveC.NSObject {
+  public static let KEY_USER_INFO: Swift.String
+  public static let KEY_ACCOUNT: Swift.String
+  public static let KEY_EXTENDED_FIELDS: Swift.String
+  public static let KEY_MFA_PHONE: Swift.String
+  public static let KEY_MFA_EMAIL: Swift.String
+  public static let KEY_BINDING_WEBAUTHN: Swift.String
+  public var startViewController: UIKit.UIViewController?
+  public var authCompletion: Guard.Authing.AuthCompletion?
+  public var data: Foundation.NSDictionary
+  public var loginXibName: Swift.String?
+  public var registerXibName: Swift.String?
+  public var forgotPasswordXibName: Swift.String?
+  public var feedBackXibName: Swift.String?
+  public var deleteAccountXibName: Swift.String?
+  public var mfaFromViewControllerName: Swift.String?
+  public var mfaRecoveryCode: Swift.String?
+  public var resetPasswordFirstTimeLoginXibName: Swift.String?
+  public var authProtocol: Guard.AuthProtocol
+  public var transition: Guard.TransitionAnimation
+  public var appBundle: Guard.AppBundle?
+  public var config: Guard.Config?
+  public var UIConfig: Guard.AuthFlowUIConfig?
+  public var requestCallBack: Guard.RequestSuccessCallBack?
+  public var enrollmentToken: Swift.String?
+  @objc override dynamic public init()
+  public init(_ appId: Swift.String?)
+  public init(_ data: Foundation.NSDictionary)
+  public static func showUserProfile()
+  @objc public func start(authCompletion: Guard.Authing.AuthCompletion? = nil)
+  public func complete(_ code: Swift.Int, _ message: Swift.String?, _ userInfo: Guard.UserInfo?, animated: Swift.Bool = true)
+  public static func getAccount(current: UIKit.UIView) -> Swift.String?
+  public static func missingField(config: Guard.Config?, userInfo: Guard.UserInfo?) -> Swift.Array<Foundation.NSDictionary>
+  public func startAppBundle(_ appId: Swift.String, authCompletion: Guard.Authing.AuthCompletion? = nil)
+  public func startAppBundle(_ appBundle: Guard.AppBundle, authCompletion: Guard.Authing.AuthCompletion? = nil)
+  public func getConfig(completion: @escaping (Guard.Config?) -> Swift.Void)
+  @objc override dynamic public func copy() -> Any
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class UserInfoCompleteFieldFormSelect : Guard.UserInfoCompleteFieldForm {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @_Concurrency.MainActor(unsafe) public func setup()
+  @_Concurrency.MainActor(unsafe) override public func getHeight() -> CoreFoundation.CGFloat
+  @_Concurrency.MainActor(unsafe) override public func getValue() -> Swift.String?
+  @_Concurrency.MainActor(unsafe) override public func setFormData(_ data: Foundation.NSDictionary)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class ResetPasswordButton : Guard.PrimaryButton {
+  @_Concurrency.MainActor(unsafe) open var phoneTarget: Swift.String?
+  @_Concurrency.MainActor(unsafe) open var emailTarget: Swift.String?
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @_Concurrency.MainActor(unsafe) override public func setAttribute(key: Swift.String, value: Swift.String)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class UserInfoCompleteSkipButton : Guard.Button {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc deinit
+}
+@_inheritsConvenienceInitializers @objc @_Concurrency.MainActor(unsafe) open class AuthViewController : UIKit.UIViewController {
+  @_Concurrency.MainActor(unsafe) public var authFlow: Guard.AuthFlow? {
+    get
+    set
+  }
+  @_Concurrency.MainActor(unsafe) public var hideNavigationBar: Swift.Bool
+  @_Concurrency.MainActor(unsafe) @objc override dynamic open func viewDidLoad()
+  @_Concurrency.MainActor(unsafe) @objc override dynamic open func viewWillAppear(_ animated: Swift.Bool)
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(nibName nibNameOrNil: Swift.String?, bundle nibBundleOrNil: Foundation.Bundle?)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder: Foundation.NSCoder)
+  @objc deinit
+}
+@_inheritsConvenienceInitializers @objc @_Concurrency.MainActor(unsafe) open class UserProfileViewController : Guard.AuthViewController {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic open func viewDidLoad()
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(nibName nibNameOrNil: Swift.String?, bundle nibBundleOrNil: Foundation.Bundle?)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder: Foundation.NSCoder)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers public class AuthFlowUIConfig : ObjectiveC.NSObject {
+  public enum viewType : Swift.String {
+    case login
+    case register
+    public init?(rawValue: Swift.String)
+    public typealias RawValue = Swift.String
+    public var rawValue: Swift.String {
+      get
+    }
+  }
+  public enum ContentMode {
+    case left
+    case center
+    case right
+    public static func == (a: Guard.AuthFlowUIConfig.ContentMode, b: Guard.AuthFlowUIConfig.ContentMode) -> Swift.Bool
+    public func hash(into hasher: inout Swift.Hasher)
+    public var hashValue: Swift.Int {
+      get
+    }
+  }
+  public var contentMode: Guard.AuthFlowUIConfig.ContentMode
+  public var isCustomView: Swift.Bool
+  public var viewType: Guard.AuthFlowUIConfig.viewType
+  public var button: UIKit.UIButton?
+  public func setButton(button: UIKit.UIButton, type: Guard.AuthFlowUIConfig.viewType)
+  @objc override dynamic public init()
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class GoSomewhereButton : Guard.Button {
+  @_Concurrency.MainActor(unsafe) open var target: Swift.String?
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @_Concurrency.MainActor(unsafe) override public func setAttribute(key: Swift.String, value: Swift.String)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class UserInfoCompleteFieldPhone : Guard.UserInfoCompleteFieldForm {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @_Concurrency.MainActor(unsafe) override public func getHeight() -> CoreFoundation.CGFloat
+  @_Concurrency.MainActor(unsafe) public func getPhone() -> Swift.String?
+  @_Concurrency.MainActor(unsafe) public func getCountryCode() -> Swift.String?
+  @_Concurrency.MainActor(unsafe) public func getCode() -> Swift.String?
+  @_Concurrency.MainActor(unsafe) override public func setFormData(_ data: Foundation.NSDictionary)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class MFAOTPButton : Guard.PrimaryButton {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class RegisterButton : Guard.PrimaryButton {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers public class Client : ObjectiveC.NSObject {
+  @objc override dynamic public init()
+  public init(_ config: Guard.Config?)
+  public func getConfig(completion: @escaping (Guard.Config?) -> Swift.Void)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class UserProfileContainer : UIKit.UIScrollView {
+  @_Concurrency.MainActor(unsafe) final public let logoutButton: Guard.LogoutButton
+  @_Concurrency.MainActor(unsafe) final public let deleteAccountButton: UIKit.UIButton
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @_Concurrency.MainActor(unsafe) open func refreshUI()
+  @_Concurrency.MainActor(unsafe) @objc override dynamic open func layoutSubviews()
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class MFAGoBindingButton : Guard.PrimaryButton {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class UserProfileTextField : Guard.UserProfileField {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @_Concurrency.MainActor(unsafe) @objc override dynamic open func layoutSubviews()
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class UserInfoCompleteFieldEmail : Guard.UserInfoCompleteFieldForm {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @_Concurrency.MainActor(unsafe) override public func getHeight() -> CoreFoundation.CGFloat
+  @_Concurrency.MainActor(unsafe) public func getEmail() -> Swift.String?
+  @_Concurrency.MainActor(unsafe) public func getCode() -> Swift.String?
+  @_Concurrency.MainActor(unsafe) override public func setFormData(_ data: Foundation.NSDictionary)
+  @objc deinit
+}
+@_hasMissingDesignatedInitializers open class Validator {
+  public static func isValidPhone(phone: Swift.String?) -> Swift.Bool
+  public static func isValidEmail(email: Swift.String?) -> Swift.Bool
+  public static func hasEnglish(_ s: Swift.String?) -> Swift.Bool
+  public static func hasNumber(_ s: Swift.String?) -> Swift.Bool
+  public static func hasSpecialCharacter(_ s: Swift.String?) -> Swift.Bool
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @available(iOS 13.0, *)
+@_Concurrency.MainActor(unsafe) open class AppleLoginButton : Guard.SocialLoginButton, AuthenticationServices.ASAuthorizationControllerDelegate {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @_Concurrency.MainActor(unsafe) @objc public func authorizationController(controller: AuthenticationServices.ASAuthorizationController, didCompleteWithAuthorization authorization: AuthenticationServices.ASAuthorization)
+  @_Concurrency.MainActor(unsafe) @objc public func authorizationController(controller: AuthenticationServices.ASAuthorizationController, didCompleteWithError error: any Swift.Error)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class GoBackButton : Guard.PrimaryButton {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class PrivacyToast : UIKit.UIView {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @_Concurrency.MainActor(unsafe) public class func privacyBoxIsChecked() -> Swift.Bool
+  @_Concurrency.MainActor(unsafe) public class func showToast(viewController: UIKit.UIViewController, _ isSocialButton: Swift.Bool? = false)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class PrivacyConfirmBox : UIKit.UIView, UIKit.UITextViewDelegate {
+  @_Concurrency.MainActor(unsafe) public var isChecked: Swift.Bool {
+    get
+    set
+  }
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @_Concurrency.MainActor(unsafe) @objc public func textView(_ textView: UIKit.UITextView, shouldInteractWith URL: Foundation.URL, in characterRange: Foundation.NSRange, interaction: UIKit.UITextItemInteraction) -> Swift.Bool
+  @_Concurrency.MainActor(unsafe) @objc public func textViewDidChangeSelection(_ textView: UIKit.UITextView)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class UserProfileField : UIKit.UIView {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @_Concurrency.MainActor(unsafe) @objc override dynamic open func layoutSubviews()
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class UserInfoCompleteContentView : UIKit.UIView {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic open func hitTest(_ point: CoreFoundation.CGPoint, with event: UIKit.UIEvent?) -> UIKit.UIView?
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder: Foundation.NSCoder)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class BasePasswordTextField : Guard.TextFieldLayout {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc deinit
+}
+public enum Language : Swift.String {
+  case English
+  case Japanese
+  case Chinese
+  case ChineseT
+  public init?(rawValue: Swift.String)
+  public typealias RawValue = Swift.String
+  public var rawValue: Swift.String {
+    get
+  }
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class MFARecoveryCodeButton : Guard.PrimaryButton {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) public class RegisterMethodTabItem : Guard.MethodTabItem {
+  @_Concurrency.MainActor(unsafe) override public func focusGained()
+  @_Concurrency.MainActor(unsafe) public func setExtendField(_ extendField: Swift.String, _ fieldText: Swift.String)
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_hasMissingDesignatedInitializers public class CountdownTimerManager : ObjectiveC.NSObject {
+  @objc public static let shared: Guard.CountdownTimerManager
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class MFAOtherMethodButton : Guard.PrimaryButton {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @_Concurrency.MainActor(unsafe) @objc override dynamic open func layoutSubviews()
+  @objc deinit
+}
+extension UIKit.UIDevice {
+  @_Concurrency.MainActor(unsafe) public static let modelName: Swift.String
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class FeedBackIssuePicker : Guard.TextFieldLayout {
+  @_Concurrency.MainActor(unsafe) public var items: [Swift.String]
+  @_Concurrency.MainActor(unsafe) public var selectType: Swift.Int
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class GoRegisterButton : Guard.GoSomewhereButton {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class FeedBackButton : Guard.PrimaryButton {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class PrimaryButton : Guard.LoadingButton {
+  @_Concurrency.MainActor(unsafe) public var authCompletion: Guard.Authing.AuthCompletion?
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @_Concurrency.MainActor(unsafe) public func setAuthCompletion(_ completion: Guard.Authing.AuthCompletion?)
+  @objc deinit
+}
+extension UIKit.UIColor {
+  convenience public init(hex: Swift.String)
+  public class func dynamicColor(darkHex: Swift.String, lightHex: Swift.String) -> UIKit.UIColor
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class TextFieldBorder : UIKit.UIView {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public func draw(_ rect: CoreFoundation.CGRect)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class GetVerifyCodeButton : Guard.LoadingButton {
+  @_Concurrency.MainActor(unsafe) @objc override open var loadingColor: UIKit.UIColor? {
+    @objc get
+    @objc set
+  }
+  @_Concurrency.MainActor(unsafe) @objc override open var loadingLocation: Swift.Int {
+    @objc get
+    @objc set
+  }
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class GraphValidateCodeTextField : Guard.TextFieldLayout {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class MFAGoRecoveryCodeButton : Guard.Button {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class LoginButton : Guard.PrimaryButton {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @_Concurrency.MainActor(unsafe) public class func handleLogin(button: Guard.Button, _ code: Swift.Int, message: Swift.String?, userInfo: Guard.UserInfo?, authCompletion: Guard.Authing.AuthCompletion? = nil)
+  @_Concurrency.MainActor(unsafe) public class func mfaHandle(view: UIKit.UIView, mfaType: Swift.String, needGuide: Swift.Bool) -> Guard.AuthViewController?
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class PasswordTextField : Guard.BasePasswordTextField {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc deinit
+}
+@objc @_Concurrency.MainActor(unsafe) open class GraphValidateCode : Guard.ImageView {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @_Concurrency.MainActor(unsafe) public func refreshCaptcha()
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class EmailLabel : UIKit.UILabel {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class DeleteAccountView : UIKit.UIView {
+  @_Concurrency.MainActor(unsafe) public var deleteButton: Guard.DeleteAccountButton?
+  @_Concurrency.MainActor(unsafe) public var passwordTextField: Guard.PasswordTextField?
+  @_Concurrency.MainActor(unsafe) public var verifyTextField: Guard.VerifyCodeTextField?
+  @_Concurrency.MainActor(unsafe) public var verifyLabel: Guard.Label?
+  @_Concurrency.MainActor(unsafe) public var verifyButton: Guard.GetVerifyCodeButton?
+  @_Concurrency.MainActor(unsafe) public var onDeleteAccount: Guard.OnDeleteAccount?
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc deinit
+}
+@objc public class Config : ObjectiveC.NSObject {
+  open var data: Foundation.NSDictionary? {
+    get
+    set
+  }
+  open var userPoolId: Swift.String? {
+    get
+  }
+  open var identifier: Swift.String? {
+    get
+  }
+  open var name: Swift.String? {
+    get
+  }
+  open var logo: Swift.String? {
+    get
+  }
+  open var userpoolLogo: Swift.String? {
+    get
+  }
+  open var userPoolName: Swift.String? {
+    get
+  }
+  open var verifyCodeLength: Swift.Int? {
+    get
+  }
+  open var appType: Swift.String? {
+    get
+  }
+  open var requestHostname: Swift.String? {
+    get
+  }
+  open var corsWhitelist: [Swift.String]? {
+    get
+  }
+  public func getLogoUrl() -> Swift.String?
+  open var loginMethods: [Swift.String]?
+  open var defaultLoginMethod: Swift.String?
+  open var passwordValidRegisterMethods: [Swift.String]?
+  open var verifyCodeValidRegisterMethods: [Swift.String]?
+  open var passwordValidLoginMethods: [Swift.String]
+  open var verifyCodeValidLoginMethods: [Swift.String]?
+  open var registerMethods: [Swift.String]?
+  open var tabMethodsFields: [Foundation.NSDictionary]?
+  open var defaultRegisterMethod: Swift.String?
+  open var passwordStrength: Swift.Int? {
+    get
+  }
+  open var socialConnections: [Foundation.NSDictionary]?
+  public func getConnectionId(type: Swift.String) -> Swift.String?
+  public func getConnectionFields(type: Swift.String) -> Foundation.NSDictionary?
+  open var completeFieldsPlace: [Swift.String]?
+  open var extendedFields: [Foundation.NSDictionary]?
+  open var extendsFieldsI18n: Foundation.NSDictionary?
+  open var agreements: [Foundation.NSDictionary]?
+  open var redirectUris: [Swift.String]?
+  open var internationalSmsConfigEnable: Swift.Bool?
+  open var autoRegisterThenLoginHintInfo: Swift.Bool?
+  open var registerDisabled: Swift.Bool?
+  open var enableFaceLogin: Swift.Bool? {
+    get
+  }
+  open var enableFingerprintLogin: Swift.Bool? {
+    get
+  }
+  open var appRobotVerify: Swift.String? {
+    get
+  }
+  open var skipComplateFileds: Swift.Bool? {
+    get
+  }
+  open var eventSocket: Swift.String? {
+    get
+  }
+  open var deviceFuncEnabled: Swift.Bool? {
+    get
+  }
+  open var appId: Swift.String!
+  open var userAgent: Swift.String?
+  public init(appId: Swift.String)
+  public func requestPublicConfig()
+  public func getConfig(completion: @escaping (Guard.Config?) -> Swift.Void)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) public class PhoneNumberTextField : Guard.AccountTextField {
+  @_Concurrency.MainActor(unsafe) open var countryCode: Swift.String {
+    get
+  }
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public func layoutSubviews()
+  @_Concurrency.MainActor(unsafe) @objc override public func textFieldDidChange(textField: UIKit.UITextField)
+  @_Concurrency.MainActor(unsafe) @objc public func textFieldShouldEndEditing(_ textField: UIKit.UITextField) -> Swift.Bool
+  @objc deinit
+}
+@objc @_Concurrency.MainActor(unsafe) open class MFAOTPCodeImage : Guard.ImageView {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @_Concurrency.MainActor(unsafe) @objc override dynamic open func layoutSubviews()
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class AppName : Guard.Label {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class RegisterContainer : Guard.Layout {
+  @objc @IBInspectable @_Concurrency.MainActor(unsafe) open var type: Swift.Int
+  @_Concurrency.MainActor(unsafe) override public func setAttribute(key: Swift.String, value: Swift.String)
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class MFATableItem : UIKit.UIView {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class DescribeTextView : UIKit.UIView {
+  @_Concurrency.MainActor(unsafe) public var text: Swift.String?
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc deinit
+}
+extension Guard.DescribeTextView : UIKit.UITextViewDelegate {
+  @_Concurrency.MainActor(unsafe) @objc dynamic public func textViewDidBeginEditing(_ textView: UIKit.UITextView)
+  @_Concurrency.MainActor(unsafe) @objc dynamic public func textViewDidEndEditing(_ textView: UIKit.UITextView)
+  @_Concurrency.MainActor(unsafe) @objc dynamic public func textViewDidChange(_ textView: UIKit.UITextView)
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class UserInfoCompleteButton : Guard.PrimaryButton {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class EmailTextField : Guard.AccountTextField {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @_Concurrency.MainActor(unsafe) @objc public func textFieldShouldEndEditing(_ textField: UIKit.UITextField) -> Swift.Bool
+  @objc deinit
+}
+public typealias OnDeleteAccount = (Swift.Int, Swift.String?) -> Swift.Void
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class DeleteAccountButton : Guard.PrimaryButton {
+  @_Concurrency.MainActor(unsafe) public var onDeleteAccount: Guard.OnDeleteAccount?
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class SocialLoginListView : UIKit.UIView, Guard.AttributedViewProtocol {
+  @objc @IBInspectable @_Concurrency.MainActor(unsafe) open var src: Swift.String {
+    @objc get
+    @objc set
+  }
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @_Concurrency.MainActor(unsafe) @objc override dynamic open func layoutSubviews()
+  @_Concurrency.MainActor(unsafe) open func setSource(_ src: Swift.String)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers public class Authing : ObjectiveC.NSObject {
+  @objc public static let DEFAULT_PUBLIC_KEY: Swift.String
+  public typealias AuthCompletion = (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void
+  @objc public static var sConfig: Guard.Config?
+  public enum NotifyName : Swift.String {
+    case notify_wechat
+    case notify_wecom_register
+    case notify_wecom_receive
+    case notify_lark_register
+    case notify_lark_receive
+    public init?(rawValue: Swift.String)
+    public typealias RawValue = Swift.String
+    public var rawValue: Swift.String {
+      get
+    }
+  }
+  @objc public static func start(_ appid: Swift.String)
+  @objc public static func getAppId() -> Swift.String
+  @objc public static func setSchema(schema: Swift.String)
+  @objc public static func getSchema() -> Swift.String
+  @objc public static func setHost(host: Swift.String)
+  @objc public static func getHost() -> Swift.String
+  @objc public static func getIsOnPremises() -> Swift.Bool
+  @objc public static func getPublicKey() -> Swift.String
+  @objc public static func setPushClientId(cid: Swift.String?)
+  @objc public static func getPushClientId() -> Swift.String?
+  @objc public static func setWebsocketHost(websocketHost: Swift.String)
+  @objc public static func getWebsocketHost() -> Swift.String
+  @objc public static func setOnPremiseInfo(host: Swift.String, publicKey: Swift.String)
+  @objc public static func setDebugMode(open: Swift.Bool)
+  @objc public static func getDebugMode() -> Swift.Bool
+  @objc public static func getConfig(completion: @escaping (Guard.Config?) -> Swift.Void)
+  @objc public static func getConfigObject() -> Guard.Config?
+  @objc public static func setLanguage(language: Swift.String)
+  @objc public static func autoLogin(completion: @escaping (Swift.Int, Swift.String?, Guard.UserInfo?) -> Swift.Void)
+  @objc public static func getCurrentUser() -> Guard.UserInfo?
+  @objc public static func saveUser(_ userInfo: Guard.UserInfo?)
+  @objc override dynamic public init()
+  @objc deinit
+}
+@_inheritsConvenienceInitializers @objc @_Concurrency.MainActor(unsafe) open class MFAFaceViewController : Guard.AuthViewController, AVFoundation.AVCaptureVideoDataOutputSampleBufferDelegate {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic open func viewDidLoad()
+  @_Concurrency.MainActor(unsafe) @objc override dynamic open func viewWillAppear(_ animated: Swift.Bool)
+  @objc deinit
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(nibName nibNameOrNil: Swift.String?, bundle nibBundleOrNil: Foundation.Bundle?)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder: Foundation.NSCoder)
+}
+extension Guard.MFAFaceViewController {
+  @_Concurrency.MainActor(unsafe) @objc dynamic public func captureOutput(_ output: AVFoundation.AVCaptureOutput, didOutput sampleBuffer: CoreMedia.CMSampleBuffer, from connection: AVFoundation.AVCaptureConnection)
+  @objc @_Concurrency.MainActor(unsafe) dynamic public func detectFace(_ image: UIKit.UIImage)
+  @_Concurrency.MainActor(unsafe) public func verifyFace()
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class LoginContainer : Guard.Layout {
+  @objc @IBInspectable @_Concurrency.MainActor(unsafe) open var type: Swift.Int
+  @_Concurrency.MainActor(unsafe) override public func setAttribute(key: Swift.String, value: Swift.String)
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc deinit
+}
+@_hasMissingDesignatedInitializers open class UserManager {
+  public static func saveUser(_ userInfo: Guard.UserInfo?)
+  public static func saveRpid(_ userId: Swift.String, rpId: Swift.String)
+  public static func getRpid(_ userId: Swift.String) -> Swift.String?
+  public static func getUser() -> Guard.UserInfo?
+  public static func removeUser()
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class UserInfoCompleteContainer : UIKit.UIView {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class LogoutButton : UIKit.UIButton {
+  public typealias OnLogout = (Swift.Int, Swift.String?) -> Swift.Void
+  @_Concurrency.MainActor(unsafe) public var onLogout: Guard.LogoutButton.OnLogout?
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc deinit
+}
+open class AppBundle {
+  open var appId: Swift.String?
+  open var rootDir: Foundation.URL?
+  open var name: Swift.String?
+  open var versionCode: Swift.Int
+  open var versionName: Swift.String?
+  open var indexView: UIKit.UIView?
+  open var mainColor: Swift.String?
+  public init()
+  @objc deinit
+}
+extension Guard.Orientation : Swift.Equatable {}
+extension Guard.Orientation : Swift.Hashable {}
+extension Guard.Alignment : Swift.Equatable {}
+extension Guard.Alignment : Swift.Hashable {}
+extension Guard.AlignItems : Swift.Equatable {}
+extension Guard.AlignItems : Swift.Hashable {}
+extension Guard.ErrorCode : Swift.Equatable {}
+extension Guard.ErrorCode : Swift.Hashable {}
+extension Guard.ErrorCode : Swift.RawRepresentable {}
+extension Guard.Util.PasswordStrength : Swift.Equatable {}
+extension Guard.Util.PasswordStrength : Swift.Hashable {}
+extension Guard.BindSuccessType : Swift.Equatable {}
+extension Guard.BindSuccessType : Swift.Hashable {}
+extension Guard.AuthProtocol : Swift.Equatable {}
+extension Guard.AuthProtocol : Swift.Hashable {}
+extension Guard.TransitionAnimation : Swift.Equatable {}
+extension Guard.TransitionAnimation : Swift.Hashable {}
+extension Guard.RequestType : Swift.Equatable {}
+extension Guard.RequestType : Swift.Hashable {}
+extension Guard.AuthFlowUIConfig.viewType : Swift.Equatable {}
+extension Guard.AuthFlowUIConfig.viewType : Swift.Hashable {}
+extension Guard.AuthFlowUIConfig.viewType : Swift.RawRepresentable {}
+extension Guard.AuthFlowUIConfig.ContentMode : Swift.Equatable {}
+extension Guard.AuthFlowUIConfig.ContentMode : Swift.Hashable {}
+extension Guard.Language : Swift.Equatable {}
+extension Guard.Language : Swift.Hashable {}
+extension Guard.Language : Swift.RawRepresentable {}
+extension Guard.Authing.NotifyName : Swift.Equatable {}
+extension Guard.Authing.NotifyName : Swift.Hashable {}
+extension Guard.Authing.NotifyName : Swift.RawRepresentable {}

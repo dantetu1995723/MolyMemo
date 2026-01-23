@@ -1,0 +1,4 @@
+framework module WebAuthn {
+  header "WebAuthn-Swift.h"
+  requires objc
+}

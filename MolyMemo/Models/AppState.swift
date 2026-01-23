@@ -111,6 +111,9 @@ struct ScheduleEvent: Identifiable, Equatable, Codable {
     var id = UUID()
     /// 后端 schedule id（字符串/数字/uuid 都可能）；用于拉取详情 `/api/v1/schedules/{id}`
     var remoteId: String? = nil
+    /// 数据来源（后端字段 source），例如：manual / feishu
+    /// - 需求：飞书来源日程不在 Moly 读取/展示时，用于过滤
+    var source: String? = nil
     var title: String
     var description: String
     var startTime: Date
@@ -170,12 +173,13 @@ struct ScheduleEvent: Identifiable, Equatable, Codable {
 
     // MARK: - Codable（向后兼容：旧数据没有 isFullDay 字段）
     private enum CodingKeys: String, CodingKey {
-        case id, remoteId, title, description, startTime, endTime, reminderTime, category, location, isFullDay, endTimeProvided, isSynced, hasConflict, isObsolete
+        case id, remoteId, source, title, description, startTime, endTime, reminderTime, category, location, isFullDay, endTimeProvided, isSynced, hasConflict, isObsolete
     }
 
     init(
         id: UUID = UUID(),
         remoteId: String? = nil,
+        source: String? = nil,
         title: String,
         description: String,
         startTime: Date,
@@ -191,6 +195,7 @@ struct ScheduleEvent: Identifiable, Equatable, Codable {
     ) {
         self.id = id
         self.remoteId = remoteId
+        self.source = source
         self.title = title
         self.description = description
         self.startTime = startTime
@@ -209,6 +214,7 @@ struct ScheduleEvent: Identifiable, Equatable, Codable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
         remoteId = try c.decodeIfPresent(String.self, forKey: .remoteId)
+        source = try c.decodeIfPresent(String.self, forKey: .source)
         title = try c.decode(String.self, forKey: .title)
         description = try c.decodeIfPresent(String.self, forKey: .description) ?? ""
         startTime = try c.decode(Date.self, forKey: .startTime)

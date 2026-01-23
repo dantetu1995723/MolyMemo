@@ -1,0 +1,11 @@
+framework module Slack {
+  umbrella header "Slack.h"
+
+  export *
+  module * { export * }
+}
+
+module Slack.Swift {
+  header "Slack-Swift.h"
+  requires objc
+}

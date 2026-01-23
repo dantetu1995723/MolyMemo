@@ -1,0 +1,11 @@
+framework module Gitee {
+  umbrella header "Gitee.h"
+
+  export *
+  module * { export * }
+}
+
+module Gitee.Swift {
+  header "Gitee-Swift.h"
+  requires objc
+}

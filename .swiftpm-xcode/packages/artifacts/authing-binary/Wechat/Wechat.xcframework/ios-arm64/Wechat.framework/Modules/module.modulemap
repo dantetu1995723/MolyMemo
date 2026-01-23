@@ -1,0 +1,11 @@
+framework module Wechat {
+  umbrella header "Wechat.h"
+
+  export *
+  module * { export * }
+}
+
+module Wechat.Swift {
+  header "Wechat-Swift.h"
+  requires objc
+}

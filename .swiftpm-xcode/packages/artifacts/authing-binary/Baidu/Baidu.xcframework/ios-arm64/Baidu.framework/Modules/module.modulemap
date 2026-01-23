@@ -1,0 +1,11 @@
+framework module Baidu {
+  umbrella header "Baidu.h"
+
+  export *
+  module * { export * }
+}
+
+module Baidu.Swift {
+    header "Baidu-Swift.h"
+    requires objc
+}

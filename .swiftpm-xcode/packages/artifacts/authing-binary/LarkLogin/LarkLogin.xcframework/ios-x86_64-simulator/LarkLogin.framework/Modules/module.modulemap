@@ -1,0 +1,11 @@
+framework module LarkLogin {
+  umbrella header "LarkLogin.h"
+
+  export *
+  module * { export * }
+}
+
+module LarkLogin.Swift {
+  header "LarkLogin-Swift.h"
+  requires objc
+}

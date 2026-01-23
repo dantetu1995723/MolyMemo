@@ -1,0 +1,11 @@
+framework module Kuaishou {
+  umbrella header "Kuaishou.h"
+
+  export *
+  module * { export * }
+}
+
+module Kuaishou.Swift {
+  header "Kuaishou-Swift.h"
+  requires objc
+}

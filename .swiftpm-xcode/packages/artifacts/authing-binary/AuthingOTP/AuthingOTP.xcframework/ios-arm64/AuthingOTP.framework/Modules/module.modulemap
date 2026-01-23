@@ -1,0 +1,11 @@
+framework module AuthingOTP {
+  umbrella header "AuthingOTP.h"
+
+  export *
+  module * { export * }
+}
+
+module AuthingOTP.Swift {
+  header "AuthingOTP-Swift.h"
+  requires objc
+}

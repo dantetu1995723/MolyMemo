@@ -1,0 +1,23 @@
+// swift-interface-format-version: 1.0
+// swift-compiler-version: Apple Swift version 5.8 (swiftlang-5.8.0.124.2 clang-1403.0.22.11.100)
+// swift-module-flags: -target x86_64-apple-ios13.0-simulator -enable-objc-interop -enable-library-evolution -swift-version 5 -enforce-exclusivity=checked -Onone -module-name Amazon
+// swift-module-flags-ignorable: -enable-bare-slash-regex
+@_exported import Amazon
+import Foundation
+import Guard
+import LoginWithAmazon
+import Swift
+import _Concurrency
+import _StringProcessing
+@objc @_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class AmazonLoginButton : Guard.SocialLoginButton {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc deinit
+}
+@_hasMissingDesignatedInitializers open class Amazon {
+  public static func register(appKey: Swift.String, secretKey: Swift.String)
+  public static func application(open url: Foundation.URL, options: [UIKit.UIApplication.OpenURLOptionsKey : Any] = [:]) -> Swift.Bool
+  public static func login(_ scopes: [any LoginWithAmazon.AMZNScope] = [AMZNProfileScope.profile(), AMZNProfileScope.postalCode(), AMZNProfileScope.userID()], completion: @escaping Guard.Authing.AuthCompletion)
+  public static func logout()
+  @objc deinit
+}

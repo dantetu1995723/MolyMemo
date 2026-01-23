@@ -1,0 +1,170 @@
+// swift-interface-format-version: 1.0
+// swift-compiler-version: Apple Swift version 5.8 (swiftlang-5.8.0.124.2 clang-1403.0.22.11.100)
+// swift-module-flags: -target arm64-apple-ios13.0 -enable-objc-interop -enable-library-evolution -swift-version 5 -enforce-exclusivity=checked -Onone -module-name AuthingOTP
+// swift-module-flags-ignorable: -enable-bare-slash-regex
+@_exported import AuthingOTP
+import CoreData
+import CryptoKit
+import Foundation
+import Swift
+import UIKit
+import _Concurrency
+import _StringProcessing
+extension Foundation.Data {
+  public var bytes: Swift.Array<Swift.UInt8> {
+    get
+  }
+  public init(hex: Swift.String)
+}
+extension Swift.Array where Element == Swift.UInt8 {
+  public init(hex: Swift.String)
+  public func toHexString() -> Swift.String
+}
+public struct HOTP {
+  public let secret: Foundation.Data
+  public let digits: Swift.Int
+  public let algorithm: AuthingOTP.OTPAlgorithm
+  public init?(secret: Foundation.Data, digits: Swift.Int = 6, algorithm: AuthingOTP.OTPAlgorithm = .sha1)
+  public func generate(counter: Swift.UInt64) -> Swift.String?
+}
+public class TOTP {
+  final public let secret: Foundation.Data
+  final public let digits: Swift.Int
+  final public let timeInterval: Swift.Int
+  final public let algorithm: AuthingOTP.OTPAlgorithm
+  public var account: Swift.String?
+  public var issuer: Swift.String?
+  public var remain: Swift.Int
+  public var uuid: Swift.String?
+  public var appName: Swift.String?
+  public var accountId: Swift.String?
+  public init?(secret: Foundation.Data, digits: Swift.Int = 6, timeInterval: Swift.Int = 30, algorithm: AuthingOTP.OTPAlgorithm = .sha1)
+  public func generate(time: Foundation.Date) -> Swift.String?
+  public func generate(secondsPast1970: Swift.Int) -> Swift.String?
+  public func getAlgorithmString() -> Swift.String
+  public static func getAlgorithmByString(_ a: Swift.String) -> AuthingOTP.OTPAlgorithm
+  @objc deinit
+}
+public enum OTPAlgorithm {
+  case sha1
+  case sha256
+  case sha512
+  public static func == (a: AuthingOTP.OTPAlgorithm, b: AuthingOTP.OTPAlgorithm) -> Swift.Bool
+  public func hash(into hasher: inout Swift.Hasher)
+  public var hashValue: Swift.Int {
+    get
+  }
+}
+extension Swift.String {
+  public var dataUsingUTF8StringEncoding: Foundation.Data {
+    get
+  }
+  public var arrayUsingUTF8StringEncoding: [Swift.UInt8] {
+    get
+  }
+}
+@objc @_inheritsConvenienceInitializers @_hasMissingDesignatedInitializers public class OTPDataManager : ObjectiveC.NSObject {
+  @objc public static let shared: AuthingOTP.OTPDataManager
+  public func queryOTPList(completion: ([AuthingOTP.TOTP], (any Swift.Error)?) -> Swift.Void)
+  public func insertOTPItem(totp: AuthingOTP.TOTP, completion: ((_ resutl: Swift.Bool, _ error: (any Swift.Error)?) -> Swift.Void)? = nil)
+  public func deleteOTPItem(totp: AuthingOTP.TOTP, completion: ((_ resutl: Swift.Bool, _ error: (any Swift.Error)?) -> Swift.Void)? = nil)
+  public func updateOTPAccountAndAppnameByUUID(account: Swift.String, appName: Swift.String, uuid: Swift.String, completion: ((_ resutl: Swift.Bool, _ error: (any Swift.Error)?) -> Swift.Void)? = nil)
+  public func updateOTPItem(totp: AuthingOTP.TOTP, completion: ((_ resutl: Swift.Bool, _ error: (any Swift.Error)?) -> Swift.Void)? = nil)
+  @objc deinit
+}
+public func base32Encode(_ data: Foundation.Data) -> Swift.String
+public func base32HexEncode(_ data: Foundation.Data) -> Swift.String
+public func base32DecodeToData(_ string: Swift.String) -> Foundation.Data?
+public func base32HexDecodeToData(_ string: Swift.String) -> Foundation.Data?
+public func base32Encode(_ array: [Swift.UInt8]) -> Swift.String
+public func base32HexEncode(_ array: [Swift.UInt8]) -> Swift.String
+public func base32Decode(_ string: Swift.String) -> [Swift.UInt8]?
+public func base32HexDecode(_ string: Swift.String) -> [Swift.UInt8]?
+extension Swift.String {
+  public var base32DecodedData: Foundation.Data? {
+    get
+  }
+  public var base32EncodedString: Swift.String {
+    get
+  }
+  public func base32DecodedString(_ encoding: Swift.String.Encoding = .utf8) -> Swift.String?
+  public var base32HexDecodedData: Foundation.Data? {
+    get
+  }
+  public var base32HexEncodedString: Swift.String {
+    get
+  }
+  public func base32HexDecodedString(_ encoding: Swift.String.Encoding = .utf8) -> Swift.String?
+}
+extension Foundation.Data {
+  public var base32EncodedString: Swift.String {
+    get
+  }
+  public var base32EncodedData: Foundation.Data {
+    get
+  }
+  public var base32DecodedData: Foundation.Data? {
+    get
+  }
+  public var base32HexEncodedString: Swift.String {
+    get
+  }
+  public var base32HexEncodedData: Foundation.Data {
+    get
+  }
+  public var base32HexDecodedData: Foundation.Data? {
+    get
+  }
+}
+@objc @_inheritsConvenienceInitializers public class OTPItem : CoreData.NSManagedObject {
+  @objc override dynamic public init(entity: CoreData.NSEntityDescription, insertInto context: CoreData.NSManagedObjectContext?)
+  @objc deinit
+}
+extension AuthingOTP.OTPItem {
+  @nonobjc public class func fetchRequest() -> CoreData.NSFetchRequest<AuthingOTP.OTPItem>
+  @objc @NSManaged dynamic public var account: Swift.String? {
+    @objc get
+    @objc set
+  }
+  @objc @NSManaged dynamic public var accountId: Swift.String? {
+    @objc get
+    @objc set
+  }
+  @objc @NSManaged dynamic public var algorithm: Swift.String? {
+    @objc get
+    @objc set
+  }
+  @objc @NSManaged dynamic public var appname: Swift.String? {
+    @objc get
+    @objc set
+  }
+  @objc @NSManaged dynamic public var digits: Swift.Int16 {
+    @objc get
+    @objc set
+  }
+  @objc @NSManaged dynamic public var email: Swift.String? {
+    @objc get
+    @objc set
+  }
+  @objc @NSManaged dynamic public var interval: Swift.Int16 {
+    @objc get
+    @objc set
+  }
+  @objc @NSManaged dynamic public var issuer: Swift.String? {
+    @objc get
+    @objc set
+  }
+  @objc @NSManaged dynamic public var secret: Swift.String? {
+    @objc get
+    @objc set
+  }
+  @objc @NSManaged dynamic public var uuid: Swift.String? {
+    @objc get
+    @objc set
+  }
+}
+extension AuthingOTP.OTPItem : Swift.Identifiable {
+  public typealias ID = Swift.ObjectIdentifier
+}
+extension AuthingOTP.OTPAlgorithm : Swift.Equatable {}
+extension AuthingOTP.OTPAlgorithm : Swift.Hashable {}

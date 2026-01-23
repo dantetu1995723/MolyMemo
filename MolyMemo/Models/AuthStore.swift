@@ -76,12 +76,33 @@ final class AuthStore: ObservableObject {
     }
 
     func fetchCurrentUserInfoRaw(forceRefresh: Bool = false) async {
-        guard isLoggedIn else { return }
-        guard !BackendChatConfig.baseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        let sid = (sessionId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !sid.isEmpty else { return }
-        if !forceRefresh && !userInfoRawResponse.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        guard isLoggedIn else {
+            userInfoFetchError = "未登录，请先登录后查看个人信息"
             return
+        }
+        let base = BackendChatConfig.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !base.isEmpty else {
+            userInfoFetchError = "后端 Base URL 为空或不合法，请先在「聊天后端」里配置"
+            return
+        }
+        let sid = (sessionId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !sid.isEmpty else {
+            userInfoFetchError = "登录状态异常，请重新登录"
+            return
+        }
+
+        // 缓存策略：只有在“已成功解析出 userInfo”时才跳过请求。
+        // 否则（raw 有值但解析失败 / userInfo 仍为空），应允许重试，避免 UI 永远停在 skeleton。
+        if !forceRefresh {
+            if userInfo != nil { return }
+
+            let cached = userInfoRawResponse.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !cached.isEmpty, let data = cached.data(using: .utf8) {
+                if let decoded = try? JSONDecoder().decode(UserInfoResponse.self, from: data) {
+                    userInfo = decoded.data
+                    return
+                }
+            }
         }
 
         isLoadingUserInfo = true

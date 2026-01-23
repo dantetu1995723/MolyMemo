@@ -1,0 +1,16 @@
+// swift-interface-format-version: 1.0
+// swift-compiler-version: Apple Swift version 5.5.2 (swiftlang-1300.0.47.5 clang-1300.0.29.30)
+// swift-module-flags: -target x86_64-apple-ios12.0-simulator -enable-objc-interop -enable-library-evolution -swift-version 5 -enforce-exclusivity=checked -Onone -module-name Baidu
+@_exported import Baidu
+import Foundation
+import Guard
+import Swift
+import _Concurrency
+@objc @_inheritsConvenienceInitializers open class Baidu : ObjectiveC.NSObject {
+  public static func register(appKey: Swift.String, appId: Swift.String, scope: Swift.String, redirectURI: Swift.String)
+  public static func login(viewController: UIKit.UIViewController, completion: @escaping Guard.Authing.AuthCompletion)
+  public static func handleURL(url: Foundation.URL) -> Swift.Bool
+  public static func logout()
+  @objc override dynamic public init()
+  @objc deinit
+}

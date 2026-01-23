@@ -1,0 +1,31 @@
+// swift-interface-format-version: 1.0
+// swift-compiler-version: Apple Swift version 5.8.1 (swiftlang-5.8.0.124.5 clang-1403.0.22.11.100)
+// swift-module-flags: -target x86_64-apple-ios12.0-simulator -enable-objc-interop -enable-library-evolution -swift-version 5 -enforce-exclusivity=checked -Onone -module-name Wechat
+// swift-module-flags-ignorable: -enable-bare-slash-regex
+import Foundation
+import Guard
+import Swift
+import UIKit
+@_exported import Wechat
+import _Concurrency
+import _StringProcessing
+@_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class WechatLoginButton : Guard.SocialLoginButton, Wechat.WXApiDelegate {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc deinit
+}
+@objc @_inheritsConvenienceInitializers @_hasMissingDesignatedInitializers open class WechatLogin : ObjectiveC.NSObject, Wechat.WXApiDelegate {
+  @objc public static let shared: Wechat.WechatLogin
+  public static func registerApp(appId: Swift.String, universalLink: Swift.String)
+  public static func login(viewController: UIKit.UIViewController, _ context: Swift.String? = nil, completion: @escaping Guard.Authing.AuthCompletion)
+  public static func loginByMiniProgram(_ launchMiniProgramReq: Wechat.WXLaunchMiniProgramReq? = nil, completion: @escaping Guard.Authing.AuthCompletion)
+  public static func getAuthCode(viewController: UIKit.UIViewController, completion: @escaping (Swift.String?) -> Swift.Void)
+  public static func handleOpenURL(url: Foundation.URL) -> Swift.Bool
+  @objc public func onResp(_ resp: Wechat.BaseResp)
+  @objc deinit
+}
+@_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class MiniProgramLoginButton : Guard.SocialLoginButton {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc deinit
+}

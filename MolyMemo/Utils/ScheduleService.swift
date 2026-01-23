@@ -449,6 +449,7 @@ enum ScheduleService {
         guard !title.isEmpty else { return nil }
         
         let description = str(["description", "desc", "content", "detail"]) ?? ""
+        let source = str(["source"])
         
         // ✅ full_day 优先：按本地时区 00:00~23:59 语义落地
         if let fullDayStart = parseFullDayStart(dict["full_day"] ?? dict["fullDay"]) {
@@ -456,6 +457,7 @@ enum ScheduleService {
             let start = cal.startOfDay(for: fullDayStart)
             let end = cal.date(bySettingHour: 23, minute: 59, second: 59, of: start) ?? start.addingTimeInterval(86399)
             var event = ScheduleEvent(title: title, description: description, startTime: start, endTime: end)
+            event.source = source
             event.isFullDay = true
             event.endTimeProvided = true
             event.reminderTime = reminderTimeString(dict["reminder_time"] ?? dict["reminderTime"])
@@ -508,6 +510,7 @@ enum ScheduleService {
         let end = parsedEnd ?? start
 
         var event = ScheduleEvent(title: title, description: description, startTime: start, endTime: end)
+        event.source = source
         event.endTimeProvided = endProvided
         event.reminderTime = reminderTimeString(dict["reminder_time"] ?? dict["reminderTime"])
         event.category = str(["category", "schedule_category", "scheduleCategory", "type"])
@@ -577,6 +580,11 @@ enum ScheduleService {
         }
         return []
     }
+
+    private static func isFeishuSource(_ dict: [String: Any]) -> Bool {
+        let s = (dict["source"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+        return s == "feishu"
+    }
     
     static func fetchScheduleList(params: ListParams = .init(), forceRefresh: Bool = false) async throws -> [ScheduleEvent] {
         if forceRefresh {
@@ -612,9 +620,11 @@ enum ScheduleService {
         var request = URLRequest(url: url, timeoutInterval: 30)
         request.httpMethod = "GET"
         try applyCommonHeaders(to: &request)
+        debugPrintRequest(request, tag: "list")
         
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
+            debugPrintResponse(data: data, response: response, error: nil, tag: "list")
             
             guard let http = response as? HTTPURLResponse else { throw ScheduleServiceError.invalidResponse }
             if !(200...299).contains(http.statusCode) {
@@ -624,9 +634,13 @@ enum ScheduleService {
             
             let json = try decodeJSON(data)
             let arr = extractEventArray(json)
-            let events = arr.compactMap { parseEventDict($0, keepLocalId: nil) }
+            // 需求：飞书来源日程不在 Moly 读取/展示
+            let filtered = arr.filter { !isFeishuSource($0) }
+            let events = filtered.compactMap { parseEventDict($0, keepLocalId: nil) }
             return events
         } catch {
+            // 让列表请求在失败时也能看到报错（仅 debugLogsEnabled 时输出）
+            debugPrintResponse(data: Data(), response: nil, error: error, tag: "list_error")
             throw error
         }
     }

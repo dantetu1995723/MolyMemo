@@ -1,0 +1,11 @@
+framework module Linkedin {
+  umbrella header "Linkedin.h"
+
+  export *
+  module * { export * }
+}
+
+module Linkedin.Swift {
+  header "Linkedin-Swift.h"
+  requires objc
+}

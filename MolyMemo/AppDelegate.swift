@@ -13,6 +13,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         RecordingDarwinObserver.shared.installIfNeeded()
         // 兜底：初始化后台上传器（确保 session delegate 常驻）
         _ = MeetingMinutesBackgroundUploader.shared
+
+        // 飞书移动端 SSO SDK 初始化（如果已集成）
+        FeishuSSOBridge.setupIfPossible()
         return true
     }
 

@@ -1,0 +1,11 @@
+framework module Amazon {
+  umbrella header "Amazon.h"
+
+  export *
+  module * { export * }
+}
+
+module Amazon.Swift {
+  header "Amazon-Swift.h"
+  requires objc
+}

@@ -297,12 +297,24 @@ struct TodoListView: View {
     
     // MARK: - 后端日程（/api/v1/schedules）
     @State private var remoteEvents: [ScheduleEvent] = []
+    @State private var remoteAllEvents: [ScheduleEvent] = []
     @State private var remoteIsLoading: Bool = false
     @State private var remoteErrorText: String? = nil
     @State private var remoteDetailSelection: ScheduleEvent? = nil
+    @State private var hasLoadedRemoteAllEvents: Bool = false
+    @State private var remoteAllEventsRefreshTask: Task<Void, Never>? = nil
     
     // 追踪正在删除的日程 ID（用于显示行内 loading）
     @State private var deletingRemoteIds: Set<String> = []
+
+    // MARK: - 飞书日历同步（后端 /api/v1/feishu/calendar/*）
+    @State private var showFeishuSyncSheet: Bool = false
+    @State private var isFeishuFetching: Bool = false
+    @State private var isFeishuSyncing: Bool = false
+    @State private var showFeishuSyncAlert: Bool = false
+    @State private var feishuSyncAlertTitle: String = ""
+    @State private var feishuSyncAlertMessage: String = ""
+    @State private var feishuDidSync: Bool = false
     
     init(showAddSheet: Binding<Bool> = .constant(false)) {
         self._showAddSheet = showAddSheet
@@ -355,6 +367,7 @@ struct TodoListView: View {
                     title: "日程",
                     themeColor: themeColor,
                     onBack: { dismiss() },
+                    customLeading: AnyView(feishuFetchPill()),
                     customTrailing: AnyView(monthTitlePill())
                 )
                 
@@ -469,6 +482,11 @@ struct TodoListView: View {
         } message: { _ in
             Text("删除后不可恢复")
         }
+        .alert(feishuSyncAlertTitle, isPresented: $showFeishuSyncAlert) {
+            Button("知道了", role: .cancel) {}
+        } message: {
+            Text(feishuSyncAlertMessage)
+        }
         .toolbar(.hidden, for: .navigationBar)
         .onAppear {
             if !didInitialize {
@@ -488,15 +506,15 @@ struct TodoListView: View {
             }
 
             // 进入工具箱「日程」页即自动刷新（无需按钮）
-            Task { await reloadRemoteSchedulesForSelectedDate() }
+            Task { await loadRemoteAllSchedulesIfNeeded() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .remoteScheduleDidChange).receive(on: RunLoop.main)) { _ in
             // 统一以“后端列表”为准：收到变更通知后直接强刷
-            Task { await reloadRemoteSchedulesForSelectedDate(forceRefresh: true) }
+            Task { await refreshRemoteAllSchedulesFromNetwork() }
         }
         .onChange(of: selectedDate) { _, _ in
-            // 切换日期时自动刷新对应日程
-            Task { await reloadRemoteSchedulesForSelectedDate() }
+            // 切换日期：只做本地过滤，不打后端
+            applyRemoteEventsForSelectedDate()
         }
         .sheet(item: $remoteDetailSelection) { _ in
             RemoteScheduleDetailLoaderSheet(
@@ -513,6 +531,16 @@ struct TodoListView: View {
                 }
             )
                 .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showFeishuSyncSheet, onDismiss: {
+            // 飞书同步成功后，返回日程页立刻强刷一次后端列表
+            guard feishuDidSync else { return }
+            feishuDidSync = false
+            Task { await refreshRemoteAllSchedulesFromNetwork() }
+        }) {
+            FeishuCalendarSyncSheet(didSync: $feishuDidSync)
+                .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
     }
@@ -626,6 +654,37 @@ struct TodoListView: View {
                 .opacity(configuration.isPressed ? 0.55 : 1.0)
                 .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
         }
+    }
+
+    // MARK: - 导航栏左侧：获取飞书（日历列表）按钮
+    private func feishuFetchPill() -> some View {
+        return Button {
+            HapticFeedback.light()
+            showFeishuSyncSheet = true
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "tray.and.arrow.down")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(themeColor.opacity(0.65))
+
+                Text("获取飞书")
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundColor(.black.opacity(0.62))
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 12)
+            .frame(height: 34)
+            .background(LiquidGlassCapsuleBackground())
+            .accessibilityLabel(Text("获取飞书日历列表"))
+        }
+        .buttonStyle(FadeOnPressButtonStyle())
+    }
+
+    @MainActor
+    private func showFeishuAlert(title: String, message: String) {
+        feishuSyncAlertTitle = title
+        feishuSyncAlertMessage = message
+        showFeishuSyncAlert = true
     }
     
     private let monthMenuWidth: CGFloat = 200
@@ -821,70 +880,71 @@ struct TodoListView: View {
         .padding(.bottom, 160)
     }
 
-    // MARK: - 后端拉取（按当前选中日期过滤）
+    // MARK: - 后端拉取（只在进入页面/显式刷新时请求；切换日期只过滤）
+
     @MainActor
-    private func reloadRemoteSchedulesForSelectedDate(forceRefresh: Bool = false) async {
+    private func applyRemoteEventsForSelectedDate() {
+        let cal = Calendar.current
+        remoteEvents = remoteAllEvents
+            .filter { cal.isDate($0.startTime, inSameDayAs: selectedDate) }
+            .sorted(by: { $0.startTime < $1.startTime })
+    }
+
+    @MainActor
+    private func loadRemoteAllSchedulesIfNeeded() async {
         remoteErrorText = nil
-        
-        // 不设置日期范围，获取所有日程
-        let base = ScheduleService.ListParams(
-            page: nil,
-            pageSize: nil,
-            startDate: nil,
-            endDate: nil,
-            search: nil,
-            category: nil,
-            relatedMeetingId: nil
-        )
-        
-        // 强制刷新：绕过缓存，直接从网络拉
-        if forceRefresh {
-            await reloadRemoteSchedulesForSelectedDateFromNetwork(base: base, showError: true, forceRefresh: true)
+
+        // 已加载过：只按当前日期过滤
+        if hasLoadedRemoteAllEvents {
+            applyRemoteEventsForSelectedDate()
             return
         }
-        
-        // 1) 先用缓存秒开（避免切换日期/返回页面就必定 loading）
-        // 注意：peekAllSchedules 的 maxPages 参数只用于缓存 key，实际获取时会循环直到没有更多数据
+
+        // 不设置日期范围，获取所有日程（按你的要求：日程页只看 /api/v1/schedules）
+        let base = ScheduleService.ListParams()
+
+        // 1) 先用缓存秒开
         if let cached = await ScheduleService.peekAllSchedules(maxPages: 10000, pageSize: 100, baseParams: base) {
-            let cal = Calendar.current
-            let list = cached.value
-                .filter { cal.isDate($0.startTime, inSameDayAs: selectedDate) }
-                .sorted(by: { $0.startTime < $1.startTime })
-            // ✅ 日程列表以后端为准：不补回“已删快照”，也不做前端置灰覆盖
-            remoteEvents = list
-            
-            // 即使缓存新鲜，也后台静默刷新，确保数据及时更新
-            Task { @MainActor in
-                await reloadRemoteSchedulesForSelectedDateFromNetwork(base: base, showError: false, forceRefresh: true)
+            remoteAllEvents = cached.value.sorted(by: { $0.startTime < $1.startTime })
+            hasLoadedRemoteAllEvents = true
+            applyRemoteEventsForSelectedDate()
+
+            // 只在首次进入时后台静默刷新一次（避免每次切换日期都触发网络）
+            remoteAllEventsRefreshTask?.cancel()
+            remoteAllEventsRefreshTask = Task { @MainActor in
+                await refreshRemoteAllSchedulesFromNetwork(showError: false)
             }
             return
         }
-        
-        // 2) 首次无缓存：显示 loading
-        await reloadRemoteSchedulesForSelectedDateFromNetwork(base: base, showError: true, forceRefresh: false)
+
+        // 2) 无缓存：走网络
+        await refreshRemoteAllSchedulesFromNetwork(showError: true)
     }
-    
+
     @MainActor
-    private func reloadRemoteSchedulesForSelectedDateFromNetwork(base: ScheduleService.ListParams, showError: Bool, forceRefresh: Bool) async {
+    private func refreshRemoteAllSchedulesFromNetwork(showError: Bool = true) async {
+        remoteAllEventsRefreshTask?.cancel()
+        remoteAllEventsRefreshTask = nil
+
         remoteIsLoading = true
+        if showError { remoteErrorText = nil }
         defer { remoteIsLoading = false }
-        
+
         do {
-            // 不限制页数，循环获取直到没有更多数据
+            let base = ScheduleService.ListParams()
             let all = try await ScheduleService.fetchScheduleListAllPages(
                 maxPages: Int.max,
                 pageSize: 100,
                 baseParams: base,
-                forceRefresh: forceRefresh
+                forceRefresh: true
             )
-            let cal = Calendar.current
-            let list = all
-                .filter { cal.isDate($0.startTime, inSameDayAs: selectedDate) }
-                .sorted(by: { $0.startTime < $1.startTime })
-            // ✅ 日程列表以后端为准：不补回“已删快照”，也不做前端置灰覆盖
-            remoteEvents = list
+            remoteAllEvents = all.sorted(by: { $0.startTime < $1.startTime })
+            hasLoadedRemoteAllEvents = true
+            applyRemoteEventsForSelectedDate()
         } catch {
+            remoteAllEvents = []
             remoteEvents = []
+            hasLoadedRemoteAllEvents = false
             if showError {
                 remoteErrorText = "后端日程获取失败：\(error.localizedDescription)"
             }

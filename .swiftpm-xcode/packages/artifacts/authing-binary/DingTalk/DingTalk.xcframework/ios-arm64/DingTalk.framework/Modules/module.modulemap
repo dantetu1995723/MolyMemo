@@ -1,0 +1,11 @@
+framework module DingTalk {
+  umbrella header "DingTalk.h"
+
+  export *
+  module * { export * }
+}
+
+module DingTalk.Swift {
+  header "DingTalk-Swift.h"
+  requires objc
+}

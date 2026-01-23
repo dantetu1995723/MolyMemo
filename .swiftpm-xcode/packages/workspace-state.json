@@ -1,0 +1,506 @@
+{
+  "object" : {
+    "artifacts" : [
+      {
+        "kind" : {
+          "xcframework" : {
+
+          }
+        },
+        "packageRef" : {
+          "identity" : "authing-binary",
+          "kind" : "remoteSourceControl",
+          "location" : "https://github.com/Authing/authing-binary",
+          "name" : "authing-binary"
+        },
+        "path" : "/Users/yansongtu/Documents/MolyMemo/.swiftpm-xcode/packages/artifacts/authing-binary/AuthingOTP/AuthingOTP.xcframework",
+        "source" : {
+          "checksum" : "de772b0337b1596c2a66a22b39695dca26bf24f3e01f8649d69cf375a5fc46a9",
+          "type" : "remote",
+          "url" : "https://github.com/Authing/authing-binary/releases/download/1.1.7/AuthingOTP.xcframework.zip"
+        },
+        "targetName" : "AuthingOTP"
+      },
+      {
+        "kind" : {
+          "xcframework" : {
+
+          }
+        },
+        "packageRef" : {
+          "identity" : "authing-binary",
+          "kind" : "remoteSourceControl",
+          "location" : "https://github.com/Authing/authing-binary",
+          "name" : "authing-binary"
+        },
+        "path" : "/Users/yansongtu/Documents/MolyMemo/.swiftpm-xcode/packages/artifacts/authing-binary/Linkedin/Linkedin.xcframework",
+        "source" : {
+          "checksum" : "11de6c2e408690cf457efe65d86ef732b56059625f4208d38f8256f3b2769089",
+          "type" : "remote",
+          "url" : "https://github.com/Authing/authing-binary/releases/download/1.1.3/Linkedin.xcframework.zip"
+        },
+        "targetName" : "Linkedin"
+      },
+      {
+        "kind" : {
+          "xcframework" : {
+
+          }
+        },
+        "packageRef" : {
+          "identity" : "authing-binary",
+          "kind" : "remoteSourceControl",
+          "location" : "https://github.com/Authing/authing-binary",
+          "name" : "authing-binary"
+        },
+        "path" : "/Users/yansongtu/Documents/MolyMemo/.swiftpm-xcode/packages/artifacts/authing-binary/Google/Google.xcframework",
+        "source" : {
+          "checksum" : "ecad8922805c67697c0f1b08009941d062629c9a5039d4c09d4e5eebe2fb08f6",
+          "type" : "remote",
+          "url" : "https://github.com/Authing/authing-binary/releases/download/1.1.1/Google.xcframework.zip"
+        },
+        "targetName" : "Google"
+      },
+      {
+        "kind" : {
+          "xcframework" : {
+
+          }
+        },
+        "packageRef" : {
+          "identity" : "authing-binary",
+          "kind" : "remoteSourceControl",
+          "location" : "https://github.com/Authing/authing-binary",
+          "name" : "authing-binary"
+        },
+        "path" : "/Users/yansongtu/Documents/MolyMemo/.swiftpm-xcode/packages/artifacts/authing-binary/Baidu/Baidu.xcframework",
+        "source" : {
+          "checksum" : "b3cf244393db35bb38e216f8c2ddfd611962a59b0a84d14ae9f83ed62a5fd4bd",
+          "type" : "remote",
+          "url" : "https://github.com/Authing/authing-binary/releases/download/1.1.2/Baidu.xcframework.zip"
+        },
+        "targetName" : "Baidu"
+      },
+      {
+        "kind" : {
+          "xcframework" : {
+
+          }
+        },
+        "packageRef" : {
+          "identity" : "authing-binary",
+          "kind" : "remoteSourceControl",
+          "location" : "https://github.com/Authing/authing-binary",
+          "name" : "authing-binary"
+        },
+        "path" : "/Users/yansongtu/Documents/MolyMemo/.swiftpm-xcode/packages/artifacts/authing-binary/Weibo/Weibo.xcframework",
+        "source" : {
+          "checksum" : "8a2a42e69298722eb9e8e72d88eff06fcb1290c971bc2db96a40e8c720e5ad15",
+          "type" : "remote",
+          "url" : "https://github.com/Authing/authing-binary/releases/download/1.1.2/Weibo.xcframework.zip"
+        },
+        "targetName" : "Weibo"
+      },
+      {
+        "kind" : {
+          "xcframework" : {
+
+          }
+        },
+        "packageRef" : {
+          "identity" : "authing-binary",
+          "kind" : "remoteSourceControl",
+          "location" : "https://github.com/Authing/authing-binary",
+          "name" : "authing-binary"
+        },
+        "path" : "/Users/yansongtu/Documents/MolyMemo/.swiftpm-xcode/packages/artifacts/authing-binary/LarkLogin/LarkLogin.xcframework",
+        "source" : {
+          "checksum" : "826e59112c7284e594e2ee353dfe9e8db983b98d7ce5226a4f8bea3902eeb655",
+          "type" : "remote",
+          "url" : "https://github.com/Authing/authing-binary/releases/download/1.1.1/LarkLogin.xcframework.zip"
+        },
+        "targetName" : "LarkLogin"
+      },
+      {
+        "kind" : {
+          "xcframework" : {
+
+          }
+        },
+        "packageRef" : {
+          "identity" : "authing-binary",
+          "kind" : "remoteSourceControl",
+          "location" : "https://github.com/Authing/authing-binary",
+          "name" : "authing-binary"
+        },
+        "path" : "/Users/yansongtu/Documents/MolyMemo/.swiftpm-xcode/packages/artifacts/authing-binary/WeCom/WeCom.xcframework",
+        "source" : {
+          "checksum" : "7b876a67e0f71060a4777a1fed3449818a2e953e3d8e12598710851aa5dd98ba",
+          "type" : "remote",
+          "url" : "https://github.com/Authing/authing-binary/releases/download/1.1.9/WeCom.xcframework.zip"
+        },
+        "targetName" : "WeCom"
+      },
+      {
+        "kind" : {
+          "xcframework" : {
+
+          }
+        },
+        "packageRef" : {
+          "identity" : "authing-binary",
+          "kind" : "remoteSourceControl",
+          "location" : "https://github.com/Authing/authing-binary",
+          "name" : "authing-binary"
+        },
+        "path" : "/Users/yansongtu/Documents/MolyMemo/.swiftpm-xcode/packages/artifacts/authing-binary/Amazon/Amazon.xcframework",
+        "source" : {
+          "checksum" : "1f01a261e1d02551575c5000ee2e61874f932e6ebdb0370824b367d61c37f136",
+          "type" : "remote",
+          "url" : "https://github.com/Authing/authing-binary/releases/download/1.1.8/Amazon.xcframework.zip"
+        },
+        "targetName" : "Amazon"
+      },
+      {
+        "kind" : {
+          "xcframework" : {
+
+          }
+        },
+        "packageRef" : {
+          "identity" : "authing-binary",
+          "kind" : "remoteSourceControl",
+          "location" : "https://github.com/Authing/authing-binary",
+          "name" : "authing-binary"
+        },
+        "path" : "/Users/yansongtu/Documents/MolyMemo/.swiftpm-xcode/packages/artifacts/authing-binary/Douyin/Douyin.xcframework",
+        "source" : {
+          "checksum" : "1c2ed7a3bbf715dbea0801f9e3582e4a101fc3528841ad78de49e3de1f6e63ee",
+          "type" : "remote",
+          "url" : "https://github.com/Authing/authing-binary/releases/download/1.1.5/Douyin.xcframework.zip"
+        },
+        "targetName" : "Douyin"
+      },
+      {
+        "kind" : {
+          "xcframework" : {
+
+          }
+        },
+        "packageRef" : {
+          "identity" : "authing-binary",
+          "kind" : "remoteSourceControl",
+          "location" : "https://github.com/Authing/authing-binary",
+          "name" : "authing-binary"
+        },
+        "path" : "/Users/yansongtu/Documents/MolyMemo/.swiftpm-xcode/packages/artifacts/authing-binary/WebAuthn/WebAuthn.xcframework",
+        "source" : {
+          "checksum" : "6d9b7b4c1d09fcf9419de86113bf9945e126961f18bbe12085dbe97cfaa70c7a",
+          "type" : "remote",
+          "url" : "https://github.com/Authing/authing-binary/releases/download/1.1.1/WebAuthn.xcframework.zip"
+        },
+        "targetName" : "WebAuthn"
+      },
+      {
+        "kind" : {
+          "xcframework" : {
+
+          }
+        },
+        "packageRef" : {
+          "identity" : "authing-binary",
+          "kind" : "remoteSourceControl",
+          "location" : "https://github.com/Authing/authing-binary",
+          "name" : "authing-binary"
+        },
+        "path" : "/Users/yansongtu/Documents/MolyMemo/.swiftpm-xcode/packages/artifacts/authing-binary/GitLab/GitLab.xcframework",
+        "source" : {
+          "checksum" : "668d6fc73312bf7bd9723ed7482883119569070a22f48df08f4fc6b870087522",
+          "type" : "remote",
+          "url" : "https://github.com/Authing/authing-binary/releases/download/1.1.5/GitLab.xcframework.zip"
+        },
+        "targetName" : "GitLab"
+      },
+      {
+        "kind" : {
+          "xcframework" : {
+
+          }
+        },
+        "packageRef" : {
+          "identity" : "authing-binary",
+          "kind" : "remoteSourceControl",
+          "location" : "https://github.com/Authing/authing-binary",
+          "name" : "authing-binary"
+        },
+        "path" : "/Users/yansongtu/Documents/MolyMemo/.swiftpm-xcode/packages/artifacts/authing-binary/Tencent/Tencent.xcframework",
+        "source" : {
+          "checksum" : "1f1c030e84e1948aaf6c3e126beb71245b1b8d2f8d237e58b34465cec3e3804a",
+          "type" : "remote",
+          "url" : "https://github.com/Authing/authing-binary/releases/download/1.1.2/Tencent.xcframework.zip"
+        },
+        "targetName" : "Tencent"
+      },
+      {
+        "kind" : {
+          "xcframework" : {
+
+          }
+        },
+        "packageRef" : {
+          "identity" : "authing-binary",
+          "kind" : "remoteSourceControl",
+          "location" : "https://github.com/Authing/authing-binary",
+          "name" : "authing-binary"
+        },
+        "path" : "/Users/yansongtu/Documents/MolyMemo/.swiftpm-xcode/packages/artifacts/authing-binary/DingTalk/DingTalk.xcframework",
+        "source" : {
+          "checksum" : "a27517278002ee7618d58f9fad80f940688453bb0442411c70d16575434e33e6",
+          "type" : "remote",
+          "url" : "https://github.com/Authing/authing-binary/releases/download/1.1.3/DingTalk.xcframework.zip"
+        },
+        "targetName" : "DingTalk"
+      },
+      {
+        "kind" : {
+          "xcframework" : {
+
+          }
+        },
+        "packageRef" : {
+          "identity" : "authing-binary",
+          "kind" : "remoteSourceControl",
+          "location" : "https://github.com/Authing/authing-binary",
+          "name" : "authing-binary"
+        },
+        "path" : "/Users/yansongtu/Documents/MolyMemo/.swiftpm-xcode/packages/artifacts/authing-binary/Gitee/Gitee.xcframework",
+        "source" : {
+          "checksum" : "387ec981e99470658d3a29837bb20268dbe0b8819c9173ff28f978f5562490c9",
+          "type" : "remote",
+          "url" : "https://github.com/Authing/authing-binary/releases/download/1.1.4/Gitee.xcframework.zip"
+        },
+        "targetName" : "Gitee"
+      },
+      {
+        "kind" : {
+          "xcframework" : {
+
+          }
+        },
+        "packageRef" : {
+          "identity" : "authing-binary",
+          "kind" : "remoteSourceControl",
+          "location" : "https://github.com/Authing/authing-binary",
+          "name" : "authing-binary"
+        },
+        "path" : "/Users/yansongtu/Documents/MolyMemo/.swiftpm-xcode/packages/artifacts/authing-binary/Line/Line.xcframework",
+        "source" : {
+          "checksum" : "5f7cee7bc72df4e4c4c989bb57f7743951c1e4ee6607c6b616213fd9f0a38f80",
+          "type" : "remote",
+          "url" : "https://github.com/Authing/authing-binary/releases/download/1.1.7/Line.xcframework.zip"
+        },
+        "targetName" : "Line"
+      },
+      {
+        "kind" : {
+          "xcframework" : {
+
+          }
+        },
+        "packageRef" : {
+          "identity" : "authing-binary",
+          "kind" : "remoteSourceControl",
+          "location" : "https://github.com/Authing/authing-binary",
+          "name" : "authing-binary"
+        },
+        "path" : "/Users/yansongtu/Documents/MolyMemo/.swiftpm-xcode/packages/artifacts/authing-binary/Wechat/Wechat.xcframework",
+        "source" : {
+          "checksum" : "738d794e737622dff8749565715a8d65c14ab01b1f0277a55333b61fbdfa9024",
+          "type" : "remote",
+          "url" : "https://github.com/Authing/authing-binary/releases/download/1.2.0/Wechat.xcframework.zip"
+        },
+        "targetName" : "Wechat"
+      },
+      {
+        "kind" : {
+          "xcframework" : {
+
+          }
+        },
+        "packageRef" : {
+          "identity" : "authing-binary",
+          "kind" : "remoteSourceControl",
+          "location" : "https://github.com/Authing/authing-binary",
+          "name" : "authing-binary"
+        },
+        "path" : "/Users/yansongtu/Documents/MolyMemo/.swiftpm-xcode/packages/artifacts/authing-binary/Xiaomi/Xiaomi.xcframework",
+        "source" : {
+          "checksum" : "2c98658cf00ab77c8f94e762cce57e7ab6e504dda501f959b3ff81eabfcfade3",
+          "type" : "remote",
+          "url" : "https://github.com/Authing/authing-binary/releases/download/1.1.5/Xiaomi.xcframework.zip"
+        },
+        "targetName" : "Xiaomi"
+      },
+      {
+        "kind" : {
+          "xcframework" : {
+
+          }
+        },
+        "packageRef" : {
+          "identity" : "authing-binary",
+          "kind" : "remoteSourceControl",
+          "location" : "https://github.com/Authing/authing-binary",
+          "name" : "authing-binary"
+        },
+        "path" : "/Users/yansongtu/Documents/MolyMemo/.swiftpm-xcode/packages/artifacts/authing-binary/Facebook/Facebook.xcframework",
+        "source" : {
+          "checksum" : "3be6a0b403a371d42c76d98ea5d98997839d5396732c2081f19579b79bd3bc42",
+          "type" : "remote",
+          "url" : "https://github.com/Authing/authing-binary/releases/download/1.1.1/Facebook.xcframework.zip"
+        },
+        "targetName" : "Facebook"
+      },
+      {
+        "kind" : {
+          "xcframework" : {
+
+          }
+        },
+        "packageRef" : {
+          "identity" : "authing-binary",
+          "kind" : "remoteSourceControl",
+          "location" : "https://github.com/Authing/authing-binary",
+          "name" : "authing-binary"
+        },
+        "path" : "/Users/yansongtu/Documents/MolyMemo/.swiftpm-xcode/packages/artifacts/authing-binary/OneAuth/OneAuth.xcframework",
+        "source" : {
+          "checksum" : "b1f32a867373515765d5a52fd423eb18409358e06618ef340eb071a79db1c4f4",
+          "type" : "remote",
+          "url" : "https://github.com/Authing/authing-binary/releases/download/1.1.1/OneAuth.xcframework.zip"
+        },
+        "targetName" : "OneAuth"
+      },
+      {
+        "kind" : {
+          "xcframework" : {
+
+          }
+        },
+        "packageRef" : {
+          "identity" : "authing-binary",
+          "kind" : "remoteSourceControl",
+          "location" : "https://github.com/Authing/authing-binary",
+          "name" : "authing-binary"
+        },
+        "path" : "/Users/yansongtu/Documents/MolyMemo/.swiftpm-xcode/packages/artifacts/authing-binary/Kuaishou/Kuaishou.xcframework",
+        "source" : {
+          "checksum" : "62398d7ff2c03496441d63500b6af522ad28dad53b815ffcb5a13ce464e2fb6c",
+          "type" : "remote",
+          "url" : "https://github.com/Authing/authing-binary/releases/download/1.1.5/Kuaishou.xcframework.zip"
+        },
+        "targetName" : "Kuaishou"
+      },
+      {
+        "kind" : {
+          "xcframework" : {
+
+          }
+        },
+        "packageRef" : {
+          "identity" : "authing-binary",
+          "kind" : "remoteSourceControl",
+          "location" : "https://github.com/Authing/authing-binary",
+          "name" : "authing-binary"
+        },
+        "path" : "/Users/yansongtu/Documents/MolyMemo/.swiftpm-xcode/packages/artifacts/authing-binary/Github/Github.xcframework",
+        "source" : {
+          "checksum" : "556e3ac1b2ea6fb7a34ab8e175456abf12eed7c415bef80661f40fa61382c6fc",
+          "type" : "remote",
+          "url" : "https://github.com/Authing/authing-binary/releases/download/1.1.4/Github.xcframework.zip"
+        },
+        "targetName" : "Github"
+      },
+      {
+        "kind" : {
+          "xcframework" : {
+
+          }
+        },
+        "packageRef" : {
+          "identity" : "authing-binary",
+          "kind" : "remoteSourceControl",
+          "location" : "https://github.com/Authing/authing-binary",
+          "name" : "authing-binary"
+        },
+        "path" : "/Users/yansongtu/Documents/MolyMemo/.swiftpm-xcode/packages/artifacts/authing-binary/Slack/Slack.xcframework",
+        "source" : {
+          "checksum" : "0043c9d31aafd266e84f23ebe7c96109b0befaced3ee9c74b91ac6d964f9ad0c",
+          "type" : "remote",
+          "url" : "https://github.com/Authing/authing-binary/releases/download/1.1.7/Slack.xcframework.zip"
+        },
+        "targetName" : "Slack"
+      },
+      {
+        "kind" : {
+          "xcframework" : {
+
+          }
+        },
+        "packageRef" : {
+          "identity" : "guard-ios",
+          "kind" : "remoteSourceControl",
+          "location" : "https://github.com/Authing/guard-ios",
+          "name" : "Guard"
+        },
+        "path" : "/Users/yansongtu/Documents/MolyMemo/.swiftpm-xcode/packages/artifacts/guard-ios/Guard/Guard.xcframework",
+        "source" : {
+          "checksum" : "c3557b941069a8a9584d4372bc1f9e3ca9caac33191014141d8e47ae66a70ca7",
+          "type" : "remote",
+          "url" : "https://github.com/Authing/guard-ios/releases/download/1.4.10/Guard.xcframework.zip"
+        },
+        "targetName" : "Guard"
+      }
+    ],
+    "dependencies" : [
+      {
+        "basedOn" : null,
+        "packageRef" : {
+          "identity" : "authing-binary",
+          "kind" : "remoteSourceControl",
+          "location" : "https://github.com/Authing/authing-binary",
+          "name" : "authing-binary"
+        },
+        "state" : {
+          "checkoutState" : {
+            "revision" : "a2036d915d748fef933e52fec79e7d51c3f51a52",
+            "version" : "1.2.0"
+          },
+          "name" : "sourceControlCheckout"
+        },
+        "subpath" : "authing-binary"
+      },
+      {
+        "basedOn" : null,
+        "packageRef" : {
+          "identity" : "guard-ios",
+          "kind" : "remoteSourceControl",
+          "location" : "https://github.com/Authing/guard-ios",
+          "name" : "Guard"
+        },
+        "state" : {
+          "checkoutState" : {
+            "revision" : "4a7885d61ba547c47254123c908b70eeff639d1b",
+            "version" : "1.4.10"
+          },
+          "name" : "sourceControlCheckout"
+        },
+        "subpath" : "guard-ios"
+      }
+    ],
+    "prebuilts" : [
+
+    ]
+  },
+  "version" : 7
+}

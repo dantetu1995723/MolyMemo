@@ -21,9 +21,9 @@ struct UserInfo: Codable {
     let address: String?
     let country: String?
     let locationUpdatedAt: String?
-    let wechatWorkInfo: String?
-    let dingtalkInfo: String?
-    let feishuInfo: String?
+    let wechatWorkInfo: JSONValue?
+    let dingtalkInfo: JSONValue?
+    let feishuInfo: JSONValue?
     let createdAt: String?
     let updatedAt: String?
 

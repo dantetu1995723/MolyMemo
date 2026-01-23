@@ -1,0 +1,11 @@
+framework module GitLab {
+  umbrella header "GitLab.h"
+
+  export *
+  module * { export * }
+}
+
+module GitLab.Swift {
+  header "GitLab-Swift.h"
+  requires objc
+}

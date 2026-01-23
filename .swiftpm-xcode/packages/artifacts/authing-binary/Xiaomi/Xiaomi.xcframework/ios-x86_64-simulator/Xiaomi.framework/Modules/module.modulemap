@@ -1,0 +1,11 @@
+framework module Xiaomi {
+  umbrella header "Xiaomi.h"
+
+  export *
+  module * { export * }
+}
+
+module Xiaomi.Swift {
+  header "Xiaomi-Swift.h"
+  requires objc
+}

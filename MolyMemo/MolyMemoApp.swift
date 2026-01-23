@@ -94,6 +94,10 @@ struct MolyMemoApp: App {
                     }
                 }
                 .onOpenURL { url in
+                    // 飞书移动端 SSO SDK 回调：优先交给 SDK 消费
+                    if FeishuSSOBridge.handleOpenURL(url) {
+                        return
+                    }
                     handleIncomingURL(url, modelContext: modelContainer.mainContext)
                 }
                 .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("StartRecordingFromWidget"))) { notification in

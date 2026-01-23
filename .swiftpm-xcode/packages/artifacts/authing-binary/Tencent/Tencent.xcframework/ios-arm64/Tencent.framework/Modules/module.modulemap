@@ -1,0 +1,11 @@
+framework module Tencent {
+  umbrella header "Tencent.h"
+
+  export *
+  module * { export * }
+}
+
+module Tencent.Swift {
+    header "Tencent-Swift.h"
+    requires objc
+}

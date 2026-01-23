@@ -1,0 +1,11 @@
+framework module Facebook {
+  umbrella header "Facebook.h"
+
+  export *
+  module * { export * }
+}
+
+module Facebook.Swift {
+  header "Facebook-Swift.h"
+  requires objc
+}

@@ -5,8 +5,13 @@ import AuthenticationServices
 class FeishuAPIService: NSObject, ObservableObject {
     static let shared = FeishuAPIService()
     
-    // 飞书应用配置 - 用户自行配置
-    private let redirectUri = "\(AppIdentifiers.urlScheme)://feishu/callback"  // 回调地址
+    // 默认 App ID（用于未配置时兜底；App ID 非敏感信息）
+    private let bundledDefaultAppId = "cli_a9fa1ef2c4381cb1"
+
+    // 飞书应用配置 - 回调地址
+    // - 按飞书「移动端 SSO」接入要求：回跳 scheme 通常需要使用 “AppID 去掉下划线” 的形式
+    // - 这里复用 `FeishuSSOBridge.callbackScheme`，避免网页 OAuth 继续触发 redirect_uri 不合法（20029）
+    private let redirectUri = "\(FeishuSSOBridge.callbackScheme)://feishu/callback"
     
     // 从UserDefaults读取用户配置的凭证
     var appId: String {
@@ -16,6 +21,17 @@ class FeishuAPIService: NSObject, ObservableObject {
     var appSecret: String {
         UserDefaults.standard.string(forKey: "feishu_app_secret") ?? ""
     }
+
+    private var effectiveAppId: String {
+        let configured = appId.trimmingCharacters(in: .whitespacesAndNewlines)
+        return configured.isEmpty ? bundledDefaultAppId : configured
+    }
+
+    /// 当前 OAuth 实际使用的 App ID（含内置默认兜底）
+    var oauthAppIdInUse: String { effectiveAppId }
+
+    /// 当前 OAuth 使用的 redirect_uri（便于排查飞书后台白名单）
+    var oauthRedirectUriInUse: String { redirectUri }
     
     // 检查是否已配置凭证
     var isConfigured: Bool {
@@ -92,7 +108,7 @@ class FeishuAPIService: NSObject, ObservableObject {
         }
         
         urlComponents.queryItems = [
-            URLQueryItem(name: "app_id", value: appId),
+            URLQueryItem(name: "app_id", value: effectiveAppId),
             URLQueryItem(name: "redirect_uri", value: redirectUri),
             URLQueryItem(name: "scope", value: scope),
             URLQueryItem(name: "state", value: UUID().uuidString)
@@ -106,7 +122,7 @@ class FeishuAPIService: NSObject, ObservableObject {
         return try await withCheckedThrowingContinuation { continuation in
             let session = ASWebAuthenticationSession(
                 url: authURL,
-                callbackURLScheme: AppIdentifiers.urlScheme
+                callbackURLScheme: FeishuSSOBridge.callbackScheme
             ) { callbackURL, error in
                 if let error = error {
                     continuation.resume(throwing: error)
@@ -131,6 +147,60 @@ class FeishuAPIService: NSObject, ObservableObject {
                 }
             }
             
+            session.presentationContextProvider = presentationContext
+            session.prefersEphemeralWebBrowserSession = false
+            session.start()
+        }
+    }
+
+    /// 仅获取 OAuth 授权码（不在端上换取 token），用于把 code 交给后端校验/绑定。
+    /// - Note: 与 `startLogin`（日历同步端上换 token）分开，避免流程耦合与配置冲突。
+    func startAuthCodeOnly(
+        presentationContext: ASWebAuthenticationPresentationContextProviding,
+        scope: String = "contact:user.base:readonly"
+    ) async throws -> String {
+        guard !effectiveAppId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw FeishuError.missingAppId
+        }
+
+        guard var urlComponents = URLComponents(string: "https://open.feishu.cn/open-apis/authen/v1/authorize") else {
+            throw FeishuError.invalidURL
+        }
+
+        urlComponents.queryItems = [
+            URLQueryItem(name: "app_id", value: effectiveAppId),
+            URLQueryItem(name: "redirect_uri", value: redirectUri),
+            URLQueryItem(name: "scope", value: scope),
+            URLQueryItem(name: "state", value: UUID().uuidString)
+        ]
+
+        guard let authURL = urlComponents.url else {
+            throw FeishuError.invalidURL
+        }
+
+        return try await withCheckedThrowingContinuation { continuation in
+            let session = ASWebAuthenticationSession(
+                url: authURL,
+                callbackURLScheme: FeishuSSOBridge.callbackScheme
+            ) { callbackURL, error in
+                if let error = error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+
+                guard
+                    let callbackURL,
+                    let code = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false)?
+                        .queryItems?.first(where: { $0.name == "code" })?.value,
+                    !code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                else {
+                    continuation.resume(throwing: FeishuError.noAuthCode)
+                    return
+                }
+
+                continuation.resume(returning: code)
+            }
+
             session.presentationContextProvider = presentationContext
             session.prefersEphemeralWebBrowserSession = false
             session.start()
@@ -510,6 +580,7 @@ enum FeishuError: LocalizedError {
     case invalidResponse
     case notLoggedIn
     case noRefreshToken
+    case missingAppId
     
     var errorDescription: String? {
         switch self {
@@ -525,6 +596,8 @@ enum FeishuError: LocalizedError {
             return "未登录飞书账号"
         case .noRefreshToken:
             return "无刷新令牌"
+        case .missingAppId:
+            return "请先在设置中配置飞书 App ID"
         }
     }
 }

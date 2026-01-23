@@ -7,6 +7,7 @@ struct ModuleNavigationBar: View {
     let onBack: () -> Void
     var trailingIcon: String?
     var trailingAction: (() -> Void)?
+    var customLeading: AnyView?
     var customTrailing: AnyView?
     
     private let buttonSize: CGFloat = 34
@@ -17,6 +18,7 @@ struct ModuleNavigationBar: View {
         onBack: @escaping () -> Void,
         trailingIcon: String? = nil,
         trailingAction: (() -> Void)? = nil,
+        customLeading: AnyView? = nil,
         customTrailing: AnyView? = nil
     ) {
         self.title = title
@@ -24,6 +26,7 @@ struct ModuleNavigationBar: View {
         self.onBack = onBack
         self.trailingIcon = trailingIcon
         self.trailingAction = trailingAction
+        self.customLeading = customLeading
         self.customTrailing = customTrailing
     }
     
@@ -37,7 +40,12 @@ struct ModuleNavigationBar: View {
             
             // 左侧返回按钮
             HStack {
-                navButton(icon: "chevron.left", action: onBack)
+                HStack(spacing: 8) {
+                    navButton(icon: "chevron.left", action: onBack)
+                    if let customLeading {
+                        customLeading
+                    }
+                }
                 Spacer()
             }
             

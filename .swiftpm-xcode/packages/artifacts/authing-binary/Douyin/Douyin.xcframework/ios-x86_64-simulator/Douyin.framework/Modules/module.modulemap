@@ -1,0 +1,11 @@
+framework module Douyin {
+  umbrella header "Douyin.h"
+
+  export *
+  module * { export * }
+}
+
+module Douyin.Swift {
+  header "Douyin-Swift.h"
+  requires objc
+}

@@ -1,0 +1,11 @@
+framework module Weibo {
+  umbrella header "Weibo.h"
+
+  export *
+  module * { export * }
+}
+
+module Weibo.Swift {
+    header "Weibo-Swift.h"
+    requires objc
+}

@@ -1,0 +1,11 @@
+framework module WeCom {
+  umbrella header "WeCom.h"
+
+  export *
+  module * { export * }
+}
+
+module WeCom.Swift {
+  header "WeCom-Swift.h"
+  requires objc
+}

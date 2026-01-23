@@ -1,0 +1,11 @@
+framework module Google {
+  umbrella header "Google.h"
+
+  export *
+  module * { export * }
+}
+
+module Google.Swift {
+  header "Google-Swift.h"
+  requires objc
+}

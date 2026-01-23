@@ -1,0 +1,22 @@
+// swift-interface-format-version: 1.0
+// swift-compiler-version: Apple Swift version 5.7.2 (swiftlang-5.7.2.135.5 clang-1400.0.29.51)
+// swift-module-flags: -target arm64-apple-ios11.4 -enable-objc-interop -enable-library-evolution -swift-version 5 -enforce-exclusivity=checked -O -module-name LarkLogin
+// swift-module-flags-ignorable: -enable-bare-slash-regex
+import Foundation
+import Guard
+@_exported import LarkLogin
+import Swift
+import UIKit
+import _Concurrency
+import _StringProcessing
+@_inheritsConvenienceInitializers @_Concurrency.MainActor(unsafe) open class LarkLoginButton : Guard.SocialLoginButton {
+  @_Concurrency.MainActor(unsafe) @objc override dynamic public init(frame: CoreFoundation.CGRect)
+  @_Concurrency.MainActor(unsafe) @objc required dynamic public init?(coder aDecoder: Foundation.NSCoder)
+  @objc deinit
+}
+@_hasMissingDesignatedInitializers open class LarkLogin {
+  public static func setupLark(_ appid: Swift.String, Scheme: Swift.String)
+  public static func login(viewController: UIKit.UIViewController?, completion: @escaping Guard.Authing.AuthCompletion)
+  public static func handleUrl(url: Foundation.URL) -> Swift.Bool
+  @objc deinit
+}

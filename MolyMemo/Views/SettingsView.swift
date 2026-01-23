@@ -1,6 +1,7 @@
 import SwiftUI
 import UIKit
 import Combine
+import AuthenticationServices
 
 // 设置页面 - 简约白色现代风
 struct SettingsView: View {
@@ -25,6 +26,12 @@ struct SettingsView: View {
     @State private var draftAddress: String = ""
     @State private var draftCompany: String = ""
     @State private var draftIndustry: String = ""
+
+    @State private var isFeishuAuthorizing: Bool = false
+
+    private var isFeishuBound: Bool {
+        authStore.userInfo?.feishuInfo?.hasMeaningfulValue ?? false
+    }
     
     enum Field: Hashable {
         case username, email, wechat, city, address, company, industry
@@ -44,8 +51,10 @@ struct SettingsView: View {
                             // 用户详细信息卡片
                             if let userInfo = authStore.userInfo {
                                 infoSection(userInfo: userInfo, proxy: proxy)
+                            } else if let err = authStore.userInfoFetchError, !authStore.isLoadingUserInfo {
+                                userInfoError(err)
                             } else {
-                                infoSkeleton
+                                infoLoading
                             }
                             
                             // 功能操作区
@@ -76,13 +85,6 @@ struct SettingsView: View {
                             }
                         }
                     }
-                }
-                .opacity(authStore.isLoadingUserInfo ? 0.15 : 1.0)
-                .allowsHitTesting(!authStore.isLoadingUserInfo)
-
-                // 全屏 Loading：GET 用户信息期间覆盖整个 sheet
-                if authStore.isLoadingUserInfo {
-                    loadingOverlay
                 }
             }
             .navigationTitle("个人中心")
@@ -212,6 +214,8 @@ struct SettingsView: View {
                 .padding(.bottom, 8)
             
             VStack(spacing: 0) {
+                infoRow(label: "飞书授权", value: isFeishuBound ? "已授权" : "未授权")
+                Divider().padding(.horizontal, 16)
                 editableRow(
                     id: .username,
                     label: "昵称",
@@ -294,7 +298,7 @@ struct SettingsView: View {
         }
     }
 
-    private var infoSkeleton: some View {
+    private var infoLoading: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("账户信息")
                 .font(.system(size: 13, weight: .semibold))
@@ -303,50 +307,70 @@ struct SettingsView: View {
                 .padding(.bottom, 8)
 
             VStack(spacing: 0) {
-                infoRow(label: "邮箱", value: "—")
+                loadingRow(label: "飞书授权")
                 Divider().padding(.horizontal, 16)
-                infoRow(label: "微信", value: "—")
+                loadingRow(label: "昵称")
                 Divider().padding(.horizontal, 16)
-                infoRow(label: "城市", value: "—")
+                loadingRow(label: "邮箱")
                 Divider().padding(.horizontal, 16)
-                infoRow(label: "地址", value: "—")
+                loadingRow(label: "微信")
                 Divider().padding(.horizontal, 16)
-                infoRow(label: "公司", value: "—")
+                loadingRow(label: "城市")
                 Divider().padding(.horizontal, 16)
-                infoRow(label: "行业", value: "—")
+                loadingRow(label: "地址")
                 Divider().padding(.horizontal, 16)
-                infoRow(label: "注册时间", value: "—")
+                loadingRow(label: "公司")
+                Divider().padding(.horizontal, 16)
+                loadingRow(label: "行业")
+                Divider().padding(.horizontal, 16)
+                loadingRow(label: "注册时间")
             }
             .background(Color.white)
             .cornerRadius(16)
             .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 4)
         }
-        .redacted(reason: .placeholder)
-        .shimmering(active: true)
     }
+    
+    private func userInfoError(_ message: String) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("账户信息")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(.black.opacity(0.4))
+                .padding(.leading, 12)
+                .padding(.bottom, 2)
 
-    private var loadingOverlay: some View {
-        ZStack {
-            Color.black.opacity(0.06)
-                .ignoresSafeArea()
+            VStack(alignment: .leading, spacing: 10) {
+                Text(message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "加载失败，请稍后重试" : message)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(.black.opacity(0.7))
+                    .fixedSize(horizontal: false, vertical: true)
 
-            VStack(spacing: 10) {
-                ProgressView()
-                Text("正在加载…")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(.black.opacity(0.55))
+                HStack {
+                    Spacer()
+                    Button {
+                        HapticFeedback.light()
+                        Task { await authStore.fetchCurrentUserInfoRaw(forceRefresh: true) }
+                    } label: {
+                        Text("重新加载")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.black.opacity(0.8))
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(Color.black.opacity(0.06))
+                            )
+                    }
+                }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(Color.white)
-                    .shadow(color: .black.opacity(0.06), radius: 12, x: 0, y: 6)
-            )
+            .background(Color.white)
+            .cornerRadius(16)
+            .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 4)
         }
-        .transition(.opacity)
     }
-    
+
     private var actionSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("应用设置")
@@ -375,6 +399,38 @@ struct SettingsView: View {
                     .padding(.horizontal, 16)
                     .frame(height: 52)
                 }
+
+                Divider().padding(.horizontal, 16)
+
+                Button(action: {
+                    HapticFeedback.light()
+                    Task { await startFeishuAuthorize() }
+                }) {
+                    HStack {
+                        Image(systemName: "person.badge.key.fill")
+                            .foregroundColor(.black.opacity(0.7))
+                            .font(.system(size: 18))
+                        Text(isFeishuAuthorizing ? "飞书授权中…" : (isFeishuBound ? "飞书已授权" : "飞书授权登录"))
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundColor(.black.opacity(0.8))
+                        Spacer()
+                        if isFeishuAuthorizing {
+                            ProgressView()
+                                .scaleEffect(0.9)
+                        } else {
+                            Text(isFeishuBound ? "已授权" : "未授权")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(isFeishuBound ? .green.opacity(0.75) : .black.opacity(0.35))
+                                .padding(.trailing, 2)
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(.black.opacity(0.15))
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .frame(height: 52)
+                }
+                .disabled(isFeishuAuthorizing)
             }
             .background(Color.white)
             .cornerRadius(16)
@@ -423,6 +479,24 @@ struct SettingsView: View {
             Text(value)
                 .font(.system(size: 15, weight: .medium))
                 .foregroundColor(.black.opacity(0.85))
+        }
+        .padding(.horizontal, 16)
+        .frame(height: 52)
+    }
+
+    private func loadingRow(label: String) -> some View {
+        HStack(spacing: 10) {
+            Text(label)
+                .font(.system(size: 15))
+                .foregroundColor(.black.opacity(0.6))
+            Spacer()
+            HStack(spacing: 8) {
+                Text("正在加载")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(.black.opacity(0.35))
+                ProgressView()
+                    .scaleEffect(0.9)
+            }
         }
         .padding(.horizontal, 16)
         .frame(height: 52)
@@ -607,6 +681,103 @@ struct SettingsView: View {
         if let url = URL(string: "https://www.icloud.com/shortcuts/a9114a98c4ef48c698c5279d6c6f5585") {
             UIApplication.shared.open(url)
         }
+    }
+
+    private func startFeishuAuthorize() async {
+        if isFeishuAuthorizing { return }
+        isFeishuAuthorizing = true
+        defer { isFeishuAuthorizing = false }
+
+        print("🔐 [Feishu] 个人中心点击飞书授权登录")
+        print("🔐 [Feishu] SSO appId: \(FeishuSSOBridge.appId)")
+        print("🔐 [Feishu] SSO callback scheme: \(FeishuSSOBridge.callbackScheme)")
+
+        let sid = (authStore.sessionId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if sid.isEmpty {
+            print("🔐 [Feishu] 缺少登录态：X-Session-Id 为空")
+            return
+        }
+        let base = BackendChatConfig.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        if base.isEmpty {
+            print("🔐 [Feishu] 缺少后端 Base URL（BackendChatConfig.baseURL 为空）")
+            return
+        }
+
+        do {
+            // 只走「移动端 SSO SDK」：不使用网页 OAuth（避免 redirect_uri 20029）
+            let code = try await FeishuSSOBridge.authorizeForCode()
+            print("🔐 [Feishu] 获取到 SSO 授权码: \(maskSensitive(code))")
+
+            let raw = try await FeishuAuthService.verifyLarkAuthCode(
+                baseURL: BackendChatConfig.baseURL,
+                sessionId: sid,
+                code: code,
+                externalUserId: nil
+            )
+            print("🔐 [Feishu] 后端校验成功 raw: \(raw)")
+            printPrettyJSON(raw, tag: "🔐 [Feishu] verify_lark_auth_code pretty")
+
+            // 绑定后拉一次用户信息，便于你在控制台/个人中心看到 feishu_info 变化
+            await authStore.fetchCurrentUserInfoRaw(forceRefresh: true)
+
+            let info = await MainActor.run {
+                authStore.userInfo?.feishuInfo?.compactJSONString?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            }
+            if info.isEmpty {
+                print("🔐 [Feishu] userInfo.feishu_info 为空（可能未绑定成功或后端未回填字段）")
+            } else {
+                print("🔐 [Feishu] userInfo.feishu_info: \(summarizeForLog(info))")
+                printPrettyJSON(info, tag: "🔐 [Feishu] feishu_info pretty")
+            }
+        } catch {
+            print("🔐 [Feishu] 授权失败：\((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)")
+        }
+    }
+
+    private func maskSensitive(_ s: String) -> String {
+        let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard t.count > 10 else { return t }
+        let prefix = t.prefix(4)
+        let suffix = t.suffix(4)
+        return "\(prefix)…\(suffix) (\(t.count))"
+    }
+
+    private func summarizeForLog(_ raw: String, maxLen: Int = 260) -> String {
+        let t = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard t.count > maxLen else { return t }
+        let head = t.prefix(maxLen)
+        return "\(head)…(\(t.count))"
+    }
+
+    private func printPrettyJSON(_ raw: String, tag: String) {
+        let t = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { return }
+        guard let data = t.data(using: .utf8) else { return }
+        guard let obj = try? JSONSerialization.jsonObject(with: data, options: []) else { return }
+        guard let pretty = try? JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted, .sortedKeys]) else { return }
+        let s = String(data: pretty, encoding: .utf8) ?? ""
+        guard !s.isEmpty else { return }
+        print("\(tag): \(summarizeForLog(s, maxLen: 1600))")
+    }
+}
+
+private final class WebAuthPresentationContextProvider: NSObject, ASWebAuthenticationPresentationContextProviding {
+    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+        // `ASWebAuthenticationSession` 可能在非主线程回调此方法。
+        // UIKit/scene/window 相关 API 必须在主线程（MainActor）访问，否则会触发紫色告警。
+        if Thread.isMainThread {
+            return MainActor.assumeIsolated { Self.presentationAnchorOnMainActor() }
+        }
+        return DispatchQueue.main.sync {
+            MainActor.assumeIsolated { Self.presentationAnchorOnMainActor() }
+        }
+    }
+
+    @MainActor
+    private static func presentationAnchorOnMainActor() -> ASPresentationAnchor {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let windows = scenes.flatMap(\.windows)
+        return windows.first(where: { $0.isKeyWindow }) ?? windows.first ?? UIWindow()
     }
 }
 
