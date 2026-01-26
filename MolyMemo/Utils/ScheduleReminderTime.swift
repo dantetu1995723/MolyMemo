@@ -46,7 +46,7 @@ enum ScheduleReminderTime {
         return nil
     }
     
-    private static func parseRelativeOffsetSeconds(_ raw: String) -> TimeInterval? {
+    static func parseRelativeOffsetSeconds(_ raw: String) -> TimeInterval? {
         // 形如：-15m / +2h / 10m
         // - 后端常见是负号：表示“开始前”
         // - 这里也兼容正号/无符号

@@ -32,7 +32,7 @@ enum FeishuSSOBridge {
         let app = App(server: .feishu, appId: appId, scheme: callbackScheme)
         LarkSSO.register(apps: [app])
         LarkSSO.setupLang("zh")
-        LarkSSO.setupLog()
+        _ = LarkSSO.setupLog()
 
 #if DEBUG || targetEnvironment(simulator)
         print("🔐 [FeishuSSO] LarkSSOSDK setup ok. appId=\(appId) scheme=\(callbackScheme)")
@@ -42,7 +42,7 @@ enum FeishuSSOBridge {
     /// SwiftUI `.onOpenURL`：把回调 URL 交给 SDK 处理
     static func handleOpenURL(_ url: URL) -> Bool {
         // 官方 Demo：无条件交给 SDK handle
-        LarkSSO.handleURL(url)
+        _ = LarkSSO.handleURL(url)
         return url.scheme == callbackScheme
     }
 

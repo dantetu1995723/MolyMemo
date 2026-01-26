@@ -357,11 +357,11 @@ struct ContactEditView: View {
                     if !identity.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { payload["position"] = identity }
                     if !phoneNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { payload["phone"] = phoneNumber }
                     if let email = existingContact.email?.trimmingCharacters(in: .whitespacesAndNewlines), !email.isEmpty {
-                        payload["email"] = email
+                        payload["email"] = email as Any
                     }
                     if !relationship.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { payload["relationship_type"] = relationship }
                     if let notes = existingContact.notes?.trimmingCharacters(in: .whitespacesAndNewlines), !notes.isEmpty {
-                        payload["notes"] = notes
+                        payload["notes"] = notes as Any
                     }
                     
                     let result = try await ContactService.updateContact(remoteId: rid, payload: payload, keepLocalId: existingContact.id)

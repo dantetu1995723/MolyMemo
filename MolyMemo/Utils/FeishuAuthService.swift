@@ -39,7 +39,7 @@ enum FeishuAuthService {
 
         var body: [String: Any] = ["code": code]
         if let externalUserId, !externalUserId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            body["user_id"] = externalUserId
+            body["user_id"] = externalUserId as Any
         }
 
         var request = URLRequest(url: url, timeoutInterval: 30)

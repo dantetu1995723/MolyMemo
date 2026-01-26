@@ -43,9 +43,18 @@ struct FeishuCalendarSyncSheet: View {
     private var calendarSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("选择日历").font(.system(size: 16, weight: .bold)).foregroundColor(Color(hex: "333333"))
-                if isLoading { ProgressView().scaleEffect(0.8).padding(.leading, 4) }
-                Spacer()
+                Spacer(minLength: 0)
+                HStack(spacing: 6) {
+                    Text("选择日历")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(Color(hex: "333333"))
+                    if isLoading {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                    }
+                }
+                .padding(.top, 8)
+                Spacer(minLength: 0)
             }
             
             if calendars.isEmpty && !isLoading {

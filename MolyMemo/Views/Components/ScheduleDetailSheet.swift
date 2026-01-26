@@ -26,6 +26,10 @@ struct ScheduleDetailSheet: View {
     @State private var categoryRowFrame: CGRect = .zero
     @State private var deleteMenuAnchorFrame: CGRect = .zero
     
+    // 自定义提醒时间
+    @State private var customReminderDate: Date = Date()
+    private let customReminderSentinelValue: String = "__custom_reminder__"
+    
     // 行内编辑（标题/地点/备注）
     private enum FocusField: Hashable { case title, location, description }
     @FocusState private var focusedField: FocusField?
@@ -50,7 +54,7 @@ struct ScheduleDetailSheet: View {
         let value: String // 后端 category
     }
     
-    private let reminderOptions: [ReminderOption] = [
+    private let baseReminderOptions: [ReminderOption] = [
         .init(title: "开始前 5 分钟", value: "-5m"),
         .init(title: "开始前 10 分钟", value: "-10m"),
         .init(title: "开始前 15 分钟", value: "-15m"),
@@ -73,7 +77,7 @@ struct ScheduleDetailSheet: View {
     ]
     
     enum DatePickerType {
-        case start, end
+        case start, end, reminder
     }
     
     private enum SubmittingAction {
@@ -516,6 +520,11 @@ struct ScheduleDetailSheet: View {
                                     dismissKeyboard()
                                     let p = value.location
                                     withAnimation(.spring()) {
+                                        // 只有在“开始/结束时间”日历态下，才支持点击开始/结束区域切换
+                                        if type == .reminder {
+                                            activeDatePicker = nil
+                                            return
+                                        }
                                         if endTimeAreaFrame != .zero, endTimeAreaFrame.contains(p) {
                                             activeDatePicker = .end
                                         } else if startTimeAreaFrame != .zero, startTimeAreaFrame.contains(p) {
@@ -528,11 +537,16 @@ struct ScheduleDetailSheet: View {
                             )
                         
                         VStack(spacing: 0) {
-                            DatePicker(
-                                "",
-                                selection: type == .start ? $editedEvent.startTime : $editedEvent.endTime,
-                                displayedComponents: [.date, .hourAndMinute]
-                            )
+                            Group {
+                                switch type {
+                                case .start:
+                                    DatePicker("", selection: $editedEvent.startTime, displayedComponents: [.date, .hourAndMinute])
+                                case .end:
+                                    DatePicker("", selection: $editedEvent.endTime, displayedComponents: [.date, .hourAndMinute])
+                                case .reminder:
+                                    DatePicker("", selection: $customReminderDate, displayedComponents: [.date, .hourAndMinute])
+                                }
+                            }
                             .datePickerStyle(.graphical)
                             .environment(\.locale, Locale(identifier: "zh_CN"))
                             .padding(.horizontal, 12)
@@ -592,84 +606,7 @@ struct ScheduleDetailSheet: View {
             }
         }
         .coordinateSpace(name: "ScheduleDetailSheetSpace")
-        .overlay {
-            GeometryReader { geo in
-                ZStack(alignment: .topLeading) {
-                    if showReminderMenu || showCategoryMenu || showDeleteMenu {
-                        Color.black.opacity(0.001)
-                            .ignoresSafeArea()
-                            .onTapGesture {
-                                withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) {
-                                    showReminderMenu = false
-                                    showCategoryMenu = false
-                                    showDeleteMenu = false
-                                }
-                            }
-                    }
-                    
-                    if showReminderMenu {
-                        SingleSelectOptionMenu(
-                            title: "提醒时间类型",
-                            options: reminderOptions.map { .init(title: $0.title, value: $0.value) },
-                            selectedValue: editedEvent.reminderTime,
-                            onSelect: { v in
-                                hasUserEdited = true
-                                editedEvent.reminderTime = v
-                                withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) { showReminderMenu = false }
-                            }
-                        )
-                        .frame(width: 220)
-                        .offset(
-                            PopupMenuPositioning.coveringRowOffset(
-                                for: reminderRowFrame,
-                                in: geo.frame(in: .global),
-                                menuWidth: 220,
-                                menuHeight: SingleSelectOptionMenu.maxHeight(optionCount: reminderOptions.count)
-                            )
-                        )
-                        .transition(.asymmetric(insertion: .scale(scale: 0.9, anchor: .topTrailing).combined(with: .opacity), removal: .scale(scale: 0.9, anchor: .topTrailing).combined(with: .opacity)))
-                    }
-                    
-                    if showCategoryMenu {
-                        SingleSelectOptionMenu(
-                            title: "日程分类",
-                            options: categoryOptions.map { .init(title: $0.title, value: $0.value) },
-                            selectedValue: editedEvent.category,
-                            onSelect: { v in
-                                hasUserEdited = true
-                                editedEvent.category = v
-                                withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) { showCategoryMenu = false }
-                            }
-                        )
-                        .frame(width: 220)
-                        .offset(
-                            PopupMenuPositioning.coveringRowOffset(
-                                for: categoryRowFrame,
-                                in: geo.frame(in: .global),
-                                menuWidth: 220,
-                                menuHeight: SingleSelectOptionMenu.maxHeight(optionCount: categoryOptions.count)
-                            )
-                        )
-                        .transition(.asymmetric(insertion: .scale(scale: 0.9, anchor: .topTrailing).combined(with: .opacity), removal: .scale(scale: 0.9, anchor: .topTrailing).combined(with: .opacity)))
-                    }
-
-                    if showDeleteMenu {
-                        TopDeletePillButton(
-                            onDelete: {
-                                dismissKeyboard()
-                                withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) { showDeleteMenu = false }
-                                HapticFeedback.medium()
-                                Task { await submitDelete() }
-                            }
-                        )
-                        .frame(width: 200)
-                        .offset(PopupMenuPositioning.rightAlignedCenterOffset(for: deleteMenuAnchorFrame, in: geo.frame(in: .global), width: 200, height: 52))
-                        .transition(.asymmetric(insertion: .scale(scale: 0.9, anchor: .topTrailing).combined(with: .opacity), removal: .scale(scale: 0.9, anchor: .topTrailing).combined(with: .opacity)))
-                        .zIndex(30)
-                    }
-                }
-            }
-        }
+        .overlay { menusOverlay }
         .alert(
             "操作失败",
             isPresented: Binding(
@@ -688,6 +625,11 @@ struct ScheduleDetailSheet: View {
         }
         .onChange(of: focusedField) { _, newValue in
             dbg("focusedField changed -> \(String(describing: newValue))")
+        }
+        .onChange(of: customReminderDate) { _, newValue in
+            guard activeDatePicker == .reminder else { return }
+            hasUserEdited = true
+            editedEvent.reminderTime = ScheduleService.localDateTimeStringNoTimeZone(newValue)
         }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
             isKeyboardVisible = true
@@ -1051,8 +993,162 @@ struct ScheduleDetailSheet: View {
         case "-2d": return "开始前 2 天"
         case "-1w": return "开始前 1 周"
         case "-2w": return "开始前 2 周"
-        default: return "开始前 30 分钟"
+        default:
+            if let abs = ScheduleReminderTime.parseAbsoluteDate(v) {
+                return customReminderRowDisplayText(date: abs)
+            }
+            if let offset = ScheduleReminderTime.parseRelativeOffsetSeconds(v), offset != 0 {
+                return relativeReminderDisplayText(offsetSeconds: offset)
+            }
+            return "开始前 30 分钟"
         }
+    }
+
+    // MARK: - 自定义提醒：菜单/展示
+
+    private var menusOverlay: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .topLeading) {
+                if showReminderMenu || showCategoryMenu || showDeleteMenu {
+                    Color.black.opacity(0.001)
+                        .ignoresSafeArea()
+                        .onTapGesture {
+                            withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) {
+                                showReminderMenu = false
+                                showCategoryMenu = false
+                                showDeleteMenu = false
+                            }
+                        }
+                }
+                
+                if showReminderMenu {
+                    SingleSelectOptionMenu(
+                        title: "提醒时间类型",
+                        options: reminderMenuOptions(for: editedEvent).map { .init(title: $0.title, value: $0.value) },
+                        selectedValue: editedEvent.reminderTime,
+                        onSelect: { v in
+                            if v == customReminderSentinelValue {
+                                hasUserEdited = true
+                                customReminderDate = suggestedCustomReminderDate(for: editedEvent)
+                                withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) { showReminderMenu = false }
+                                // 关闭菜单动画结束后再弹出，避免层级/手势冲突
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                                    activeDatePicker = .reminder
+                                }
+                            } else {
+                                hasUserEdited = true
+                                editedEvent.reminderTime = v
+                                withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) { showReminderMenu = false }
+                            }
+                        }
+                    )
+                    .frame(width: 220)
+                    .offset(
+                        PopupMenuPositioning.coveringRowOffset(
+                            for: reminderRowFrame,
+                            in: geo.frame(in: .global),
+                            menuWidth: 220,
+                            menuHeight: SingleSelectOptionMenu.maxHeight(optionCount: reminderMenuOptions(for: editedEvent).count)
+                        )
+                    )
+                    .transition(.asymmetric(insertion: .scale(scale: 0.9, anchor: .topTrailing).combined(with: .opacity), removal: .scale(scale: 0.9, anchor: .topTrailing).combined(with: .opacity)))
+                }
+                
+                if showCategoryMenu {
+                    SingleSelectOptionMenu(
+                        title: "日程分类",
+                        options: categoryOptions.map { .init(title: $0.title, value: $0.value) },
+                        selectedValue: editedEvent.category,
+                        onSelect: { v in
+                            hasUserEdited = true
+                            editedEvent.category = v
+                            withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) { showCategoryMenu = false }
+                        }
+                    )
+                    .frame(width: 220)
+                    .offset(
+                        PopupMenuPositioning.coveringRowOffset(
+                            for: categoryRowFrame,
+                            in: geo.frame(in: .global),
+                            menuWidth: 220,
+                            menuHeight: SingleSelectOptionMenu.maxHeight(optionCount: categoryOptions.count)
+                        )
+                    )
+                    .transition(.asymmetric(insertion: .scale(scale: 0.9, anchor: .topTrailing).combined(with: .opacity), removal: .scale(scale: 0.9, anchor: .topTrailing).combined(with: .opacity)))
+                }
+                
+                if showDeleteMenu {
+                    TopDeletePillButton(
+                        onDelete: {
+                            dismissKeyboard()
+                            withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) { showDeleteMenu = false }
+                            HapticFeedback.medium()
+                            Task { await submitDelete() }
+                        }
+                    )
+                    .frame(width: 200)
+                    .offset(PopupMenuPositioning.rightAlignedCenterOffset(for: deleteMenuAnchorFrame, in: geo.frame(in: .global), width: 200, height: 52))
+                    .transition(.asymmetric(insertion: .scale(scale: 0.9, anchor: .topTrailing).combined(with: .opacity), removal: .scale(scale: 0.9, anchor: .topTrailing).combined(with: .opacity)))
+                    .zIndex(30)
+                }
+            }
+        }
+    }
+
+    private func reminderMenuOptions(for ev: ScheduleEvent) -> [ReminderOption] {
+        // 需求：自定义放到第一个选项
+        var opts: [ReminderOption] = [
+            .init(title: "自定义…", value: customReminderSentinelValue)
+        ]
+        let raw = (ev.reminderTime ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !raw.isEmpty, let abs = ScheduleReminderTime.parseAbsoluteDate(raw) {
+            // 若当前就是自定义时间：在菜单里展示具体日期（用于勾选/可见性）
+            opts.append(.init(title: customReminderMenuDisplayText(date: abs), value: raw))
+        }
+        opts.append(contentsOf: baseReminderOptions)
+        return opts
+    }
+
+    private func suggestedCustomReminderDate(for ev: ScheduleEvent) -> Date {
+        let raw = (ev.reminderTime ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !raw.isEmpty, let d = ScheduleReminderTime.resolveReminderDate(startTime: ev.startTime, reminderTimeRaw: raw) {
+            return d
+        }
+        return ev.startTime
+    }
+
+    private func customReminderRowDisplayText(date: Date) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "zh_CN")
+        // 需求：显示为 “yyyy/MM/dd 12:30” 这种形式
+        f.dateFormat = "yyyy/MM/dd HH:mm"
+        return f.string(from: date)
+    }
+
+    private func customReminderMenuDisplayText(date: Date) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "zh_CN")
+        // 需求：下拉选项里也显示为 “yyyy/MM/dd 12:30” 这种形式
+        f.dateFormat = "yyyy/MM/dd HH:mm"
+        return f.string(from: date)
+    }
+
+    private func relativeReminderDisplayText(offsetSeconds: TimeInterval) -> String {
+        // offsetSeconds < 0 表示“开始前”
+        let absSeconds = abs(offsetSeconds)
+        let isBefore = offsetSeconds < 0
+
+        let minutes = Int((absSeconds / 60).rounded())
+        if minutes == 0 { return isBefore ? "开始时" : "开始后" }
+
+        func fmt(_ n: Int, _ unit: String) -> String {
+            isBefore ? "开始前 \(n) \(unit)" : "开始后 \(n) \(unit)"
+        }
+
+        if minutes % (60 * 24 * 7) == 0 { return fmt(minutes / (60 * 24 * 7), "周") }
+        if minutes % (60 * 24) == 0 { return fmt(minutes / (60 * 24), "天") }
+        if minutes % 60 == 0 { return fmt(minutes / 60, "小时") }
+        return fmt(minutes, "分钟")
     }
     
     private func categoryDisplayText(_ value: String?) -> String {
@@ -1170,3 +1266,5 @@ struct TopDeletePillButton: View {
         .buttonStyle(.plain)
     }
 }
+
+// CustomReminderPickerSheet 已移除：自定义提醒已沿用页内日历弹层（与开始/结束时间一致）。

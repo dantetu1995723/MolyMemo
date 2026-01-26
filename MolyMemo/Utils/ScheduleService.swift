@@ -289,7 +289,9 @@ enum ScheduleService {
 
     /// 统一：把 Date 按“本地时间语义”序列化给后端（不带时区）。
     /// 目标：后端返回什么时间，前端就显示什么时间，避免 iOS/后端双方因时区标记产生偏移。
-    private static func localDateTimeStringNoTimeZone(_ date: Date) -> String {
+    ///
+    /// - Note: 该方法也会被 UI（如“提醒时间自定义”）复用，避免重复实现同一套时间序列化规则。
+    static func localDateTimeStringNoTimeZone(_ date: Date) -> String {
         let df = DateFormatter()
         df.locale = Locale(identifier: "en_US_POSIX")
         df.timeZone = TimeZone.current
@@ -460,7 +462,13 @@ enum ScheduleService {
             event.source = source
             event.isFullDay = true
             event.endTimeProvided = true
-            event.reminderTime = reminderTimeString(dict["reminder_time"] ?? dict["reminderTime"])
+            // 兼容后端：reminder_time（相对/绝对）与 reminder_datetime（绝对）
+            event.reminderTime = reminderTimeString(
+                dict["reminder_time"]
+                    ?? dict["reminderTime"]
+                    ?? dict["reminder_datetime"]
+                    ?? dict["reminderDatetime"]
+            )
             event.category = str(["category", "schedule_category", "scheduleCategory", "type"])
             event.location = str(["location", "place", "address"])
 
@@ -512,7 +520,13 @@ enum ScheduleService {
         var event = ScheduleEvent(title: title, description: description, startTime: start, endTime: end)
         event.source = source
         event.endTimeProvided = endProvided
-        event.reminderTime = reminderTimeString(dict["reminder_time"] ?? dict["reminderTime"])
+        // 兼容后端：reminder_time（相对/绝对）与 reminder_datetime（绝对）
+        event.reminderTime = reminderTimeString(
+            dict["reminder_time"]
+                ?? dict["reminderTime"]
+                ?? dict["reminder_datetime"]
+                ?? dict["reminderDatetime"]
+        )
         event.category = str(["category", "schedule_category", "scheduleCategory", "type"])
         event.location = str(["location", "place", "address"])
         
@@ -771,6 +785,10 @@ enum ScheduleService {
         ]
         if let rt = event.reminderTime?.trimmingCharacters(in: .whitespacesAndNewlines), !rt.isEmpty {
             payload["reminder_time"] = rt
+            // 需求：自定义提醒（绝对时间）时，让 reminder_time 与 reminder_datetime 保持一致
+            if ScheduleReminderTime.parseAbsoluteDate(rt) != nil {
+                payload["reminder_datetime"] = rt
+            }
         }
         if let cat = event.category?.trimmingCharacters(in: .whitespacesAndNewlines), !cat.isEmpty {
             payload["category"] = cat
